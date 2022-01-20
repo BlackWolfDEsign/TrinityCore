@@ -41,20 +41,33 @@ Edit IsReforgable is you want to tweak requirements
 */
 
 // Remember to add to GetStatName too
-static const ItemModType statTypes[] = { ITEM_MOD_SPIRIT, ITEM_MOD_DODGE_RATING, ITEM_MOD_PARRY_RATING, ITEM_MOD_HIT_RATING, ITEM_MOD_CRIT_RATING, ITEM_MOD_HASTE_RATING, ITEM_MOD_EXPERTISE_RATING };
+static const ItemModType statTypes[] = { ITEM_MOD_DODGE_RATING, ITEM_MOD_PARRY_RATING, ITEM_MOD_HIT_RATING, ITEM_MOD_CRIT_RATING, ITEM_MOD_HASTE_RATING, ITEM_MOD_EXPERTISE_RATING, /*ITEM_MOD_MANA, ITEM_MOD_HEALTH,*/ ITEM_MOD_AGILITY, ITEM_MOD_STRENGTH, ITEM_MOD_INTELLECT, ITEM_MOD_SPIRIT, ITEM_MOD_STAMINA, ITEM_MOD_RESILIENCE_RATING, ITEM_MOD_ATTACK_POWER, ITEM_MOD_MANA_REGENERATION, ITEM_MOD_ARMOR_PENETRATION_RATING, ITEM_MOD_SPELL_POWER, ITEM_MOD_HEALTH_REGEN, ITEM_MOD_SPELL_PENETRATION };
 static const uint8 stat_type_max = sizeof(statTypes) / sizeof(*statTypes);
 
 static const char* GetStatName(uint32 ItemStatType)
 {
     switch (ItemStatType)
     {
-        case ITEM_MOD_SPIRIT: return "Spirit"; break;
-        case ITEM_MOD_DODGE_RATING: return "Dodge rating"; break;
-        case ITEM_MOD_PARRY_RATING: return "Parry rating"; break;
-        case ITEM_MOD_HIT_RATING: return "Hit rating"; break;
-        case ITEM_MOD_CRIT_RATING: return "Crit rating"; break;
-        case ITEM_MOD_HASTE_RATING: return "Haste rating"; break;
-        case ITEM_MOD_EXPERTISE_RATING: return "Expertise rating"; break;
+		/*case ITEM_MOD_HEALTH: return "Gesundheit"; break;*/
+		case ITEM_MOD_STAMINA: return "Ausdauer"; break;
+		case ITEM_MOD_AGILITY: return "Beweglichkeit"; break;
+		case ITEM_MOD_STRENGTH: return "Staerke"; break;
+		/*case ITEM_MOD_MANA: return "Mana"; break;*/
+		case ITEM_MOD_INTELLECT: return "Intelligenz"; break;
+		case ITEM_MOD_SPIRIT: return "Willenskraft"; break;
+		case ITEM_MOD_HEALTH_REGEN: return "Lebensregeneration"; break;
+		case ITEM_MOD_MANA_REGENERATION: return "Manaregeneration"; break;
+		case ITEM_MOD_RESILIENCE_RATING: return "Abhaertung"; break;
+		case ITEM_MOD_ATTACK_POWER: return "Angriffskraft"; break;
+		case ITEM_MOD_SPELL_POWER: return "Zaubermacht"; break;
+		case ITEM_MOD_SPELL_PENETRATION: return "Zauberdurchdringung"; break;
+		case ITEM_MOD_ARMOR_PENETRATION_RATING: return "Ruestungsdurchdringung"; break;
+        case ITEM_MOD_DODGE_RATING: return "Ausweichwertung"; break;
+        case ITEM_MOD_PARRY_RATING: return "Parierwertung"; break;
+        case ITEM_MOD_HASTE_RATING: return "Tempowertung"; break;
+        case ITEM_MOD_HIT_RATING: return "Trefferwertung"; break;
+        case ITEM_MOD_CRIT_RATING: return "kritische Trefferwertung"; break;
+        case ITEM_MOD_EXPERTISE_RATING: return "Waffenkundewertung"; break;
         default: return NULL;
     }
 }
@@ -63,25 +76,25 @@ static const char* GetSlotName(uint8 slot, WorldSession* /*session*/)
 {
     switch (slot)
     {
-        case EQUIPMENT_SLOT_HEAD: return "Head";
-        case EQUIPMENT_SLOT_NECK: return "Neck";
-        case EQUIPMENT_SLOT_SHOULDERS: return "Shoulders";
+        case EQUIPMENT_SLOT_HEAD: return "Kopf";
+        case EQUIPMENT_SLOT_NECK: return "Halskette";
+        case EQUIPMENT_SLOT_SHOULDERS: return "Schultern";
         case EQUIPMENT_SLOT_BODY: return "Shirt";
-        case EQUIPMENT_SLOT_CHEST: return "Chest";
-        case EQUIPMENT_SLOT_WAIST: return "Waist";
-        case EQUIPMENT_SLOT_LEGS: return "Legs";
-        case EQUIPMENT_SLOT_FEET: return "Feet";
-        case EQUIPMENT_SLOT_WRISTS: return "Wrists";
-        case EQUIPMENT_SLOT_HANDS: return "Hands";
-        case EQUIPMENT_SLOT_FINGER1: return "Right finger";
-        case EQUIPMENT_SLOT_FINGER2: return "Left finger";
-        case EQUIPMENT_SLOT_TRINKET1: return "Right trinket";
-        case EQUIPMENT_SLOT_TRINKET2: return "Left trinket";
-        case EQUIPMENT_SLOT_BACK: return "Back";
-        case EQUIPMENT_SLOT_MAINHAND: return "Main hand";
-        case EQUIPMENT_SLOT_OFFHAND: return "Off hand";
-        case EQUIPMENT_SLOT_TABARD: return "Tabard";
-        case EQUIPMENT_SLOT_RANGED: return "Ranged";
+        case EQUIPMENT_SLOT_CHEST: return "Brust";
+        case EQUIPMENT_SLOT_WAIST: return "Guertel";
+        case EQUIPMENT_SLOT_LEGS: return "Hose";
+        case EQUIPMENT_SLOT_FEET: return "Füße";
+        case EQUIPMENT_SLOT_WRISTS: return "Handgelenke";
+        case EQUIPMENT_SLOT_HANDS: return "Haende";
+        case EQUIPMENT_SLOT_FINGER1: return "rechter Finger";
+        case EQUIPMENT_SLOT_FINGER2: return "linker Finger";
+        case EQUIPMENT_SLOT_TRINKET1: return "rechtes Schmuckstueck";
+        case EQUIPMENT_SLOT_TRINKET2: return "linkes Schmuckstueck";
+        case EQUIPMENT_SLOT_BACK: return "Umhang";
+        case EQUIPMENT_SLOT_MAINHAND: return "Haupthand";
+        case EQUIPMENT_SLOT_OFFHAND: return "Nebenhand";
+        case EQUIPMENT_SLOT_TABARD: return "Wappenrock";
+        case EQUIPMENT_SLOT_RANGED: return "Fernwaffe";
         default: return NULL;
     }
 }
