@@ -25,7 +25,6 @@
 #include "naxxramas.h"
 #include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
-#include "SpellInfo.h"
 #include "SpellScript.h"
 
 /* Constants */
@@ -45,11 +44,24 @@ enum Yells
 
 enum Spells
 {
+    /* living trainee spells */
+    SPELL_DEATH_PLAGUE          = 55604,
+
     /* living knight spells */
     SPELL_SHADOW_MARK           = 27825,
 
+    /* living rider spells */
+    SPELL_SHADOW_BOLT_VOLLEY    = 27831,
+
+    /* spectral trainee spells */
+    SPELL_ARCANE_EXPLOSION      = 27989,
+
     /* spectral knight spells */
     SPELL_WHIRLWIND             = 56408,
+
+    /* spectral rider spells */
+    SPELL_DRAIN_LIFE            = 27994,
+    SPELL_UNHOLY_FRENZY         = 55648,
 
     /* spectral horse spells */
     SPELL_STOMP                 = 27993,
@@ -75,13 +87,7 @@ enum Spells
     SPELL_TELEPORT_DEAD         = 28025,
     SPELL_TELEPORT_LIVE         = 28026
 };
-
-#define SPELL_UNHOLY_AURA RAID_MODE<uint32>(55606, 55608)
-#define SPELL_DEATH_PLAGUE RAID_MODE<uint32>(55604, 55645)
-#define SPELL_SHADOW_BOLT_VOLLEY RAID_MODE<uint32>(27831, 55638)
-#define SPELL_ARCANE_EXPLOSION RAID_MODE<uint32>(27989, 56407)
-#define SPELL_DRAIN_LIFE RAID_MODE<uint32>(27994, 55646)
-#define SPELL_UNHOLY_FRENZY RAID_MODE<uint32>(55648,27995)
+#define SPELLHELPER_UNHOLY_FRENZY RAID_MODE<uint32>(SPELL_UNHOLY_FRENZY,27995)
 
 enum Creatures
 {
@@ -160,25 +166,12 @@ static Player* FindEligibleTarget(Creature const* me, bool isGateOpen)
 }
 
 /* Wave data */
-struct GothikWaveEntry
+typedef std::pair<uint32, uint8> GothikWaveEntry; // (npcEntry, npcCount)
+typedef std::set<GothikWaveEntry> GothikWave;
+typedef std::pair<GothikWave, uint8> GothikWaveInfo; // (wave, secondsToNext)
+typedef std::vector<GothikWaveInfo> GothikWaveData;
+const GothikWaveData waves10 =
 {
-    uint32 CreatureId = 0;
-    uint32 Count = 0;
-};
-
-struct GothikWaveInfo
-{
-    constexpr GothikWaveInfo(std::initializer_list<GothikWaveEntry> waves, int64 timeToNextWave) : TimeToNextWave(timeToNextWave)
-    {
-        std::ranges::copy_n(waves.begin(), std::min(std::ranges::ssize(waves), std::ranges::ssize(Creatures)), Creatures.begin());
-    }
-
-    std::array<GothikWaveEntry, 3> Creatures;
-    Seconds TimeToNextWave;
-};
-
-static constexpr std::array<GothikWaveInfo, 19> waves10 =
-{ {
     {
         {{NPC_LIVE_TRAINEE, 2}},
     20},
@@ -236,10 +229,10 @@ static constexpr std::array<GothikWaveInfo, 19> waves10 =
     {
         {{NPC_LIVE_TRAINEE, 2}},
     0}
-} };
+};
 
-static constexpr std::array<GothikWaveInfo, 18> waves25 =
-{ {
+const GothikWaveData waves25 =
+{
     {
         {{NPC_LIVE_TRAINEE, 3}},
     20},
@@ -294,7 +287,7 @@ static constexpr std::array<GothikWaveInfo, 18> waves25 =
     {
         {{NPC_LIVE_RIDER, 1}, {NPC_LIVE_KNIGHT, 2}, {NPC_LIVE_TRAINEE, 3}},
     0}
-} };
+};
 
 // GUID of first trigger NPC (used as offset for guid checks)
 // 0-1 are living side soul triggers, 2-3 are spectral side soul triggers, 4 is living rider spawn trigger, 5-7 are living other spawn trigger, 8-12 are skull pile triggers
@@ -342,7 +335,10 @@ struct boss_gothik : public BossAI
     {
         summons.Summon(summon);
         if (me->IsInCombat())
+        {
             summon->AI()->DoAction(_gateIsOpen ? ACTION_GATE_OPENED : ACTION_ACQUIRE_TARGET);
+            summon->SetCombatPulseDelay(5);
+        }
         else
             summon->DespawnOrUnsummon();
     }
@@ -395,7 +391,7 @@ struct boss_gothik : public BossAI
         {
             case ACTION_MINION_EVADE:
                 if (_gateIsOpen || me->GetThreatManager().IsThreatListEmpty())
-                    return EnterEvadeMode(EvadeReason::NoHostiles);
+                    return EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
                 if (_gateCanOpen)
                     OpenGate();
                 break;
@@ -439,7 +435,7 @@ struct boss_gothik : public BossAI
             {
                 case EVENT_SUMMON:
                 {
-                    if (RAID_MODE(waves10.size(), waves25.size()) <= _waveCount) // bounds check
+                    if (RAID_MODE(waves10,waves25).size() <= _waveCount) // bounds check
                     {
                         TC_LOG_INFO("scripts", "GothikAI: Wave count {} is out of range for difficulty {}.", _waveCount, static_cast<uint32>(GetDifficulty()));
                         break;
@@ -447,9 +443,8 @@ struct boss_gothik : public BossAI
 
                     std::list<Creature*> triggers;
                     me->GetCreatureListWithEntryInGrid(triggers, NPC_TRIGGER, 150.0f);
-                    for (GothikWaveEntry entry : RAID_MODE(waves10[_waveCount], waves25[_waveCount]).Creatures)
-                    {
-                        for (uint32 i = 0; i < entry.Count; ++i)
+                    for (GothikWaveEntry entry : RAID_MODE(waves10, waves25)[_waveCount].first)
+                        for (uint8 i = 0; i < entry.second; ++i)
                         {
                             // GUID layout is as follows:
                             // CGUID+4: center (back of platform) - primary rider spawn
@@ -457,7 +452,7 @@ struct boss_gothik : public BossAI
                             // CGUID+6: center (front of platform) - second spawn
                             // CGUID+7: south (front of platform) - primary trainee spawn
                             uint32 targetDBGuid;
-                            switch (entry.CreatureId)
+                            switch (entry.first)
                             {
                                 case NPC_LIVE_RIDER: // only spawns from center (back) > north
                                     targetDBGuid = (CGUID_TRIGGER + 4) + (i % 2);
@@ -469,17 +464,19 @@ struct boss_gothik : public BossAI
                                     targetDBGuid = (CGUID_TRIGGER + 7) - (i % 3);
                                     break;
                                 default:
-                                    continue;
+                                    targetDBGuid = 0;
                             }
 
-                            auto triggerItr = std::ranges::find(triggers, targetDBGuid, [](Creature const* trigger) { return trigger->GetSpawnId(); });
-                            if (triggerItr != triggers.end())
-                                DoSummon(entry.CreatureId, *triggerItr, 1.0f, 15s, TEMPSUMMON_CORPSE_TIMED_DESPAWN);
+                            for (Creature* trigger : triggers)
+                                if (trigger && trigger->GetSpawnId() == targetDBGuid)
+                                {
+                                    DoSummon(entry.first, trigger, 1.0f, 15s, TEMPSUMMON_CORPSE_TIMED_DESPAWN);
+                                    break;
+                                }
                         }
-                    }
 
-                    if (Seconds timeToNext = RAID_MODE(waves10[_waveCount], waves25[_waveCount]).TimeToNextWave; timeToNext > 0s)
-                        events.Repeat(timeToNext);
+                    if (uint8 timeToNext = RAID_MODE(waves10, waves25)[_waveCount].second)
+                        events.Repeat(Seconds(timeToNext));
 
                     ++_waveCount;
                     break;
@@ -544,8 +541,6 @@ struct boss_gothik : public BossAI
                 case EVENT_INTRO_4:
                     Talk(SAY_INTRO_4);
                     break;
-                default:
-                    break;
             }
         }
     }
@@ -593,7 +588,7 @@ struct npc_gothik_minion_baseAI : public ScriptedAI
                         AttackStart(target);
                     }
                     else
-                        EnterEvadeMode(EvadeReason::NoHostiles);
+                        EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
                     break;
             }
         }
@@ -622,13 +617,13 @@ struct npc_gothik_minion_baseAI : public ScriptedAI
                     AttackStart(newTarget);
                 }
                 else
-                    EnterEvadeMode(EvadeReason::NoHostiles);
+                    EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
             }
 
             _UpdateAI(diff);
         }
 
-        virtual void _UpdateAI(uint32 diff) { ScriptedAI::UpdateAI(diff); }
+        virtual void _UpdateAI(uint32 diff) { ScriptedAI::UpdateAI(diff); };
 
     private:
         uint32 _deathNotify;
@@ -648,6 +643,7 @@ struct npc_gothik_minion_livingtrainee : public npc_gothik_minion_baseAI
             DoCastAOE(SPELL_DEATH_PLAGUE);
             _deathPlagueTimer = urandms(5, 20);
         }
+        DoMeleeAttackIfReady();
     }
     uint32 _deathPlagueTimer;
 };
@@ -665,6 +661,7 @@ struct npc_gothik_minion_livingknight : public npc_gothik_minion_baseAI
             DoCastAOE(SPELL_SHADOW_MARK);
             _whirlwindTimer = urandms(15, 20);
         }
+        DoMeleeAttackIfReady();
     }
     uint32 _whirlwindTimer;
 };
@@ -673,19 +670,7 @@ struct npc_gothik_minion_livingrider : public npc_gothik_minion_baseAI
 {
     npc_gothik_minion_livingrider(Creature* creature) : npc_gothik_minion_baseAI(creature, SPELL_ANCHOR_1_RIDER), _boltVolleyTimer(urandms(5,10)) { }
 
-    void JustAppeared() override
-    {
-        npc_gothik_minion_baseAI::JustAppeared();
-        DoCastSelf(SPELL_UNHOLY_AURA, true);
-    }
-
-    void JustReachedHome() override
-    {
-        npc_gothik_minion_baseAI::JustReachedHome();
-        DoCastSelf(SPELL_UNHOLY_AURA, true);
-    }
-
-    void _UpdateAI(uint32 diff) override
+    void _UpdateAI(uint32 diff)
     {
         if (diff < _boltVolleyTimer)
             _boltVolleyTimer -= diff;
@@ -694,8 +679,8 @@ struct npc_gothik_minion_livingrider : public npc_gothik_minion_baseAI
             DoCastAOE(SPELL_SHADOW_BOLT_VOLLEY);
             _boltVolleyTimer = urandms(10, 15);
         }
-
-        npc_gothik_minion_baseAI::_UpdateAI(diff);
+        if (!me->HasUnitState(UNIT_STATE_CASTING))
+            DoMeleeAttackIfReady();
     }
     uint32 _boltVolleyTimer;
 };
@@ -713,6 +698,7 @@ struct npc_gothik_minion_spectraltrainee : public npc_gothik_minion_baseAI
             DoCastAOE(SPELL_ARCANE_EXPLOSION);
             _explosionTimer = 2 * IN_MILLISECONDS;
         }
+        DoMeleeAttackIfReady();
     }
     uint32 _explosionTimer;
 };
@@ -730,6 +716,7 @@ struct npc_gothik_minion_spectralknight : public npc_gothik_minion_baseAI
             DoCastAOE(SPELL_WHIRLWIND);
             _whirlwindTimer = urandms(20, 25);
         }
+        DoMeleeAttackIfReady();
     }
     uint32 _whirlwindTimer;
 };
@@ -738,19 +725,7 @@ struct npc_gothik_minion_spectralrider : public npc_gothik_minion_baseAI
 {
     npc_gothik_minion_spectralrider(Creature* creature) : npc_gothik_minion_baseAI(creature), _frenzyTimer(urandms(2,5)), _drainTimer(urandms(8,12)) { }
 
-    void JustAppeared() override
-    {
-        npc_gothik_minion_baseAI::JustAppeared();
-        DoCastSelf(SPELL_UNHOLY_AURA, true);
-    }
-
-    void JustReachedHome() override
-    {
-        npc_gothik_minion_baseAI::JustReachedHome();
-        DoCastSelf(SPELL_UNHOLY_AURA, true);
-    }
-
-    void _UpdateAI(uint32 diff) override
+    void _UpdateAI(uint32 diff)
     {
         if (diff < _frenzyTimer)
             _frenzyTimer -= diff;
@@ -758,7 +733,7 @@ struct npc_gothik_minion_spectralrider : public npc_gothik_minion_baseAI
             _frenzyTimer = 0;
         else
         { // target priority: knight > other rider > horse > gothik
-            std::list<Creature*> potentialTargets = DoFindFriendlyMissingBuff(30.0, SPELL_UNHOLY_FRENZY);
+            std::list<Creature*> potentialTargets = DoFindFriendlyMissingBuff(30.0, SPELLHELPER_UNHOLY_FRENZY);
             Creature *knightTarget = nullptr, *riderTarget = nullptr, *horseTarget = nullptr, *gothikTarget = nullptr;
             for (Creature* pTarget : potentialTargets)
             {
@@ -794,7 +769,8 @@ struct npc_gothik_minion_spectralrider : public npc_gothik_minion_baseAI
             _drainTimer = urandms(10,15);
         }
 
-        npc_gothik_minion_baseAI::_UpdateAI(diff);
+        if (!me->HasUnitState(UNIT_STATE_CASTING))
+            DoMeleeAttackIfReady();
     }
     uint32 _frenzyTimer, _drainTimer;
 };
@@ -812,6 +788,7 @@ struct npc_gothik_minion_spectralhorse : public npc_gothik_minion_baseAI
             DoCastAOE(SPELL_STOMP);
             _stompTimer = urandms(14, 18);
         }
+        DoMeleeAttackIfReady();
     }
     uint32 _stompTimer;
 };
@@ -891,6 +868,8 @@ struct npc_gothik_trigger : public ScriptedAI
 // 27831, 55638 - Shadow Bolt Volley
 class spell_gothik_shadow_bolt_volley : public SpellScript
 {
+    PrepareSpellScript(spell_gothik_shadow_bolt_volley);
+
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         targets.remove_if(Trinity::UnitAuraCheck(false, SPELL_SHADOW_MARK));

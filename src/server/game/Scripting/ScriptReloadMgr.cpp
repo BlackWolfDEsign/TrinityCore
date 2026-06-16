@@ -17,6 +17,7 @@
 
 #include "ScriptReloadMgr.h"
 #include "Errors.h"
+#include "Optional.h"
 
 #ifndef TRINITY_API_USE_DYNAMIC_LINKING
 
@@ -40,19 +41,16 @@ ScriptReloadMgr* ScriptReloadMgr::instance()
 #include "Config.h"
 #include "GitRevision.h"
 #include "CryptoHash.h"
-#include "Duration.h"
 #include "Log.h"
 #include "MPSCQueue.h"
-#include "Optional.h"
 #include "Regex.h"
 #include "ScriptMgr.h"
 #include "StartProcess.h"
 #include "Timer.h"
 #include "Util.h"
 #include "World.h"
-#include <boost/dll/runtime_symbol_info.hpp>
-#include <boost/filesystem/directory.hpp>
-#include <boost/filesystem/operations.hpp>
+#include <boost/algorithm/string/replace.hpp>
+#include <boost/filesystem.hpp>
 #include <boost/system/system_error.hpp>
 #include <efsw/efsw.hpp>
 #include <algorithm>
@@ -109,7 +107,14 @@ typedef void* HandleType;
 
 static fs::path GetDirectoryOfExecutable()
 {
-    return boost::dll::program_location().parent_path();
+    ASSERT((!sConfigMgr->GetArguments().empty()),
+           "Expected the arguments to contain at least 1 element!");
+
+    fs::path path(sConfigMgr->GetArguments()[0]);
+    if (path.is_absolute())
+        return path.parent_path();
+    else
+        return fs::canonical(fs::absolute(path)).parent_path();
 }
 
 class SharedLibraryUnloader
@@ -352,7 +357,7 @@ namespace std
     {
         hash<string> hasher;
 
-        std::size_t operator()(fs::path const& key) const noexcept
+        std::size_t operator()(fs::path const& key) const
         {
             return hasher(key.generic_string());
         }
@@ -1028,7 +1033,7 @@ private:
             // Wait for the current build job to finish, if the job finishes in time
             // evaluate it and continue with the next one.
             if (_build_job->GetProcess()->GetFutureResult().
-                    wait_for(0s) == std::future_status::ready)
+                    wait_for(std::chrono::seconds(0)) == std::future_status::ready)
                 ProcessReadyBuildJob();
             else
                 return; // Return when the job didn't finish in time

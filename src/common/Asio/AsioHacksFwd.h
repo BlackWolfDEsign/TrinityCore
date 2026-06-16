@@ -35,20 +35,9 @@ namespace boost
         template <typename Time>
         struct time_traits;
 
-        template <typename Clock>
-        struct wait_traits;
-
-        template <typename Protocol, typename Clock, typename WaitTraits>
-        class basic_socket_iostream;
-
         namespace ip
         {
             class address;
-            class address_v4;
-            class address_v6;
-
-            class network_v4;
-            class network_v6;
 
             class tcp;
 
@@ -66,12 +55,8 @@ namespace Trinity
     {
         class DeadlineTimer;
         class IoContext;
-        class Strand;
-    }
-
-    namespace Net
-    {
         class Resolver;
+        class Strand;
     }
 }
 

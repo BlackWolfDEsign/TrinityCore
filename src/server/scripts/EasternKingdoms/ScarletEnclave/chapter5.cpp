@@ -16,14 +16,16 @@
  */
 
 #include "ScriptMgr.h"
+#include "GameObject.h"
 #include "Map.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
+#include "SpellInfo.h"
+#include "SpellScript.h"
 #include "TemporarySummon.h"
-#include "WorldStateMgr.h"
 
 #define LESS_MOB // if you do not have a good server and do not want it to be laggy as hell
 //Light of Dawn
@@ -51,12 +53,9 @@ enum mograine
     ENCOUNTER_TOTAL_DAWN              = 300,  // Total number
     ENCOUNTER_TOTAL_SCOURGE           = 10000,
 
-    WORLD_STATE_FORCES_OF_THE_LIGHT_REMAINING   = 3590,
-    WORLD_STATE_FORCES_OF_THE_SCOURGE_REMAINING = 3591,
-    WORLD_STATE_SHOW_FORCES_REMAINING           = 3592,
-    WORLD_STATE_SHOW_MINUTES_UNTIL_BATTLE       = 3603,
-    WORLD_STATE_MINUTES_UNTIL_BATTLE            = 3604,
-    WORLD_STATE_BATTLE_IN_PROGRESS              = 3605,
+    WORLD_STATE_REMAINS               = 3592,
+    WORLD_STATE_COUNTDOWN             = 3603,
+    WORLD_STATE_EVENT_BEGIN           = 3605,
 
     SAY_LIGHT_OF_DAWN01               = 0, // pre text
     SAY_LIGHT_OF_DAWN02               = 1,
@@ -224,6 +223,20 @@ enum mograine
     SPELL_THUNDER                     = 53630
 };
 
+void UpdateWorldState(Map* map, uint32 id, uint32 state)
+{
+    Map::PlayerList const& players = map->GetPlayers();
+
+    if (!players.isEmpty())
+    {
+        for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        {
+            if (Player* player = itr->GetSource())
+                player->SendUpdateWorldState(id, state);
+        }
+    }
+}
+
 Position const LightofDawnLoc[] =
 {
     {2281.335f, -5300.409f, 85.170f, 0},     // 0 Tirion Fordring loc
@@ -342,9 +355,9 @@ public:
                 me->Mount(25279);
                 me->SetVisible(true);
 
-                WorldStateMgr::SetValue(WORLD_STATE_SHOW_FORCES_REMAINING, 0, false, me->GetMap());
-                //WorldStateMgr::SetValue(WORLD_STATE_SHOW_MINUTES_UNTIL_BATTLE, 0, false, me->GetMap());
-                WorldStateMgr::SetValue(WORLD_STATE_BATTLE_IN_PROGRESS, 0, false, me->GetMap());
+                UpdateWorldState(me->GetMap(), WORLD_STATE_REMAINS, 0);
+                //UpdateWorldState(me->GetMap(), WORLD_STATE_COUNTDOWN, 0);
+                UpdateWorldState(me->GetMap(), WORLD_STATE_EVENT_BEGIN, 0);
 
                 if (Creature* temp = ObjectAccessor::GetCreature(*me, uiTirionGUID))
                     temp->setDeathState(JUST_DIED);
@@ -582,13 +595,13 @@ public:
                     switch (uiStep)
                     {
                         case 0:  // countdown
-                            //WorldStateMgr::SetValue(WORLD_STATE_SHOW_MINUTES_UNTIL_BATTLE, 1, false, me->GetMap());
+                            //UpdateWorldState(me->GetMap(), WORLD_STATE_COUNTDOWN, 1);
                             break;
 
                         case 1:  // just delay
-                            //WorldStateMgr::SetValue(WORLD_STATE_SHOW_FORCES_REMAINING, 1, false, me->GetMap());
-                            WorldStateMgr::SetValue(WORLD_STATE_SHOW_MINUTES_UNTIL_BATTLE, 0, false, me->GetMap());
-                            WorldStateMgr::SetValue(WORLD_STATE_BATTLE_IN_PROGRESS, 1, false, me->GetMap());
+                            //UpdateWorldState(me->GetMap(), WORLD_STATE_REMAINS, 1);
+                            UpdateWorldState(me->GetMap(), WORLD_STATE_COUNTDOWN, 0);
+                            UpdateWorldState(me->GetMap(), WORLD_STATE_EVENT_BEGIN, 1);
                             me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                             JumpToNextStep(3000);
                             break;
@@ -747,7 +760,7 @@ public:
                         case 15: // summon gate
                             if (Creature* temp = me->SummonCreature(NPC_HIGHLORD_ALEXANDROS_MOGRAINE, LightofDawnLoc[22], TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 5min))
                             {
-                                temp->SetUninteractible(true);
+                                temp->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                                 temp->CastSpell(temp, SPELL_ALEXANDROS_MOGRAINE_SPAWN, true);
                                 temp->AI()->Talk(EMOTE_LIGHT_OF_DAWN06);
                                 uiAlexandrosGUID = temp->GetGUID();
@@ -758,7 +771,7 @@ public:
                         case 16: // Alexandros out
                             if (Creature* temp = ObjectAccessor::GetCreature(*me, uiAlexandrosGUID))
                             {
-                                temp->SetUninteractible(false);
+                                temp->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                                 temp->GetMotionMaster()->MovePoint(0, LightofDawnLoc[23]);
                                 temp->AI()->Talk(SAY_LIGHT_OF_DAWN32);
                             }
@@ -1263,7 +1276,7 @@ public:
                             {
                                 // search players with in 50 yards for quest credit
                                 Map::PlayerList const& PlayerList = me->GetMap()->GetPlayers();
-                                if (!PlayerList.empty())
+                                if (!PlayerList.isEmpty())
                                 {
                                     for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
                                         if (me->IsWithinDistInMap(i->GetSource(), 500))
@@ -1465,6 +1478,8 @@ public:
                     SetHoldState(false);
 
                 } else uiFight_duration -= diff;
+
+                DoMeleeAttackIfReady();
             }
         }
 
@@ -1621,7 +1636,7 @@ public:
                 player->PrepareQuestMenu(me->GetGUID());
 
             if (player->GetQuestStatus(12801) == QUEST_STATUS_INCOMPLETE)
-                AddGossipItemFor(player, GossipOptionNpc::None, "I am ready.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, "I am ready.", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
             SendGossipMenuFor(player, player->GetGossipTextId(me), me->GetGUID());
 

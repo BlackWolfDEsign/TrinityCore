@@ -16,69 +16,42 @@
  */
 
 #include "WorldPacketCrypt.h"
-#include <array>
-#include <cstring>
+#include "Errors.h"
+#include "HMAC.h"
 
-WorldPacketCrypt::WorldPacketCrypt() : _clientDecrypt(false, 256), _serverEncrypt(true, 256), _clientCounter(0), _serverCounter(0), _initialized(false)
+WorldPacketCrypt::WorldPacketCrypt() : _initialized(false)
 {
 }
 
-void WorldPacketCrypt::Init(Key const& key)
+void WorldPacketCrypt::Init(SessionKey const& K)
 {
-    _clientDecrypt.Init(key);
-    _serverEncrypt.Init(key);
+    static constexpr std::array<uint8, 16> ServerEncryptionKey = { 0xCC, 0x98, 0xAE, 0x04, 0xE8, 0x97, 0xEA, 0xCA, 0x12, 0xDD, 0xC0, 0x93, 0x42, 0x91, 0x53, 0x57 };
+    static constexpr std::array<uint8, 16> ServerDecryptionKey = { 0xC2, 0xB3, 0x72, 0x3C, 0xC6, 0xAE, 0xD9, 0xB5, 0x34, 0x3C, 0x53, 0xEE, 0x2F, 0x43, 0x67, 0xCE };
+
+    Init(K, ServerEncryptionKey, ServerDecryptionKey);
+}
+
+void WorldPacketCrypt::Init(SessionKey const& K, std::span<uint8 const, 16> serverKey, std::span<uint8 const, 16> clientKey)
+{
+    _serverEncrypt.Init(Trinity::Crypto::HMAC_SHA1::GetDigestOf(serverKey, K));
+    _clientDecrypt.Init(Trinity::Crypto::HMAC_SHA1::GetDigestOf(clientKey, K));
+
+    // Drop first 1024 bytes, as WoW uses ARC4-drop1024.
+    std::array<uint8, 1024> syncBuf;
+    _serverEncrypt.UpdateData(syncBuf);
+    _clientDecrypt.UpdateData(syncBuf);
+
     _initialized = true;
 }
 
-struct WorldPacketCryptIV
+void WorldPacketCrypt::DecryptRecv(uint8 *data, size_t len)
 {
-    WorldPacketCryptIV(uint64 counter, uint32 magic)
-    {
-        memcpy(Value.data(), &counter, sizeof(uint64));
-        memcpy(Value.data() + sizeof(uint64), &magic, sizeof(uint32));
-    }
-
-    std::array<uint8, 12> Value;
-};
-
-bool WorldPacketCrypt::PeekDecryptRecv(uint8* data, size_t length)
-{
-    if (_initialized)
-    {
-        WorldPacketCryptIV iv{ _clientCounter, 0x544E4C43 };
-        if (!_clientDecrypt.ProcessNoIntegrityCheck(iv.Value, data, length))
-            return false;
-    }
-
-    return true;
+    ASSERT(_initialized);
+    _clientDecrypt.UpdateData(data, len);
 }
 
-bool WorldPacketCrypt::DecryptRecv(uint8* data, size_t length, Trinity::Crypto::AES::Tag& tag)
+void WorldPacketCrypt::EncryptSend(uint8 *data, size_t len)
 {
-    if (_initialized)
-    {
-        WorldPacketCryptIV iv{ _clientCounter, 0x544E4C43 };
-        if (!_clientDecrypt.Process(iv.Value, data, length, tag))
-            return false;
-    }
-    else
-        memset(tag, 0, sizeof(tag));
-
-    ++_clientCounter;
-    return true;
-}
-
-bool WorldPacketCrypt::EncryptSend(uint8* data, size_t length, Trinity::Crypto::AES::Tag& tag)
-{
-    if (_initialized)
-    {
-        WorldPacketCryptIV iv{ _serverCounter, 0x52565253 };
-        if (!_serverEncrypt.Process(iv.Value, data, length, tag))
-            return false;
-    }
-    else
-        memset(tag, 0, sizeof(tag));
-
-    ++_serverCounter;
-    return true;
+    ASSERT(_initialized);
+    _serverEncrypt.UpdateData(data, len);
 }

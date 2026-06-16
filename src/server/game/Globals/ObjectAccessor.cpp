@@ -23,19 +23,21 @@
 #include "GridNotifiers.h"
 #include "Item.h"
 #include "Map.h"
+#include "ObjectDefines.h"
 #include "ObjectMgr.h"
 #include "Pet.h"
 #include "Player.h"
 #include "Transport.h"
-#include <mutex>
+#include "World.h"
 
 template<class T>
 void HashMapHolder<T>::Insert(T* o)
 {
-    static_assert(std::is_same<Player, T>::value,
-        "Only Player can be registered in global HashMapHolder");
+    static_assert(std::is_same<Player, T>::value
+        || std::is_same<Transport, T>::value,
+        "Only Player and Transport can be registered in global HashMapHolder");
 
-    std::scoped_lock lock(*GetLock());
+    std::unique_lock<std::shared_mutex> lock(*GetLock());
 
     GetContainer()[o->GetGUID()] = o;
 }
@@ -43,7 +45,7 @@ void HashMapHolder<T>::Insert(T* o)
 template<class T>
 void HashMapHolder<T>::Remove(T* o)
 {
-    std::scoped_lock lock(*GetLock());
+    std::unique_lock<std::shared_mutex> lock(*GetLock());
 
     GetContainer().erase(o->GetGUID());
 }
@@ -51,7 +53,7 @@ void HashMapHolder<T>::Remove(T* o)
 template<class T>
 T* HashMapHolder<T>::Find(ObjectGuid guid)
 {
-    std::shared_lock lock(*GetLock());
+    std::shared_lock<std::shared_mutex> lock(*GetLock());
 
     typename MapType::iterator itr = GetContainer().find(guid);
     return (itr != GetContainer().end()) ? itr->second : nullptr;
@@ -71,7 +73,13 @@ std::shared_mutex* HashMapHolder<T>::GetLock()
     return &_lock;
 }
 
+HashMapHolder<Player>::MapType const& ObjectAccessor::GetPlayers()
+{
+    return HashMapHolder<Player>::GetContainer();
+}
+
 template class TC_GAME_API HashMapHolder<Player>;
+template class TC_GAME_API HashMapHolder<Transport>;
 
 namespace PlayerNameMapHolder
 {
@@ -105,15 +113,13 @@ WorldObject* ObjectAccessor::GetWorldObject(WorldObject const& p, ObjectGuid con
     {
         case HighGuid::Player:        return GetPlayer(p, guid);
         case HighGuid::Transport:
+        case HighGuid::Mo_Transport:
         case HighGuid::GameObject:    return GetGameObject(p, guid);
         case HighGuid::Vehicle:
-        case HighGuid::Creature:      return GetCreature(p, guid);
+        case HighGuid::Unit:          return GetCreature(p, guid);
         case HighGuid::Pet:           return GetPet(p, guid);
         case HighGuid::DynamicObject: return GetDynamicObject(p, guid);
-        case HighGuid::AreaTrigger:   return GetAreaTrigger(p, guid);
         case HighGuid::Corpse:        return GetCorpse(p, guid);
-        case HighGuid::SceneObject:   return GetSceneObject(p, guid);
-        case HighGuid::Conversation:  return GetConversation(p, guid);
         default:                      return nullptr;
     }
 }
@@ -124,18 +130,19 @@ Object* ObjectAccessor::GetObjectByTypeMask(WorldObject const& p, ObjectGuid con
     {
         case HighGuid::Item:
             if (typemask & TYPEMASK_ITEM && p.GetTypeId() == TYPEID_PLAYER)
-                return static_cast<Player const&>(p).GetItemByGuid(guid);
+                return ((Player const&)p).GetItemByGuid(guid);
             break;
         case HighGuid::Player:
             if (typemask & TYPEMASK_PLAYER)
                 return GetPlayer(p, guid);
             break;
         case HighGuid::Transport:
+        case HighGuid::Mo_Transport:
         case HighGuid::GameObject:
             if (typemask & TYPEMASK_GAMEOBJECT)
                 return GetGameObject(p, guid);
             break;
-        case HighGuid::Creature:
+        case HighGuid::Unit:
         case HighGuid::Vehicle:
             if (typemask & TYPEMASK_UNIT)
                 return GetCreature(p, guid);
@@ -148,21 +155,7 @@ Object* ObjectAccessor::GetObjectByTypeMask(WorldObject const& p, ObjectGuid con
             if (typemask & TYPEMASK_DYNAMICOBJECT)
                 return GetDynamicObject(p, guid);
             break;
-        case HighGuid::AreaTrigger:
-            if (typemask & TYPEMASK_AREATRIGGER)
-                return GetAreaTrigger(p, guid);
-            break;
-        case HighGuid::SceneObject:
-            if (typemask & TYPEMASK_SCENEOBJECT)
-                return GetSceneObject(p, guid);
-            break;
-        case HighGuid::Conversation:
-            if (typemask & TYPEMASK_CONVERSATION)
-                return GetConversation(p, guid);
-            break;
         case HighGuid::Corpse:
-            if (typemask & TYPEMASK_CORPSE)
-                return GetCorpse(p, guid);
             break;
         default:
             break;
@@ -191,23 +184,11 @@ DynamicObject* ObjectAccessor::GetDynamicObject(WorldObject const& u, ObjectGuid
     return u.GetMap()->GetDynamicObject(guid);
 }
 
-AreaTrigger* ObjectAccessor::GetAreaTrigger(WorldObject const& u, ObjectGuid const& guid)
-{
-    return u.GetMap()->GetAreaTrigger(guid);
-}
-
-SceneObject* ObjectAccessor::GetSceneObject(WorldObject const& u, ObjectGuid const& guid)
-{
-    return u.GetMap()->GetSceneObject(guid);
-}
-
-Conversation* ObjectAccessor::GetConversation(WorldObject const& u, ObjectGuid const& guid)
-{
-    return u.GetMap()->GetConversation(guid);
-}
-
 Unit* ObjectAccessor::GetUnit(WorldObject const& u, ObjectGuid const& guid)
 {
+    if (guid.IsEmpty())
+        return nullptr;
+
     if (guid.IsPlayer())
         return GetPlayer(u, guid);
 
@@ -260,7 +241,7 @@ Player* ObjectAccessor::FindPlayer(ObjectGuid const& guid)
 
 Player* ObjectAccessor::FindPlayerByName(std::string_view name)
 {
-    Player* player = PlayerNameMapHolder::Find(name);
+    Player* player = FindConnectedPlayerByName(name);
     if (!player || !player->IsInWorld())
         return nullptr;
 
@@ -283,14 +264,9 @@ Player* ObjectAccessor::FindConnectedPlayerByName(std::string_view name)
     return PlayerNameMapHolder::Find(name);
 }
 
-HashMapHolder<Player>::MapType const& ObjectAccessor::GetPlayers()
-{
-    return HashMapHolder<Player>::GetContainer();
-}
-
 void ObjectAccessor::SaveAllPlayers()
 {
-    std::shared_lock lock(*HashMapHolder<Player>::GetLock());
+    std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
 
     HashMapHolder<Player>::MapType const& m = GetPlayers();
     for (HashMapHolder<Player>::MapType::const_iterator itr = m.begin(); itr != m.end(); ++itr)

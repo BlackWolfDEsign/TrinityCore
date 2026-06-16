@@ -28,27 +28,15 @@
 
 uint32 const DragonspireMobs[3] = { NPC_BLACKHAND_DREADWEAVER, NPC_BLACKHAND_SUMMONER, NPC_BLACKHAND_VETERAN };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_DOORS,                  DATA_PYROGAURD_EMBERSEER,     EncounterDoorBehavior::OpenWhenNotInProgress },
-    { GO_EMBERSEER_OUT,          DATA_PYROGAURD_EMBERSEER,     EncounterDoorBehavior::OpenWhenDone },
-    { GO_DRAKKISATH_DOOR_1,      DATA_GENERAL_DRAKKISATH,      EncounterDoorBehavior::OpenWhenDone },
-    { GO_DRAKKISATH_DOOR_2,      DATA_GENERAL_DRAKKISATH,      EncounterDoorBehavior::OpenWhenDone },
-    { GO_PORTCULLIS_ACTIVE,      DATA_WARCHIEF_REND_BLACKHAND, EncounterDoorBehavior::OpenWhenDone },
-    { GO_PORTCULLIS_TOBOSSROOMS, DATA_WARCHIEF_REND_BLACKHAND, EncounterDoorBehavior::OpenWhenDone },
-};
-
-static constexpr DungeonEncounterData Encounters[] =
-{
-    { DATA_HIGHLORD_OMOKK, { { 267 } } },
-    { DATA_SHADOW_HUNTER_VOSHGAJIN, { { 268 } } },
-    { DATA_WARMASTER_VOONE, { { 269 } } },
-    { DATA_MOTHER_SMOLDERWEB, { { 270 } } },
-    { DATA_UROK_DOOMHOWL, { { 271 } } },
-    { DATA_QUARTERMASTER_ZIGRIS, { { 272 } } },
-    { DATA_HALYCON, { { 274 } } },
-    { DATA_GIZRUL_THE_SLAVENER, { { 273 } } },
-    { DATA_OVERLORD_WYRMTHALAK, { { 275 } } },
+    { GO_DOORS,                  DATA_PYROGAURD_EMBERSEER,     DOOR_TYPE_ROOM },
+    { GO_EMBERSEER_OUT,          DATA_PYROGAURD_EMBERSEER,     DOOR_TYPE_PASSAGE },
+    { GO_DRAKKISATH_DOOR_1,      DATA_GENERAL_DRAKKISATH,      DOOR_TYPE_PASSAGE },
+    { GO_DRAKKISATH_DOOR_2,      DATA_GENERAL_DRAKKISATH,      DOOR_TYPE_PASSAGE },
+    { GO_PORTCULLIS_ACTIVE,      DATA_WARCHIEF_REND_BLACKHAND, DOOR_TYPE_PASSAGE },
+    { GO_PORTCULLIS_TOBOSSROOMS, DATA_WARCHIEF_REND_BLACKHAND, DOOR_TYPE_PASSAGE },
+    { 0,                         0,                            DOOR_TYPE_ROOM    }
 };
 
 enum EventIds
@@ -74,7 +62,6 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadDungeonEncounterData(Encounters);
             LoadDoorData(doorData);
         }
 
@@ -135,6 +122,9 @@ public:
                     break;
                 case NPC_SCARSHIELD_INFILTRATOR:
                     ScarshieldInfiltrator = creature->GetGUID();
+                    break;
+                case NPC_FINKLE_EINHORN:
+                    creature->AI()->Talk(SAY_FINKLE_GANG);
                     break;
                 case NPC_BLACKHAND_INCARCERATOR:
                     _incarceratorList.push_back(creature->GetGUID());
@@ -281,7 +271,7 @@ public:
              return true;
         }
 
-        void ProcessEvent(WorldObject* /*obj*/, uint32 eventId, WorldObject* /*invoker*/) override
+        void ProcessEvent(WorldObject* /*obj*/, uint32 eventId) override
         {
             switch (eventId)
             {
@@ -560,7 +550,7 @@ class at_dragonspire_hall : public AreaTriggerScript
 public:
     at_dragonspire_hall() : AreaTriggerScript("at_dragonspire_hall") { }
 
-    bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+    bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
     {
         if (player && player->IsAlive())
         {
@@ -584,7 +574,7 @@ class at_blackrock_stadium : public AreaTriggerScript
 public:
     at_blackrock_stadium() : AreaTriggerScript("at_blackrock_stadium") { }
 
-    bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+    bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
     {
         if (player && player->IsAlive())
         {

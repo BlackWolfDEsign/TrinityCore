@@ -18,80 +18,47 @@
 #ifndef _REALMLIST_H
 #define _REALMLIST_H
 
-#include "ClientBuildInfo.h"
 #include "Define.h"
-#include "Duration.h"
-#include "Optional.h"
 #include "Realm.h"
-#include <array>
 #include <map>
-#include <memory>
-#include <shared_mutex>
-#include <unordered_set>
-#include <vector>
 
-namespace JSON::RealmList
+namespace boost
 {
-class RealmEntry;
+    namespace system
+    {
+        class error_code;
+    }
 }
-
-struct RealmJoinResult
-{
-    uint32 Result = 0;
-    std::vector<uint8> JoinTicket;
-    std::vector<uint8> ServerAddresses;
-    std::vector<uint8> JoinSecret;
-};
 
 /// Storage object for the list of realms on the server
 class TC_SHARED_API RealmList
 {
 public:
-    typedef std::map<Battlenet::RealmHandle, std::shared_ptr<Realm>> RealmMap;
+    typedef std::map<RealmHandle, Realm> RealmMap;
 
     static RealmList* Instance();
-
-    RealmList(RealmList const&) = delete;
-    RealmList(RealmList&&) = delete;
-    RealmList& operator=(RealmList const&) = delete;
-    RealmList& operator=(RealmList&&) = delete;
 
     ~RealmList();
 
     void Initialize(Trinity::Asio::IoContext& ioContext, uint32 updateInterval);
     void Close();
 
-    std::shared_ptr<Realm const> GetRealm(Battlenet::RealmHandle const& id) const;
-    Battlenet::RealmHandle GetCurrentRealmId() const;
-    void SetCurrentRealmId(Battlenet::RealmHandle const& id);
-    std::shared_ptr<Realm const> GetCurrentRealm() const;
-
-    std::vector<std::string> GetSubRegions() const;
-    std::vector<uint8> GetRealmEntryJSON(Battlenet::RealmHandle const& id, uint32 build, AccountTypes accountSecurityLevel) const;
-    std::vector<uint8> GetRealmList(uint32 build, AccountTypes accountSecurityLevel, std::string const& subRegion) const;
-    RealmJoinResult JoinRealm(uint32 realmAddress, uint32 build, ClientBuild::VariantId const& buildVariant, boost::asio::ip::address const& clientAddress,
-        std::array<uint8, 32> const& clientSecret, LocaleConstant locale, std::string const& os, Minutes timezoneOffset, std::string const& accountName,
-        AccountTypes accountSecurityLevel) const;
+    RealmMap const& GetRealms() const { return _realms; }
+    Realm const* GetRealm(RealmHandle const& id) const;
 
 private:
     RealmList();
 
-    void UpdateRealms();
-    static void UpdateRealm(Realm& realm, Battlenet::RealmHandle const& id, uint32 build, std::string const& name,
-        std::vector<boost::asio::ip::address>&& addresses,
-        uint16 port, uint8 icon, RealmFlags flag, uint8 timezone, AccountTypes allowedSecurityLevel, RealmPopulationState population);
-    void FillRealmEntry(Realm const& realm, uint32 clientBuild, AccountTypes accountSecurityLevel, JSON::RealmList::RealmEntry* realmEntry) const;
+    void UpdateRealms(boost::system::error_code const& error);
+    void UpdateRealm(RealmHandle const& id, uint32 build, std::string const& name,
+        boost::asio::ip::address&& address, boost::asio::ip::address&& localAddr, boost::asio::ip::address&& localSubmask,
+        uint16 port, uint8 icon, RealmFlags flag, uint8 timezone, AccountTypes allowedSecurityLevel, float population);
 
-    mutable std::shared_mutex _realmsMutex;
     RealmMap _realms;
-    std::map<Battlenet::RealmHandle, std::string> _removedRealms;
-    std::unordered_set<std::string> _subRegions;
     uint32 _updateInterval;
     std::unique_ptr<Trinity::Asio::DeadlineTimer> _updateTimer;
-    std::unique_ptr<Trinity::Net::Resolver> _resolver;
-    Optional<Battlenet::RealmHandle> _currentRealmId;
+    std::unique_ptr<Trinity::Asio::Resolver> _resolver;
 };
 
 #define sRealmList RealmList::Instance()
-
 #endif

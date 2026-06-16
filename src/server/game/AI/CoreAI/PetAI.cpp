@@ -17,12 +17,10 @@
 
 #include "PetAI.h"
 #include "AIException.h"
-#include "CharmInfo.h"
 #include "Creature.h"
 #include "Errors.h"
 #include "Group.h"
 #include "Log.h"
-#include "Map.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Pet.h"
@@ -31,6 +29,7 @@
 #include "SpellHistory.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "Util.h"
 
 int32 PetAI::Permissible(Creature const* creature)
 {
@@ -44,7 +43,7 @@ int32 PetAI::Permissible(Creature const* creature)
     return PERMIT_BASE_NO;
 }
 
-PetAI::PetAI(Creature* creature, uint32 scriptId) : CreatureAI(creature, scriptId), _tracker(TIME_INTERVAL_LOOK)
+PetAI::PetAI(Creature* creature) : CreatureAI(creature), _tracker(TIME_INTERVAL_LOOK)
 {
     if (!me->GetCharmInfo())
         throw InvalidAIException("Creature doesn't have a valid charm info");
@@ -81,6 +80,15 @@ void PetAI::UpdateAI(uint32 diff)
             StopAttack();
             return;
         }
+
+        // Check before attacking to prevent pets from leaving stay position
+        if (me->GetCharmInfo()->HasCommandState(COMMAND_STAY))
+        {
+            if (me->GetCharmInfo()->IsCommandAttack() || (me->GetCharmInfo()->IsAtStay() && me->IsWithinMeleeRange(me->GetVictim())))
+                DoMeleeAttackIfReady();
+        }
+        else
+            DoMeleeAttackIfReady();
     }
     else
     {
@@ -113,7 +121,7 @@ void PetAI::UpdateAI(uint32 diff)
             if (!spellID)
                 continue;
 
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellID, me->GetMap()->GetDifficultyID());
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellID);
             if (!spellInfo)
                 continue;
 
@@ -126,7 +134,7 @@ void PetAI::UpdateAI(uint32 diff)
 
             if (spellInfo->IsPositive())
             {
-                if (spellInfo->CanBeUsedInCombat(me))
+                if (spellInfo->CanBeUsedInCombat())
                 {
                     // Check if we're in combat or commanded to attack
                     if (!me->IsInCombat() && !me->GetCharmInfo()->IsCommandAttack())
@@ -182,7 +190,7 @@ void PetAI::UpdateAI(uint32 diff)
                 if (!spellUsed)
                     delete spell;
             }
-            else if (me->GetVictim() && CanAttack(me->GetVictim()) && spellInfo->CanBeUsedInCombat(me))
+            else if (me->GetVictim() && CanAttack(me->GetVictim()) && spellInfo->CanBeUsedInCombat())
             {
                 Spell* spell = new Spell(me, spellInfo, TRIGGERED_NONE);
                 if (spell->CanAutoCast(me->GetVictim()))
@@ -355,7 +363,7 @@ void PetAI::HandleReturnMovement()
 
     // Prevent activating movement when under control of spells
     // such as "Eyes of the Beast"
-    if (me->IsCharmed())
+    if (me->isPossessed())
         return;
 
     if (!me->GetCharmInfo())
@@ -613,10 +621,10 @@ void PetAI::UpdateAllies()
     _allySet.insert(me->GetGUID());
     if (group) // add group
     {
-        for (GroupReference const& itr : group->GetMembers())
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* Target = itr.GetSource();
-            if (!Target->IsInMap(owner) || !group->SameSubGroup(owner->ToPlayer(), Target))
+            Player* Target = itr->GetSource();
+            if (!Target || !Target->IsInMap(owner) || !group->SameSubGroup(owner->ToPlayer(), Target))
                 continue;
 
             if (Target->GetGUID() == owner->GetGUID())

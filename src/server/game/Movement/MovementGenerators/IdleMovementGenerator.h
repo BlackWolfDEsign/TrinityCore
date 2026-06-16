@@ -19,7 +19,6 @@
 #define TRINITY_IDLEMOVEMENTGENERATOR_H
 
 #include "MovementGenerator.h"
-#include "Optional.h"
 #include "Timer.h"
 
 enum RotateDirection : uint8;
@@ -29,8 +28,8 @@ class IdleMovementGenerator : public MovementGenerator
     public:
         explicit IdleMovementGenerator();
 
-        void Initialize(Unit*) override;
-        void Reset(Unit*) override;
+        bool Initialize(Unit*) override;
+        bool Reset(Unit*) override;
         bool Update(Unit*, uint32) override { return true; }
         void Deactivate(Unit*) override;
         void Finalize(Unit*, bool, bool) override;
@@ -40,26 +39,18 @@ class IdleMovementGenerator : public MovementGenerator
 class RotateMovementGenerator : public MovementGenerator
 {
     public:
-        static constexpr float MIN_ANGLE_DELTA_FOR_FACING_UPDATE = 0.05f;
+        explicit RotateMovementGenerator(uint32 id, uint32 time, RotateDirection direction);
 
-        explicit RotateMovementGenerator(uint32 id, RotateDirection direction, Optional<Milliseconds> duration,
-            Optional<float> turnSpeed, Optional<float> totalTurnAngle,
-            Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult);
-
-        void Initialize(Unit*) override;
-        void Reset(Unit*) override;
+        bool Initialize(Unit*) override;
+        bool Reset(Unit*) override;
         bool Update(Unit*, uint32) override;
         void Deactivate(Unit*) override;
         void Finalize(Unit*, bool, bool) override;
         MovementGeneratorType GetMovementGeneratorType() const override;
 
     private:
-        uint32 _id;
-        Optional<TimeTracker> _duration;
-        Optional<float> _turnSpeed;         ///< radians per sec
-        Optional<float> _totalTurnAngle;
+        uint32 _id, _duration, _maxDuration;
         RotateDirection _direction;
-        uint32 _diffSinceLastUpdate;
 };
 
 class DistractMovementGenerator : public MovementGenerator
@@ -67,8 +58,8 @@ class DistractMovementGenerator : public MovementGenerator
     public:
         explicit DistractMovementGenerator(uint32 timer, float orientation);
 
-        void Initialize(Unit*) override;
-        void Reset(Unit*) override;
+        bool Initialize(Unit*) override;
+        bool Reset(Unit*) override;
         bool Update(Unit*, uint32) override;
         void Deactivate(Unit*) override;
         void Finalize(Unit*, bool, bool) override;
@@ -77,6 +68,7 @@ class DistractMovementGenerator : public MovementGenerator
     private:
         uint32 _timer;
         float _orientation;
+        float _originalOrientation;
 };
 
 class AssistanceDistractMovementGenerator : public DistractMovementGenerator

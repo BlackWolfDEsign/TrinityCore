@@ -15,9 +15,9 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "CommonHelpers.h"
 #include "icecrown_citadel.h"
 #include "Containers.h"
-#include "DB2Stores.h"
 #include "GridNotifiers.h"
 #include "InstanceScript.h"
 #include "Map.h"
@@ -30,10 +30,11 @@
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "TemporarySummon.h"
 
-enum Texts
+enum SindragosaTexts
 {
     SAY_AGGRO                           = 0, // You are fools to have come to this place! The icy winds of Northrend will consume your souls!
     SAY_UNCHAINED_MAGIC                 = 1, // Suffer, mortals, as your pathetic magic betrays you!
@@ -50,7 +51,7 @@ enum Texts
     EMOTE_BERSERK_RAID                  = 11
 };
 
-enum Spells
+enum SindragosaSpells
 {
     // Sindragosa
     SPELL_SINDRAGOSA_S_FURY     = 70608,
@@ -100,7 +101,7 @@ enum Spells
     SPELL_FROST_INFUSION        = 72292,
 };
 
-enum Events
+enum SindragosaEvents
 {
     // Sindragosa
     EVENT_BERSERK                   = 1,
@@ -138,7 +139,7 @@ enum Events
     EVENT_GROUP_LAND_PHASE          = 1,
 };
 
-enum FrostwingData
+enum SindragosaFrostwingData
 {
     DATA_MYSTIC_BUFFET_STACK    = 0,
     DATA_FROSTWYRM_OWNER        = 1,
@@ -148,7 +149,7 @@ enum FrostwingData
     DATA_IS_THIRD_PHASE         = 5
 };
 
-enum MovementPoints
+enum SindragosaPoints
 {
     POINT_FROSTWYRM_FLY_IN  = 1,
     POINT_FROSTWYRM_LAND    = 2,
@@ -159,7 +160,7 @@ enum MovementPoints
     POINT_LAND_GROUND       = 7,
 };
 
-enum Shadowmourne
+enum SindragosMisc
 {
     QUEST_FROST_INFUSION        = 24757
 };
@@ -223,6 +224,7 @@ class FrostBeaconSelector : NonTankTargetSelector
         }
 };
 
+// 36853 - Sindragosa
 struct boss_sindragosa : public BossAI
 {
     boss_sindragosa(Creature* creature) : BossAI(creature, DATA_SINDRAGOSA)
@@ -271,7 +273,7 @@ struct boss_sindragosa : public BossAI
     {
         if (!instance->CheckRequiredBosses(DATA_SINDRAGOSA, victim->ToPlayer()))
         {
-            EnterEvadeMode(EvadeReason::SequenceBreak);
+            EnterEvadeMode(EVADE_REASON_SEQUENCE_BREAK);
             instance->DoCastSpellOnPlayers(LIGHT_S_HAMMER_TELEPORT);
             return;
         }
@@ -280,6 +282,7 @@ struct boss_sindragosa : public BossAI
         DoCastSelf(SPELL_PERMAEATING_CHILL);
         Talk(SAY_AGGRO);
         instance->SetBossState(DATA_SINDRAGOSA, IN_PROGRESS);
+        me->SetCombatPulseDelay(5);
         me->setActive(true);
         me->SetFarVisible(true);
         DoZoneInCombat();
@@ -287,7 +290,7 @@ struct boss_sindragosa : public BossAI
 
     void EnterEvadeMode(EvadeReason why) override
     {
-        if (_isInAirPhase && why == EvadeReason::Boundary)
+        if (_isInAirPhase && why == EVADE_REASON_BOUNDARY)
             return;
         BossAI::EnterEvadeMode(why);
     }
@@ -435,9 +438,10 @@ struct boss_sindragosa : public BossAI
         if (!unitTarget)
             return;
 
-        if (70127 == spellInfo->Id)
-            if (Aura const* mysticBuffet = unitTarget->GetAura(spellInfo->Id))
-                _mysticBuffetStack = std::max<uint8>(_mysticBuffetStack, mysticBuffet->GetStackAmount());
+        if (uint32 spellId = sSpellMgr->GetSpellIdForDifficulty(70127, me))
+            if (spellId == spellInfo->Id)
+                if (Aura const* mysticBuffet = unitTarget->GetAura(spellId))
+                    _mysticBuffetStack = std::max<uint8>(_mysticBuffetStack, mysticBuffet->GetStackAmount());
     }
 
     void UpdateAI(uint32 diff) override
@@ -470,6 +474,8 @@ struct boss_sindragosa : public BossAI
                 case EVENT_FROST_BREATH:
                     DoCastVictim(_isThirdPhase ? SPELL_FROST_BREATH_P2 : SPELL_FROST_BREATH_P1);
                     events.ScheduleEvent(EVENT_FROST_BREATH, 20s, 25s, EVENT_GROUP_LAND_PHASE);
+                    if (events.GetTimeUntilEvent(EVENT_ICY_GRIP) < 2s)
+                        events.RescheduleEvent(EVENT_ICY_GRIP, 2s, EVENT_GROUP_LAND_PHASE);
                     break;
                 case EVENT_UNCHAINED_MAGIC:
                     Talk(SAY_UNCHAINED_MAGIC);
@@ -477,8 +483,12 @@ struct boss_sindragosa : public BossAI
                     events.ScheduleEvent(EVENT_UNCHAINED_MAGIC, 30s, 35s, EVENT_GROUP_LAND_PHASE);
                     break;
                 case EVENT_ICY_GRIP:
-                    DoCastSelf(SPELL_ICY_GRIP);
+                    DoCastAOE(SPELL_ICY_GRIP);
                     events.ScheduleEvent(EVENT_BLISTERING_COLD, 1s, EVENT_GROUP_LAND_PHASE);
+                    if (events.GetTimeUntilEvent(EVENT_FROST_BREATH) < 6s)
+                        events.RescheduleEvent(EVENT_FROST_BREATH, 6s, EVENT_GROUP_LAND_PHASE);
+                    if (_isThirdPhase)
+                        events.ScheduleEvent(EVENT_ICY_GRIP, 62s, 67s);
                     break;
                 case EVENT_BLISTERING_COLD:
                     Talk(EMOTE_WARN_BLISTERING_COLD);
@@ -521,8 +531,8 @@ struct boss_sindragosa : public BossAI
                 case EVENT_FROST_BOMB:
                 {
                     float destX, destY, destZ;
-                    destX = rand_norm() * 75.0f + 4350.0f;
-                    destY = rand_norm() * 75.0f + 2450.0f;
+                    destX = float(rand_norm()) * 75.0f + 4350.0f;
+                    destY = float(rand_norm()) * 75.0f + 2450.0f;
                     destZ = 205.0f; // random number close to ground, get exact in next call
                     me->UpdateGroundPositionZ(destX, destY, destZ);
                     me->CastSpell(Position{ destX, destY, destZ }, SPELL_FROST_BOMB_TRIGGER, false);
@@ -563,6 +573,8 @@ struct boss_sindragosa : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -571,6 +583,7 @@ private:
     bool _isThirdPhase;
 };
 
+// 36980 - Ice Tomb
 struct npc_ice_tomb : public ScriptedAI
 {
     npc_ice_tomb(Creature* creature) : ScriptedAI(creature)
@@ -639,6 +652,7 @@ private:
     uint32 _existenceCheckTimer;
 };
 
+// 37534 - Spinestalker
 struct npc_spinestalker : public ScriptedAI
 {
     npc_spinestalker(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()), _summoned(false) { }
@@ -748,6 +762,8 @@ struct npc_spinestalker : public ScriptedAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -756,6 +772,7 @@ private:
     bool _summoned;
 };
 
+// 37533 - Rimefang
 struct npc_rimefang_icc : public ScriptedAI
 {
     npc_rimefang_icc(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()), _summoned(false)
@@ -899,6 +916,8 @@ struct npc_rimefang_icc : public ScriptedAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -908,6 +927,8 @@ private:
     bool _summoned;
 };
 
+// 37531 - Frostwarden Handler
+// 37532 - Frostwing Whelp
 struct npc_sindragosa_trash : public ScriptedAI
 {
     npc_sindragosa_trash(Creature* creature) : ScriptedAI(creature)
@@ -996,6 +1017,8 @@ struct npc_sindragosa_trash : public ScriptedAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -1008,6 +1031,8 @@ private:
 // 70598 - Sindragosa's Fury
 class spell_sindragosa_s_fury : public SpellScript
 {
+    PrepareSpellScript(spell_sindragosa_s_fury);
+
     bool Load() override
     {
         // This script should execute only in Icecrown Citadel
@@ -1016,13 +1041,13 @@ class spell_sindragosa_s_fury : public SpellScript
 
     void SelectDest()
     {
-        if (WorldLocation const* dest = GetExplTargetDest())
+        if (Position* dest = const_cast<WorldLocation*>(GetExplTargetDest()))
         {
-            float destX = rand_norm() * 75.0f + 4350.0f;
-            float destY = rand_norm() * 75.0f + 2450.0f;
+            float destX = float(rand_norm()) * 75.0f + 4350.0f;
+            float destY = float(rand_norm()) * 75.0f + 2450.0f;
             float destZ = 205.0f; // random number close to ground, get exact in next call
             GetCaster()->UpdateGroundPositionZ(destX, destY, destZ);
-            SetExplTargetDest(WorldLocation(dest->GetMapId(), destX, destY, destZ));
+            dest->Relocate(destX, destY, destZ);
         }
     }
 
@@ -1048,9 +1073,9 @@ class spell_sindragosa_s_fury : public SpellScript
         if (!GetHitUnit()->IsAlive() || !_targetCount)
             return;
 
-        if (GetHitUnit()->IsImmunedToDamage(GetCaster(), GetSpellInfo(), &GetEffectInfo()))
+        if (GetHitUnit()->IsImmunedToDamage(GetSpellInfo()))
         {
-            GetCaster()->SendSpellDamageImmune(GetHitUnit(), GetSpellInfo()->Id, false);
+            GetCaster()->SendSpellDamageImmune(GetHitUnit(), GetSpellInfo()->Id);
             return;
         }
 
@@ -1058,12 +1083,12 @@ class spell_sindragosa_s_fury : public SpellScript
         uint32 minResistFactor = uint32((resistance / (resistance + 510.0f)) * 10.0f) * 2;
         uint32 randomResist = urand(0, (9 - minResistFactor) * 100) / 100 + minResistFactor;
 
-        uint32 damage = (uint32(GetEffectValueAsInt() / _targetCount) * randomResist) / 10;
+        uint32 damage = (uint32(GetEffectValue() / _targetCount) * randomResist) / 10;
 
-        SpellNonMeleeDamage damageInfo(GetCaster(), GetHitUnit(), GetSpellInfo(), GetSpell()->m_SpellVisual, GetSpellInfo()->SchoolMask);
+        SpellNonMeleeDamage damageInfo(GetCaster(), GetHitUnit(), GetSpellInfo()->Id, GetSpellInfo()->SchoolMask);
         damageInfo.damage = damage;
-        GetCaster()->DealSpellDamage(&damageInfo, false);
         GetCaster()->SendSpellNonMeleeDamageLog(&damageInfo);
+        GetCaster()->DealSpellDamage(&damageInfo, false);
     }
 
     void Register() override
@@ -1079,6 +1104,8 @@ class spell_sindragosa_s_fury : public SpellScript
 // 69762 - Unchained Magic
 class spell_sindragosa_unchained_magic : public SpellScript
 {
+    PrepareSpellScript(spell_sindragosa_unchained_magic);
+
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         std::vector<WorldObject*> healers;
@@ -1089,18 +1116,30 @@ class spell_sindragosa_unchained_magic : public SpellScript
             if (!player)
                 continue;
 
-            ChrSpecializationEntry const* specialization = player->GetPrimarySpecializationEntry();
-            if (!specialization)
-                continue;
-
-            if (specialization->GetRole() == ChrSpecializationRole::Healer)
+            if (Trinity::Helpers::Entity::IsPlayerHealer(player))
             {
                 healers.push_back(target);
                 continue;
             }
 
-            if (specialization->GetFlags().HasFlag(ChrSpecializationFlag::Caster))
-                casters.push_back(target);
+            switch (player->GetClass())
+            {
+                case CLASS_PRIEST:
+                case CLASS_MAGE:
+                case CLASS_WARLOCK:
+                    casters.push_back(target);
+                    break;
+                case CLASS_SHAMAN:
+                    if (Trinity::Helpers::Entity::GetPlayerSpecialization(player) != SPEC_SHAMAN_ENHANCEMENT)
+                        casters.push_back(target);
+                    break;
+                case CLASS_DRUID:
+                    if (Trinity::Helpers::Entity::GetPlayerSpecialization(player) != SPEC_DRUID_FERAL)
+                        casters.push_back(target);
+                    break;
+                default:
+                    break;
+            }
         }
 
         targets.clear();
@@ -1137,6 +1176,8 @@ class spell_sindragosa_unchained_magic : public SpellScript
 // 73061, 73062, 73063, 73064 - Frost Breath
 class spell_sindragosa_frost_breath : public SpellScript
 {
+    PrepareSpellScript(spell_sindragosa_frost_breath);
+
     void HandleInfusion()
     {
         Player* target = GetHitPlayer();
@@ -1144,7 +1185,7 @@ class spell_sindragosa_frost_breath : public SpellScript
             return;
 
         // Check difficulty and quest status
-        if (!target->GetMap()->Is25ManRaid() || target->GetQuestStatus(QUEST_FROST_INFUSION) != QUEST_STATUS_INCOMPLETE)
+        if (!(target->GetRaidDifficulty() & RAID_DIFFICULTY_MASK_25MAN) || target->GetQuestStatus(QUEST_FROST_INFUSION) != QUEST_STATUS_INCOMPLETE)
             return;
 
         // Check if player has Shadow's Edge equipped and not ready for infusion
@@ -1170,6 +1211,8 @@ class spell_sindragosa_frost_breath : public SpellScript
 // 69766 - Instability
 class spell_sindragosa_instability : public AuraScript
 {
+    PrepareAuraScript(spell_sindragosa_instability);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_BACKLASH });
@@ -1195,6 +1238,8 @@ class spell_sindragosa_instability : public AuraScript
 // 70126 - Frost Beacon
 class spell_sindragosa_frost_beacon : public AuraScript
 {
+    PrepareAuraScript(spell_sindragosa_frost_beacon);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_ICE_TOMB_DAMAGE });
@@ -1216,6 +1261,8 @@ class spell_sindragosa_frost_beacon : public AuraScript
 // 70157 - Ice Tomb (Trap)
 class spell_sindragosa_ice_tomb_trap : public AuraScript
 {
+    PrepareAuraScript(spell_sindragosa_ice_tomb_trap);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         if (!sObjectMgr->GetCreatureTemplate(NPC_ICE_TOMB))
@@ -1239,7 +1286,7 @@ class spell_sindragosa_ice_tomb_trap : public AuraScript
                 {
                     summon->AI()->SetGUID(GetTarget()->GetGUID(), DATA_TRAPPED_PLAYER);
                     GetTarget()->CastSpell(GetTarget(), SPELL_ICE_TOMB_UNTARGETABLE);
-                    if (GameObject* go = summon->SummonGameObject(GO_ICE_BLOCK, pos, QuaternionData::fromEulerAnglesZYX(pos.GetOrientation(), 0.0f, 0.0f), 0s))
+                    if (GameObject* go = summon->SummonGameObject(GO_ICE_BLOCK, pos, QuaternionData(), 0s))
                     {
                         go->SetSpellId(SPELL_ICE_TOMB_DAMAGE);
                         summon->AddGameObject(go);
@@ -1261,12 +1308,42 @@ class spell_sindragosa_ice_tomb_trap : public AuraScript
     }
 };
 
+class SindragosaIcyGripTargetFilter
+{
+public:
+    explicit SindragosaIcyGripTargetFilter(Unit* caster) : _caster(caster) { }
+
+    bool operator()(WorldObject* object) const
+    {
+        if (!object->ToUnit())
+            return true;
+        // No frost beaconed players
+        if (object->ToUnit()->HasAura(SPELL_FROST_BEACON))
+            return true;
+        // Not current Victim
+        if (object->ToUnit() == _caster->GetVictim())
+            return true;
+
+        return false;
+    }
+
+private:
+    Unit* _caster;
+};
+
 // 70117 - Icy Grip
 class spell_sindragosa_icy_grip : public SpellScript
 {
+    PrepareSpellScript(spell_sindragosa_icy_grip);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_ICY_GRIP_JUMP });
+    }
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if(SindragosaIcyGripTargetFilter(GetCaster()));
     }
 
     void HandleScript(SpellEffIndex effIndex)
@@ -1277,6 +1354,7 @@ class spell_sindragosa_icy_grip : public SpellScript
 
     void Register() override
     {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_sindragosa_icy_grip::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
         OnEffectHitTarget += SpellEffectFn(spell_sindragosa_icy_grip::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
@@ -1298,6 +1376,8 @@ class MysticBuffetTargetFilter
 // 70127, 72528, 72529, 72530 - Mystic Buffet
 class spell_sindragosa_mystic_buffet : public SpellScript
 {
+    PrepareSpellScript(spell_sindragosa_mystic_buffet);
+
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         targets.remove_if(MysticBuffetTargetFilter(GetCaster()));
@@ -1312,6 +1392,8 @@ class spell_sindragosa_mystic_buffet : public SpellScript
 // 71376 - Icy Blast
 class spell_rimefang_icy_blast : public SpellScript
 {
+    PrepareSpellScript(spell_rimefang_icy_blast);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_ICY_BLAST_AREA });
@@ -1350,6 +1432,8 @@ class OrderWhelpTargetSelector
 // 71357 - Order Whelp
 class spell_frostwarden_handler_order_whelp : public SpellScript
 {
+    PrepareSpellScript(spell_frostwarden_handler_order_whelp);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_FOCUS_FIRE });
@@ -1378,7 +1462,7 @@ class spell_frostwarden_handler_order_whelp : public SpellScript
         if (unitList.empty())
             return;
 
-        Trinity::Containers::SelectRandomContainerElement(unitList)->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()), true);
+        Trinity::Containers::SelectRandomContainerElement(unitList)->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true);
     }
 
     void Register() override
@@ -1391,10 +1475,12 @@ class spell_frostwarden_handler_order_whelp : public SpellScript
 // 71350 - Focus Fire
 class spell_frostwarden_handler_focus_fire : public SpellScript
 {
+    PrepareSpellScript(spell_frostwarden_handler_focus_fire);
+
     void HandleScript(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetCaster()->GetThreatManager().AddThreat(GetHitUnit(), GetEffectValue(), GetSpellInfo(), true, true);
+        GetCaster()->GetThreatManager().AddThreat(GetHitUnit(), float(GetEffectValue()), GetSpellInfo(), true, true);
         GetCaster()->GetAI()->SetData(DATA_WHELP_MARKER, 1);
     }
 
@@ -1406,10 +1492,7 @@ class spell_frostwarden_handler_focus_fire : public SpellScript
 
 class spell_frostwarden_handler_focus_fire_aura : public AuraScript
 {
-    bool Validate(SpellInfo const* spellInfo) override
-    {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_1 } });
-    }
+    PrepareAuraScript(spell_frostwarden_handler_focus_fire_aura);
 
     void PeriodicTick(AuraEffect const* /*aurEff*/)
     {
@@ -1430,6 +1513,8 @@ class spell_frostwarden_handler_focus_fire_aura : public AuraScript
 // 69712 - Ice Tomb (Target)
 class spell_sindragosa_ice_tomb_target : public SpellScript
 {
+    PrepareSpellScript(spell_sindragosa_ice_tomb_target);
+
     void FilterTargets(std::list<WorldObject*>& unitList)
     {
         Unit* caster = GetCaster();
@@ -1469,6 +1554,9 @@ class at_sindragosa_lair : public AreaTriggerScript
 
                 if (!instance->GetData(DATA_SINDRAGOSA_FROSTWYRMS) && !instance->GetGuidData(DATA_SINDRAGOSA) && instance->GetBossState(DATA_SINDRAGOSA) != DONE)
                 {
+                    if (player->GetMap()->IsHeroic() && !instance->GetData(DATA_HEROIC_ATTEMPTS))
+                        return true;
+
                     player->GetMap()->LoadGrid(SindragosaSpawnPos.GetPositionX(), SindragosaSpawnPos.GetPositionY());
                     if (Creature* sindragosa = player->GetMap()->SummonCreature(NPC_SINDRAGOSA, SindragosaSpawnPos))
                         sindragosa->AI()->DoAction(ACTION_START_FROSTWYRM);

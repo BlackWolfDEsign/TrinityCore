@@ -18,6 +18,7 @@
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
 #include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "temple_of_ahnqiraj.h"
@@ -125,7 +126,6 @@ class boss_viscidus : public CreatureScript
                     _phase = PHASE_GLOB;
                     DoCast(me, SPELL_VISCIDUS_EXPLODE);
                     me->SetVisible(false);
-                    me->SetCanMelee(false);
                     me->RemoveAura(SPELL_TOXIN);
                     me->RemoveAura(SPELL_VISCIDUS_FREEZE);
 
@@ -224,7 +224,6 @@ class boss_viscidus : public CreatureScript
                     _phase = PHASE_FROST;
                     InitSpells();
                     me->SetVisible(true);
-                    me->SetCanMelee(true);
                 }
 
                 events.Update(diff);
@@ -249,6 +248,9 @@ class boss_viscidus : public CreatureScript
                             break;
                     }
                 }
+
+                if (_phase != PHASE_GLOB)
+                    DoMeleeAttackIfReady();
             }
 
         private:
@@ -277,7 +279,8 @@ class npc_glob_of_viscidus : public CreatureScript
 
                 if (Creature* Viscidus = instance->GetCreature(DATA_VISCIDUS))
                 {
-                    Viscidus->AI()->SummonedCreatureDespawn(me);
+                    if (BossAI* ViscidusAI = dynamic_cast<BossAI*>(Viscidus->GetAI()))
+                        ViscidusAI->SummonedCreatureDespawn(me);
 
                     if (Viscidus->IsAlive() && Viscidus->GetHealthPct() < 5.0f)
                     {

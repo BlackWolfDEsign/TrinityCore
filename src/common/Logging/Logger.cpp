@@ -31,9 +31,14 @@ LogLevel Logger::getLogLevel() const
     return level;
 }
 
-void Logger::addAppender(Appender* appender)
+void Logger::addAppender(uint8 id, Appender* appender)
 {
-    appenders.push_back(appender);
+    appenders[id] = appender;
+}
+
+void Logger::delAppender(uint8 id)
+{
+    appenders.erase(id);
 }
 
 void Logger::setLogLevel(LogLevel _level)
@@ -49,6 +54,7 @@ void Logger::write(LogMessage* message) const
         return;
     }
 
-    for (Appender* appender : appenders)
-        appender->write(message);
+    for (std::pair<uint8 const, Appender*> const& appender : appenders)
+        if (appender.second)
+            appender.second->write(message);
 }

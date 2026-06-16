@@ -21,12 +21,8 @@
 #include "ZoneScript.h"
 #include "Common.h"
 #include "Duration.h"
-#include "Optional.h"
-#include <array>
 #include <map>
 #include <set>
-#include <span>
-#include <variant>
 
 #ifdef TRINITY_API_USE_DYNAMIC_LINKING
 #include <memory>
@@ -38,30 +34,37 @@
 #define OUT_LOAD_INST_DATA_COMPLETE    TC_LOG_DEBUG("scripts", "Instance Data Load for Instance {} (Map {}, Instance Id: {}) is complete.", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
 #define OUT_LOAD_INST_DATA_FAIL        TC_LOG_ERROR("scripts", "Unable to load Instance Data for Instance {} (Map {}, Instance Id: {}).", instance->GetMapName(), instance->GetId(), instance->GetInstanceId())
 
+namespace WorldPackets
+{
+    namespace WorldState
+    {
+        class InitWorldStates;
+    }
+}
+
 class AreaBoundary;
 class Creature;
 class GameObject;
 class InstanceMap;
+struct InstanceSpawnGroupInfo;
 class ModuleReference;
-class PersistentInstanceScriptValueBase;
 class Player;
 class Unit;
-struct DungeonEncounterEntry;
-struct InstanceSpawnGroupInfo;
-enum class CriteriaType : int16;
-enum class CriteriaStartEvent : uint8;
-enum Difficulty : int16;
+class WorldPacket;
+enum AchievementCriteriaTypes : uint8;
+enum AchievementCriteriaTimedTypes : uint8;
+enum EncounterCreditType : uint8;
 
 enum EncounterFrameType
 {
-    ENCOUNTER_FRAME_ENGAGE              = 0,
-    ENCOUNTER_FRAME_DISENGAGE           = 1,
-    ENCOUNTER_FRAME_UPDATE_PRIORITY     = 2,
-    ENCOUNTER_FRAME_ADD_TIMER           = 3,
-    ENCOUNTER_FRAME_ENABLE_OBJECTIVE    = 4,
-    ENCOUNTER_FRAME_UPDATE_OBJECTIVE    = 5,
-    ENCOUNTER_FRAME_DISABLE_OBJECTIVE   = 6,
-    ENCOUNTER_FRAME_PHASE_SHIFT_CHANGED = 7
+    ENCOUNTER_FRAME_ENGAGE                  = 0,
+    ENCOUNTER_FRAME_DISENGAGE               = 1,
+    ENCOUNTER_FRAME_UPDATE_PRIORITY         = 2,
+    ENCOUNTER_FRAME_ADD_TIMER               = 3,
+    ENCOUNTER_FRAME_ENABLE_OBJECTIVE        = 4,
+    ENCOUNTER_FRAME_UPDATE_OBJECTIVE        = 5,
+    ENCOUNTER_FRAME_DISABLE_OBJECTIVE       = 6,
+    ENCOUNTER_FRAME_PHASE_SHIFT_CHANGED     = 7
 };
 
 // EnumUtils: DESCRIBE THIS
@@ -75,27 +78,18 @@ enum EncounterState
     TO_BE_DECIDED = 5
 };
 
-enum class EncounterDoorBehavior : uint8
+enum DoorType
 {
-    OpenWhenNotInProgress   = 0, // open if encounter is not in progress
-    OpenWhenDone            = 1, // open if encounter is done
-    OpenWhenInProgress      = 2, // open if encounter is in progress, typically used for spawning places
-    OpenWhenNotDone         = 3, // open if encounter is not done
-    Max
-};
-
-static constexpr uint32 MAX_DUNGEON_ENCOUNTERS_PER_BOSS = 4;
-
-struct DungeonEncounterData
-{
-    uint32 BossId;
-    std::array<uint32, MAX_DUNGEON_ENCOUNTERS_PER_BOSS> DungeonEncounterId;
+    DOOR_TYPE_ROOM          = 0,    // Door can open if encounter is not in progress
+    DOOR_TYPE_PASSAGE       = 1,    // Door can open if encounter is done
+    DOOR_TYPE_SPAWN_HOLE    = 2,    // Door can open if encounter is in progress, typically used for spawning places
+    MAX_DOOR_TYPES
 };
 
 struct DoorData
 {
     uint32 entry, bossId;
-    EncounterDoorBehavior Behavior;
+    DoorType type;
 };
 
 struct BossBoundaryEntry
@@ -133,42 +127,25 @@ typedef std::vector<AreaBoundary const*> CreatureBoundary;
 
 struct BossInfo
 {
-    DungeonEncounterEntry const* GetDungeonEncounterForDifficulty(Difficulty difficulty) const;
-
-    EncounterState state = TO_BE_DECIDED;
-    std::array<GuidSet, static_cast<uint8>(EncounterDoorBehavior::Max)> door;
+    BossInfo() : state(TO_BE_DECIDED) { }
+    EncounterState state;
+    GuidSet door[MAX_DOOR_TYPES];
     GuidSet minion;
     CreatureBoundary boundary;
-    std::array<DungeonEncounterEntry const*, MAX_DUNGEON_ENCOUNTERS_PER_BOSS> DungeonEncounters = { };
 };
 
 struct DoorInfo
 {
-    explicit DoorInfo(BossInfo* _bossInfo, EncounterDoorBehavior _behavior)
-        : bossInfo(_bossInfo), Behavior(_behavior) { }
+    explicit DoorInfo(BossInfo* _bossInfo, DoorType _type)
+        : bossInfo(_bossInfo), type(_type) { }
     BossInfo* bossInfo;
-    EncounterDoorBehavior Behavior;
+    DoorType type;
 };
 
 struct MinionInfo
 {
     explicit MinionInfo(BossInfo* _bossInfo) : bossInfo(_bossInfo) { }
     BossInfo* bossInfo;
-};
-
-struct UpdateBossStateSaveDataEvent
-{
-    DungeonEncounterEntry const* DungeonEncounter;
-    uint32 BossId;
-    EncounterState NewState;
-};
-
-struct UpdateAdditionalSaveDataEvent
-{
-    explicit UpdateAdditionalSaveDataEvent(char const* key, std::variant<int64, double> value) : Key(key), Value(value) { }
-
-    char const* Key;
-    std::variant<int64, double> Value;
 };
 
 typedef std::multimap<uint32 /*entry*/, DoorInfo> DoorInfoMap;
@@ -181,12 +158,9 @@ typedef std::map<uint32 /*entry*/, uint32 /*type*/> ObjectInfoMap;
 class TC_GAME_API InstanceScript : public ZoneScript
 {
     public:
-        explicit InstanceScript(InstanceMap* map) noexcept;
-        InstanceScript(InstanceScript const& right) = delete;
-        InstanceScript(InstanceScript&& right) = delete;
-        InstanceScript& operator=(InstanceScript const& right) = delete;
-        InstanceScript& operator=(InstanceScript&& right) = delete;
-        virtual ~InstanceScript();
+        explicit InstanceScript(InstanceMap* map);
+
+        virtual ~InstanceScript() { }
 
         InstanceMap* instance;
 
@@ -194,18 +168,14 @@ class TC_GAME_API InstanceScript : public ZoneScript
         // if we're starting without any saved instance data
         virtual void Create();
         // if we're loading existing instance save data
-        void Load(char const* data);
+        virtual void Load(char const* data);
 
         // When save is needed, this function generates the data
-        std::string GetSaveData();
+        virtual std::string GetSaveData();
 
-        std::string UpdateBossStateSaveData(std::string const& oldData, UpdateBossStateSaveDataEvent const& event);
-        std::string UpdateAdditionalSaveData(std::string const& oldData, UpdateAdditionalSaveDataEvent const& event);
-        Optional<uint32> GetEntranceLocationForCompletedEncounters(uint32 completedEncountersMask) const;
-        virtual Optional<uint32> ComputeEntranceLocationForCompletedEncounters(uint32 completedEncountersMask) const;
+        void SaveToDB();
 
         virtual void Update(uint32 /*diff*/) { }
-        void UpdateCombatResurrection(uint32 diff);
 
         // Used by the map's CannotEnter function.
         // This is to prevent players from entering during boss encounters.
@@ -221,10 +191,6 @@ class TC_GAME_API InstanceScript : public ZoneScript
 
         ObjectGuid GetObjectGuid(uint32 type) const;
         virtual ObjectGuid GetGuidData(uint32 type) const override;
-
-        // Triggers a GameEvent
-        // * If source is nullptr then event is triggered for each player in the instance as "source"
-        void TriggerGameEvent(uint32 gameEventId, WorldObject* source = nullptr, WorldObject* target = nullptr) override;
 
         Creature* GetCreature(uint32 type);
         GameObject* GetGameObject(uint32 type);
@@ -247,13 +213,17 @@ class TC_GAME_API InstanceScript : public ZoneScript
         void DoRespawnGameObject(ObjectGuid guid, Seconds timeToDespawn = 1min);
 
         // Sends world state update to all players in instance
-        void DoUpdateWorldState(int32 worldStateId, int32 value);
+        void DoUpdateWorldState(uint32 worldstateId, uint32 worldstateValue);
 
         // Send Notify to all players in instance
         void DoSendNotifyToInstance(char const* format, ...);
 
         // Update Achievement Criteria for all players in instance
-        void DoUpdateCriteria(CriteriaType type, uint32 miscValue1 = 0, uint32 miscValue2 = 0, Unit* unit = nullptr);
+        void DoUpdateAchievementCriteria(AchievementCriteriaTypes type, uint32 miscValue1 = 0, uint32 miscValue2 = 0, Unit* unit = nullptr);
+
+        // Start/Stop Timed Achievement Criteria for all players in instance
+        void DoStartTimedAchievement(AchievementCriteriaTimedTypes type, uint32 entry);
+        void DoStopTimedAchievement(AchievementCriteriaTimedTypes type, uint32 entry);
 
         // Remove Auras due to Spell on all players in instance
         void DoRemoveAurasDueToSpellOnPlayers(uint32 spell, bool includePets = false, bool includeControlled = false);
@@ -270,8 +240,6 @@ class TC_GAME_API InstanceScript : public ZoneScript
         EncounterState GetBossState(uint32 id) const { return id < bosses.size() ? bosses[id].state : TO_BE_DECIDED; }
         static char const* GetBossStateName(uint8 state);
         CreatureBoundary const* GetBossBoundary(uint32 id) const { return id < bosses.size() ? &bosses[id].boundary : nullptr; }
-        DungeonEncounterEntry const* GetBossDungeonEncounter(uint32 id) const;
-        DungeonEncounterEntry const* GetBossDungeonEncounter(Creature const* creature) const;
 
         // Achievement criteria additional requirements check
         // NOTE: not use this if same can be checked existed requirement types from AchievementCriteriaRequirementType
@@ -280,53 +248,34 @@ class TC_GAME_API InstanceScript : public ZoneScript
         // Checks boss requirements (one boss required to kill other)
         virtual bool CheckRequiredBosses(uint32 /*bossId*/, Player const* /*player*/ = nullptr) const { return true; }
 
-        bool IsEncounterCompleted(uint32 dungeonEncounterId) const;
-        bool IsEncounterCompletedInMaskByBossId(uint32 completedEncountersMask, uint32 bossId) const;
+        // Checks encounter state at kill/spellcast
+        void UpdateEncounterStateForKilledCreature(uint32 creatureId, Unit* source);
+        void UpdateEncounterStateForSpellCast(uint32 spellId, Unit* source);
 
-        uint32 GetEncounterCount() const { return uint32(bosses.size()); }
+        // Used only during loading
+        void SetCompletedEncountersMask(uint32 newMask) { completedEncounters = newMask; }
 
-        // Sets the entrance location (WorldSafeLoc) id
-        void SetEntranceLocation(uint32 worldSafeLocationId);
+        // Returns completed encounters mask for packets
+        uint32 GetCompletedEncounterMask() const { return completedEncounters; }
 
-        // Sets a temporary entrance that does not get saved to db
-        void SetTemporaryEntranceLocation(uint32 worldSafeLocationId) { _temporaryEntranceId = worldSafeLocationId; }
+        void SendEncounterUnit(EncounterFrameType type, Unit const* unit = nullptr, uint8 param1 = 0, uint8 param2 = 0);
 
-        // Get's the current entrance id
-        uint32 GetEntranceLocation() const { return _temporaryEntranceId ? _temporaryEntranceId : _entranceId; }
+        virtual void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& /*packet*/) { }
+
+        uint32 GetEncounterCount() const { return bosses.size(); }
 
         // Only used by areatriggers that inherit from OnlyOnceAreaTriggerScript
         void MarkAreaTriggerDone(uint32 id) { _activatedAreaTriggers.insert(id); }
         void ResetAreaTriggerDone(uint32 id) { _activatedAreaTriggers.erase(id); }
         bool IsAreaTriggerDone(uint32 id) const { return _activatedAreaTriggers.find(id) != _activatedAreaTriggers.end(); }
 
-        void SendEncounterUnit(EncounterFrameType type, Unit const* unit, Optional<int32> param1 = {}, Optional<int32> param2 = {});
-        void SendEncounterStart(uint32 inCombatResCount = 0, uint32 maxInCombatResCount = 0, uint32 inCombatResChargeRecovery = 0, uint32 nextCombatResChargeTime = 0);
-        void SendEncounterEnd();
-
-        void SendBossKillCredit(uint32 encounterId);
-
-        // ReCheck PhaseTemplate related conditions
-        void UpdatePhasing();
-
-        void InitializeCombatResurrections(uint8 charges = 1, uint32 interval = 0);
-        void AddCombatResurrectionCharge();
-        void UseCombatResurrection();
-        void ResetCombatResurrections();
-        uint8 GetCombatResurrectionCharges() const { return _combatResurrectionCharges; }
-        uint32 GetCombatResurrectionChargeInterval() const;
-
-        void RegisterPersistentScriptValue(PersistentInstanceScriptValueBase* value) { _persistentScriptValues.push_back(value); }
-        std::string const& GetHeader() const { return headers; }
-        std::vector<PersistentInstanceScriptValueBase*>& GetPersistentScriptValues() { return _persistentScriptValues; }
-
     protected:
-        void SetHeaders(std::string_view dataHeaders);
-        void SetBossNumber(uint32 number);
+        void SetHeaders(std::string const& dataHeaders);
+        void SetBossNumber(uint32 number) { bosses.resize(number); }
         void LoadBossBoundaries(BossBoundaryData const& data);
-        void LoadDoorData(std::span<DoorData const> data);
-        void LoadObjectData(std::span<ObjectData const> creatureData, std::span<ObjectData const> gameObjectData);
-        void LoadDungeonEncounterData(std::span<DungeonEncounterData const> encounters);
-        void LoadMinionData(std::span<MinionData const> data);
+        void LoadDoorData(DoorData const* data);
+        void LoadMinionData(MinionData const* data);
+        void LoadObjectData(ObjectData const* creatureData, ObjectData const* gameObjectData);
 
         void AddObject(Creature* obj, bool add);
         void AddObject(GameObject* obj, bool add);
@@ -344,31 +293,30 @@ class TC_GAME_API InstanceScript : public ZoneScript
         // Pay very much attention at how the returned BossInfo data is modified to avoid issues.
         BossInfo* GetBossInfo(uint32 id);
 
-        // Override this function to validate all additional data loads
-        virtual void AfterDataLoad() { }
+        // Instance Load and Save
+        bool ReadSaveDataHeaders(std::istringstream& data);
+        void ReadSaveDataBossStates(std::istringstream& data);
+        virtual void ReadSaveDataMore(std::istringstream& /*data*/) { }
+        void WriteSaveDataHeaders(std::ostringstream& data);
+        void WriteSaveDataBossStates(std::ostringstream& data);
+        virtual void WriteSaveDataMore(std::ostringstream& /*data*/) { }
 
         bool _SkipCheckRequiredBosses(Player const* player = nullptr) const;
 
     private:
-        static void LoadObjectData(std::span<ObjectData const> creatureData, ObjectInfoMap& objectInfo);
-        void LoadDungeonEncounterData(uint32 bossId, std::array<uint32, MAX_DUNGEON_ENCOUNTERS_PER_BOSS> const& dungeonEncounterIds);
-        void UpdateLfgEncounterState(BossInfo const* bossInfo);
+        static void LoadObjectData(ObjectData const* creatureData, ObjectInfoMap& objectInfo);
+        void UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Unit* source);
 
-        std::string headers;
+        std::vector<char> headers;
         std::vector<BossInfo> bosses;
-        std::vector<PersistentInstanceScriptValueBase*> _persistentScriptValues;
         DoorInfoMap doors;
         MinionInfoMap minions;
         ObjectInfoMap _creatureInfo;
         ObjectInfoMap _gameObjectInfo;
         ObjectGuidMap _objectGuids;
+        uint32 completedEncounters; // completed encounter mask, bit indexes are DungeonEncounter.dbc boss numbers, used for packets
         std::vector<InstanceSpawnGroupInfo> const* const _instanceSpawnGroups;
         std::unordered_set<uint32> _activatedAreaTriggers;
-        uint32 _entranceId;
-        uint32 _temporaryEntranceId;
-        uint32 _combatResurrectionTimer;
-        uint8 _combatResurrectionCharges; // the counter for available battle resurrections
-        bool _combatResurrectionTimerStarted;
 
     #ifdef TRINITY_API_USE_DYNAMIC_LINKING
         // Strong reference to the associated script module
@@ -376,77 +324,6 @@ class TC_GAME_API InstanceScript : public ZoneScript
     #endif // #ifndef TRINITY_API_USE_DYNAMIC_LINKING
 
         friend class debug_commandscript;
-};
-
-class TC_GAME_API PersistentInstanceScriptValueBase
-{
-protected:
-    PersistentInstanceScriptValueBase(InstanceScript& instance, char const* name, std::variant<int64, double> value);
-
-public:
-    virtual ~PersistentInstanceScriptValueBase();
-
-    char const* GetName() const { return _name; }
-
-    UpdateAdditionalSaveDataEvent CreateEvent() const
-    {
-        return UpdateAdditionalSaveDataEvent(_name, _value);
-    }
-
-    void LoadValue(int64 value)
-    {
-        _value.emplace<int64>(value);
-    }
-
-    void LoadValue(double value)
-    {
-        _value.emplace<double>(value);
-    }
-
-protected:
-    void NotifyValueChanged();
-
-    InstanceScript& _instance;
-    char const* _name;
-    std::variant<int64, double> _value;
-};
-
-template<typename T>
-class PersistentInstanceScriptValue : public PersistentInstanceScriptValueBase
-{
-public:
-    PersistentInstanceScriptValue(InstanceScript& instance, char const* name, T value = {})
-        : PersistentInstanceScriptValueBase(instance, name, WrapValue(value))
-    {
-    }
-
-    operator T() const
-    {
-        return std::visit([](auto v) { return static_cast<T>(v); }, _value);
-    }
-
-    PersistentInstanceScriptValue& operator=(T value)
-    {
-        _value = WrapValue(value);
-        NotifyValueChanged();
-        return *this;
-    }
-
-    void LoadValue(T value)
-    {
-        _value = WrapValue(value);
-    }
-
-private:
-    static std::variant<int64, double> WrapValue(T value)
-    {
-        if constexpr (std::is_integral_v<T> || std::is_enum_v<T>)
-            return int64(value);
-        else if constexpr (std::is_floating_point_v<T>)
-            return double(value);
-        else
-            return {};
-    }
 };
 
 #endif // TRINITY_INSTANCE_DATA_H

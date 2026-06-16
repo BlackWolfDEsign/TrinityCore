@@ -146,12 +146,13 @@ struct boss_onyxia : public BossAI
     {
         Initialize();
 
-        SetCombatMovement(true);
-        me->SetCanMelee(true);
+        if (!IsCombatMovementAllowed())
+            SetCombatMovement(true);
 
         _Reset();
         me->SetReactState(REACT_AGGRESSIVE);
         instance->SetData(DATA_ONYXIA_PHASE, Phase);
+        instance->DoStopTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
     }
 
     void JustEngagedWith(Unit* who) override
@@ -162,7 +163,7 @@ struct boss_onyxia : public BossAI
         events.ScheduleEvent(EVENT_TAIL_SWEEP, 15s, 20s);
         events.ScheduleEvent(EVENT_CLEAVE, 2s, 5s);
         events.ScheduleEvent(EVENT_WING_BUFFET, 10s, 20s);
-        instance->TriggerGameEvent(ACHIEV_TIMED_START_EVENT);
+        instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
     }
 
     void JustSummoned(Creature* summoned) override
@@ -329,7 +330,6 @@ struct boss_onyxia : public BossAI
                     Phase = PHASE_BREATH;
                     me->SetReactState(REACT_PASSIVE);
                     me->AttackStop();
-                    me->SetCanMelee(false);
                     me->GetMotionMaster()->MovePoint(10, Phase2Location);
                     return;
                 }
@@ -380,6 +380,7 @@ struct boss_onyxia : public BossAI
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                     return;
             }
+            DoMeleeAttackIfReady();
         }
         else
         {
@@ -390,7 +391,6 @@ struct boss_onyxia : public BossAI
                 Talk(SAY_PHASE_3_TRANS);
                 SetCombatMovement(true);
                 IsMoving = false;
-                me->SetCanMelee(true);
                 Position const pos = me->GetHomePosition();
                 me->GetMotionMaster()->MovePoint(9, pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ() + 12.0f);
                 events.ScheduleEvent(EVENT_BELLOWING_ROAR, 30s);

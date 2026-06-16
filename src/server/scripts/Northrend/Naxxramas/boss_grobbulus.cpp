@@ -20,14 +20,12 @@
  */
 
 #include "naxxramas.h"
-#include "Map.h"
 #include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "ScriptedCreature.h"
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
-#include "SpellAuras.h"
-#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 
 enum GrobbulusTexts
@@ -40,6 +38,7 @@ enum GrobbulusSpells
 {
     // Grobbulus
     SPELL_BOMBARD_SLIME         = 28280,   // should be used out of combat (waypoint script?)
+    SPELL_SLIME_SPRAY           = 28157,
     SPELL_SUMMON_FALLOUT_SLIME  = 28218,
     SPELL_MUTATING_INJECTION    = 28169,
     SPELL_MUTATING_EXPLOSION    = 28206,
@@ -47,13 +46,10 @@ enum GrobbulusSpells
     SPELL_BERSERK               = 26662,
     // Grobbulus Cloud
     SPELL_POISON_CLOUD_PASSIVE  = 28158,
-    SPELL_POISON_CLOUD_PASSIVE_25 = 54362,
     SPELL_PACIFY_SELF           = 19951,
     // Fallout Slime
     SPELL_DISEASE_CLOUD         = 54367
 };
-
-#define SPELL_SLIME_SPRAY RAID_MODE<uint32>(28157,54364)
 
 enum GrobbulusEvents
 {
@@ -78,7 +74,7 @@ struct boss_grobbulus : public BossAI
 
     void SpellHitTarget(WorldObject* target, SpellInfo const* spellInfo) override
     {
-        if (spellInfo->Id == SPELL_SLIME_SPRAY)
+        if (spellInfo->Id == sSpellMgr->GetSpellIdForDifficulty(SPELL_SLIME_SPRAY, me))
             target->CastSpell(target, SPELL_SUMMON_FALLOUT_SLIME, true);
     }
 
@@ -121,6 +117,8 @@ struct boss_grobbulus : public BossAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 
@@ -130,7 +128,7 @@ struct npc_grobbulus_poison_cloud : public NullCreatureAI
 
     void JustAppeared() override
     {
-        DoCastSelf(me->GetMap()->Is25ManRaid() ? SPELL_POISON_CLOUD_PASSIVE_25 : SPELL_POISON_CLOUD_PASSIVE);
+        DoCastSelf(SPELL_POISON_CLOUD_PASSIVE);
         DoCastSelf(SPELL_PACIFY_SELF);
         me->DespawnOrUnsummon(61s);
     }
@@ -146,7 +144,7 @@ struct npc_fallout_slime : public ScriptedAI
         me->SetReactState(REACT_PASSIVE);
         DoCastSelf(SPELL_DISEASE_CLOUD);
 
-        _scheduler.Schedule(2s, [this](TaskContext const& /*task*/)
+        _scheduler.Schedule(2s, [this](TaskContext /*task*/)
         {
             me->SetReactState(REACT_AGGRESSIVE);
 
@@ -174,6 +172,8 @@ struct npc_fallout_slime : public ScriptedAI
 
         if (!UpdateVictim())
             return;
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -184,6 +184,8 @@ private:
 // 28169 - Mutating Injection
 class spell_grobbulus_mutating_injection : public AuraScript
 {
+    PrepareAuraScript(spell_grobbulus_mutating_injection);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_MUTATING_EXPLOSION, SPELL_POISON_CLOUD });
@@ -198,9 +200,7 @@ class spell_grobbulus_mutating_injection : public AuraScript
         if (Unit* caster = GetCaster())
         {
             caster->CastSpell(GetTarget(), SPELL_MUTATING_EXPLOSION, true);
-            GetTarget()->CastSpell(GetTarget(), SPELL_POISON_CLOUD, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                .SetTriggeringAura(aurEff)
-                .SetOriginalCaster(GetCasterGUID()));
+            GetTarget()->CastSpell(GetTarget(), SPELL_POISON_CLOUD, { aurEff, GetCasterGUID() });
         }
     }
 
@@ -213,10 +213,11 @@ class spell_grobbulus_mutating_injection : public AuraScript
 // 28158, 54362 - Poison
 class spell_grobbulus_poison_cloud : public AuraScript
 {
+    PrepareAuraScript(spell_grobbulus_poison_cloud);
+
     bool Validate(SpellInfo const* spellInfo) override
     {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } })
-            && ValidateSpellInfo({ spellInfo->GetEffect(EFFECT_0).TriggerSpell });
+        return ValidateSpellInfo({ spellInfo->GetEffect(EFFECT_0).TriggerSpell });
     }
 
     void PeriodicTick(AuraEffect const* aurEff)
@@ -226,7 +227,7 @@ class spell_grobbulus_poison_cloud : public AuraScript
             return;
 
         uint32 triggerSpell = aurEff->GetSpellEffectInfo().TriggerSpell;
-        float mod = ((float(aurEff->GetTickNumber()) / aurEff->GetTotalTicks()) * 0.9f + 0.1f) * 2 / 3;
+        int32 mod = int32(((float(aurEff->GetTickNumber()) / aurEff->GetTotalTicks()) * 0.9f + 0.1f) * 10000 * 2 / 3);
 
         CastSpellExtraArgs args(aurEff);
         args.AddSpellMod(SPELLVALUE_RADIUS_MOD, mod);

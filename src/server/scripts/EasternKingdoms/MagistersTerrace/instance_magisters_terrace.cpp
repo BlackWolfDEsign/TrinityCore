@@ -23,6 +23,7 @@
 #include "magisters_terrace.h"
 #include "Map.h"
 #include "MotionMaster.h"
+#include "ObjectAccessor.h"
 #include "TemporarySummon.h"
 
 /*
@@ -32,7 +33,7 @@
 3  - Kael'thas Sunstrider
 */
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { BOSS_SELIN_FIREHEART,         DATA_SELIN_FIREHEART        },
     { BOSS_VEXALLUS,                DATA_VEXALLUS               },
@@ -40,32 +41,27 @@ static constexpr ObjectData creatureData[] =
     { BOSS_KAELTHAS_SUNSTRIDER,     DATA_KAELTHAS_SUNSTRIDER    },
     { NPC_KALECGOS,                 DATA_KALECGOS               },
     { NPC_HUMAN_KALECGOS,           DATA_KALECGOS               },
+    { 0,                            0                           } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_ESCAPE_ORB,                DATA_ESCAPE_ORB             },
+    { 0,                            0                           } // END
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_SUNWELL_RAID_GATE_2  , DATA_SELIN_FIREHEART,       EncounterDoorBehavior::OpenWhenDone },
-    { GO_ASSEMBLY_CHAMBER_DOOR, DATA_SELIN_FIREHEART,       EncounterDoorBehavior::OpenWhenNotInProgress },
-    { GO_SUNWELL_RAID_GATE_5,   DATA_VEXALLUS,              EncounterDoorBehavior::OpenWhenDone },
-    { GO_SUNWELL_RAID_GATE_4,   DATA_PRIESTESS_DELRISSA,    EncounterDoorBehavior::OpenWhenDone },
-    { GO_ASYLUM_DOOR,           DATA_KAELTHAS_SUNSTRIDER,   EncounterDoorBehavior::OpenWhenNotInProgress },
+    { GO_SUNWELL_RAID_GATE_2  , DATA_SELIN_FIREHEART,       DOOR_TYPE_PASSAGE   },
+    { GO_ASSEMBLY_CHAMBER_DOOR, DATA_SELIN_FIREHEART,       DOOR_TYPE_ROOM      },
+    { GO_SUNWELL_RAID_GATE_5,   DATA_VEXALLUS,              DOOR_TYPE_PASSAGE   },
+    { GO_SUNWELL_RAID_GATE_4,   DATA_PRIESTESS_DELRISSA,    DOOR_TYPE_PASSAGE   },
+    { GO_ASYLUM_DOOR,           DATA_KAELTHAS_SUNSTRIDER,   DOOR_TYPE_ROOM      },
+    { 0,                        0,                          DOOR_TYPE_ROOM      } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_SELIN_FIREHEART, {{ 1897 }} },
-    { DATA_VEXALLUS, {{ 1898 }} },
-    { DATA_PRIESTESS_DELRISSA, {{ 1895 }} },
-    { DATA_KAELTHAS_SUNSTRIDER, {{ 1894 }} }
-};
-
-static constexpr Position KalecgosSpawnPos = { 164.3747f, -397.1197f, 2.151798f, 1.66219f };
-static constexpr Position KaelthasTrashGroupDistanceComparisonPos = { 150.0f, 141.0f, -14.4f };
+Position const KalecgosSpawnPos = { 164.3747f, -397.1197f, 2.151798f, 1.66219f };
+Position const KaelthasTrashGroupDistanceComparisonPos = { 150.0f, 141.0f, -14.4f };
 
 class instance_magisters_terrace : public InstanceMapScript
 {
@@ -80,7 +76,6 @@ class instance_magisters_terrace : public InstanceMapScript
                 SetBossNumber(EncounterCount);
                 LoadObjectData(creatureData, gameObjectData);
                 LoadDoorData(doorData);
-                LoadDungeonEncounterData(encounters);
             }
 
             uint32 GetData(uint32 type) const override
@@ -171,7 +166,7 @@ class instance_magisters_terrace : public InstanceMapScript
                 }
             }
 
-            void ProcessEvent(WorldObject* /*obj*/, uint32 eventId, WorldObject* /*invoker*/) override
+            void ProcessEvent(WorldObject* /*obj*/, uint32 eventId) override
             {
                 if (eventId == EVENT_SPAWN_KALECGOS)
                     if (!GetCreature(DATA_KALECGOS) && _events.Empty())
@@ -183,13 +178,7 @@ class instance_magisters_terrace : public InstanceMapScript
                 _events.Update(diff);
 
                 if (_events.ExecuteEvent() == EVENT_SPAWN_KALECGOS)
-                {
-                    if (Creature* kalecgos = instance->SummonCreature(NPC_KALECGOS, KalecgosSpawnPos))
-                    {
-                        kalecgos->GetMotionMaster()->MovePath(PATH_KALECGOS_FLIGHT, false);
-                        kalecgos->AI()->Talk(SAY_KALECGOS_SPAWN);
-                    }
-                }
+                    instance->SummonCreature(NPC_KALECGOS, KalecgosSpawnPos);
             }
 
             bool SetBossState(uint32 type, EncounterState state) override

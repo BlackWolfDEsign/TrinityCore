@@ -147,6 +147,8 @@ public:
             }
             else
                 Revenge_Timer -= diff;
+
+            DoMeleeAttackIfReady();
         }
 
         void DoAction(int32 /*param*/) override
@@ -325,6 +327,7 @@ public:
             else
             {
                 me->SetSheath(SHEATH_STATE_MELEE);
+                DoMeleeAttackIfReady();
             }
         }
 
@@ -453,7 +456,7 @@ class at_zumrah : public AreaTriggerScript
 public:
     at_zumrah() : AreaTriggerScript("at_zumrah") { }
 
-    bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+    bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
     {
         Creature* pZumrah = player->FindNearestCreature(ZUMRAH_ID, 30.0f);
 

@@ -26,6 +26,7 @@
 #include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "TemporarySummon.h"
 #include "trial_of_the_crusader.h"
@@ -188,9 +189,7 @@ struct boss_anubarak_trial : public BossAI
             events.ScheduleEvent(EVENT_SUMMON_FROST_SPHERE, 20s);
 
         Initialize();
-        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-        me->SetUninteractible(false);
-        me->SetCanMelee(true);
+        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
         // clean up spawned Frost Spheres
         std::list<Creature*> FrostSphereList;
         me->GetCreatureListWithEntryInGrid(FrostSphereList, NPC_FROST_SPHERE, 150.0f);
@@ -250,10 +249,10 @@ struct boss_anubarak_trial : public BossAI
                 _burrowGUID.push_back(summoned->GetGUID());
                 summoned->SetReactState(REACT_PASSIVE);
                 summoned->CastSpell(summoned, SPELL_CHURNING_GROUND, false);
-                summoned->SetDisplayFromModel(1);
+                summoned->SetDisplayId(summoned->GetCreatureTemplate()->Modelid2);
                 break;
             case NPC_SPIKE:
-                summoned->SetDisplayFromModel(0);
+                summoned->SetDisplayId(summoned->GetCreatureTemplate()->Modelid1);
                 if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
                 {
                     summoned->EngageWithTarget(target);
@@ -270,8 +269,7 @@ struct boss_anubarak_trial : public BossAI
     {
         BossAI::JustEngagedWith(who);
         Talk(SAY_AGGRO);
-        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-        me->SetUninteractible(false);
+        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
 
         // Despawn Scarab Swarms neutral
         EntryCheckPredicate pred(NPC_SCARAB);
@@ -334,9 +332,7 @@ struct boss_anubarak_trial : public BossAI
                     {
                         DoCast(me, SPELL_SUBMERGE_ANUBARAK);
                         DoCast(me, SPELL_CLEAR_ALL_DEBUFFS);
-                        me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetUninteractible(true);
-                        me->SetCanMelee(false);
+                        me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                         Talk(EMOTE_BURROWER);
                         events.SetPhase(PHASE_SUBMERGED);
                         events.ScheduleEvent(EVENT_PURSUING_SPIKE, 2s, 0, PHASE_SUBMERGED);
@@ -372,9 +368,7 @@ struct boss_anubarak_trial : public BossAI
                     DoCast(SPELL_SPIKE_TELE);
                     summons.DespawnEntry(NPC_SPIKE);
                     me->RemoveAurasDueToSpell(SPELL_SUBMERGE_ANUBARAK);
-                    me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                    me->SetUninteractible(false);
-                    me->SetCanMelee(true);
+                    me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                     DoCast(me, SPELL_EMERGE_ANUBARAK);
                     Talk(EMOTE_EMERGE);
                     events.SetPhase(PHASE_MELEE);
@@ -425,6 +419,9 @@ struct boss_anubarak_trial : public BossAI
             Talk(EMOTE_LEECHING_SWARM);
             Talk(SAY_LEECHING_SWARM);
         }
+
+        if (events.IsInPhase(PHASE_MELEE))
+            DoMeleeAttackIfReady();
     }
 
     private:
@@ -493,6 +490,8 @@ struct npc_swarm_scarab : public ScriptedAI
         }
         else
             _determinationTimer -= diff;
+
+        DoMeleeAttackIfReady();
     }
 
     private:
@@ -558,14 +557,14 @@ struct npc_nerubian_burrower : public ScriptedAI
                 me->RemoveAurasDueToSpell(SPELL_SUBMERGE_EFFECT);
                 DoCast(me, SPELL_EMERGE_EFFECT);
                 DoCast(me, SPELL_AWAKENED);
-                me->SetUninteractible(false);
+                me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             }
             else
             {
                 if (!me->HasAura(SPELL_PERMAFROST_HELPER))
                 {
                     DoCast(me, SPELL_SUBMERGE_EFFECT);
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     DoCast(me, SPELL_PERSISTENT_DIRT, true);
                 }
             }
@@ -573,6 +572,8 @@ struct npc_nerubian_burrower : public ScriptedAI
         }
         else
             _submergeTimer -= diff;
+
+        DoMeleeAttackIfReady();
     }
 
     private:
@@ -589,7 +590,7 @@ struct npc_frost_sphere : public ScriptedAI
     {
         me->SetReactState(REACT_PASSIVE);
         DoCast(SPELL_FROST_SPHERE);
-        me->SetDisplayFromModel(1);
+        me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
         me->GetMotionMaster()->MoveRandom(20.0f);
     }
 
@@ -604,7 +605,7 @@ struct npc_frost_sphere : public ScriptedAI
             {
                 // we are close to the ground
                 me->GetMotionMaster()->MoveIdle();
-                me->SetUninteractible(true);
+                me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 me->RemoveAurasDueToSpell(SPELL_FROST_SPHERE);
                 DoCast(SPELL_PERMAFROST_MODEL);
                 DoCast(SPELL_PERMAFROST);
@@ -614,7 +615,7 @@ struct npc_frost_sphere : public ScriptedAI
             {
                 // we are in air
                 me->GetMotionMaster()->MoveIdle();
-                me->SetUninteractible(true);
+                me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 //At hit the ground
                 me->HandleEmoteCommand(EMOTE_ONESHOT_FLYDEATH);
                 me->GetMotionMaster()->MoveFall(POINT_FALL_GROUND);
@@ -787,6 +788,8 @@ struct npc_anubarak_spike : public ScriptedAI
 // 65923 - Pursuing Spikes
 class spell_pursuing_spikes : public AuraScript
 {
+    PrepareAuraScript(spell_pursuing_spikes);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_PERMAFROST, SPELL_SPIKE_FAIL });
@@ -800,7 +803,7 @@ class spell_pursuing_spikes : public AuraScript
     void PeriodicTick(AuraEffect const* /*aurEff*/)
     {
         Unit* permafrostCaster = nullptr;
-        if (Aura* permafrostAura = GetTarget()->GetAura(SPELL_PERMAFROST))
+        if (Aura* permafrostAura = GetTarget()->GetAura(sSpellMgr->GetSpellIdForDifficulty(SPELL_PERMAFROST, GetTarget())))
             permafrostCaster = permafrostAura->GetCaster();
 
         if (permafrostCaster)
@@ -826,10 +829,12 @@ class spell_pursuing_spikes : public AuraScript
 // 65919 - Impale
 class spell_impale : public SpellScript
 {
+    PrepareSpellScript(spell_impale);
+
     void HandleDamageCalc(SpellEffIndex /*effIndex*/)
     {
         Unit* target = GetHitUnit();
-        uint32 permafrost = SPELL_PERMAFROST;
+        uint32 permafrost = sSpellMgr->GetSpellIdForDifficulty(SPELL_PERMAFROST, target);
 
         // make sure Impale doesnt do damage if we are standing on permafrost
         if (target && target->HasAura(permafrost))
@@ -845,6 +850,8 @@ class spell_impale : public SpellScript
 // 66118, 67630, 68646, 68647 - Leeching Swarm
 class spell_anubarak_leeching_swarm : public AuraScript
 {
+    PrepareAuraScript(spell_anubarak_leeching_swarm);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_LEECHING_SWARM_DMG, SPELL_LEECHING_SWARM_HEAL });
@@ -855,7 +862,7 @@ class spell_anubarak_leeching_swarm : public AuraScript
         Unit* caster = GetCaster();
         if (Unit* target = GetTarget())
         {
-            SpellEffectValue lifeLeeched = target->CountPctFromCurHealth(aurEff->GetAmount());
+            int32 lifeLeeched = target->CountPctFromCurHealth(aurEff->GetAmount());
             if (lifeLeeched < 250)
                 lifeLeeched = 250;
             CastSpellExtraArgs args(TRIGGERED_FULL_MASK);

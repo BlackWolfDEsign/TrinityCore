@@ -33,7 +33,7 @@ int32 TotemAI::Permissible(Creature const* creature)
     return PERMIT_BASE_NO;
 }
 
-TotemAI::TotemAI(Creature* creature, uint32 scriptId) noexcept : NullCreatureAI(creature, scriptId), _victimGUID()
+TotemAI::TotemAI(Creature* creature) : NullCreatureAI(creature), _victimGUID()
 {
     ASSERT(creature->IsTotem(), "TotemAI: AI assigned to a non-totem creature (%s)!", creature->GetGUID().ToString().c_str());
 }
@@ -47,25 +47,20 @@ void TotemAI::UpdateAI(uint32 /*diff*/)
         return;
 
     // Search spell
-    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(me->ToTotem()->GetSpell(), me->GetMap()->GetDifficultyID());
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(me->ToTotem()->GetSpell());
     if (!spellInfo)
         return;
 
     // Get spell range
     float max_range = spellInfo->GetMaxRange(false);
 
-    // SpellModOp::Range not applied in this place just because not existence range mods for attacking totems
+    // SPELLMOD_RANGE not applied in this place just because not existence range mods for attacking totems
 
     // pointer to appropriate target if found any
     Unit* victim = !_victimGUID.IsEmpty() ? ObjectAccessor::GetUnit(*me, _victimGUID) : nullptr;
 
     // Search victim if no, not attackable, or out of range, or friendly (possible in case duel end)
-    CanSeeOrDetectExtraArgs const& canSeeOrDetectExtraArgs = CanSeeOrDetectExtraArgs{
-        .IgnorePhaseShift = spellInfo->HasAttribute(SPELL_ATTR6_IGNORE_PHASE_SHIFT),
-        .IncludeHiddenBySpawnTracking = spellInfo->HasAttribute(SPELL_ATTR8_ALLOW_TARGETS_HIDDEN_BY_SPAWN_TRACKING),
-        .IncludeAnyPrivateObject = spellInfo->HasAttribute(SPELL_ATTR0_CU_CAN_TARGET_ANY_PRIVATE_OBJECT)
-    };
-    if (!victim || !victim->isTargetableForAttack() || !me->IsWithinDistInMap(victim, max_range) || me->IsFriendlyTo(victim) || !me->CanSeeOrDetect(victim, canSeeOrDetectExtraArgs))
+    if (!victim || !victim->isTargetableForAttack() || !me->IsWithinDistInMap(victim, max_range) || me->IsFriendlyTo(victim) || !me->CanSeeOrDetect(victim))
     {
         victim = nullptr;
         float extraSearchRadius = max_range > 0.0f ? EXTRA_CELL_SEARCH_RADIUS : 0.0f;
@@ -89,4 +84,17 @@ void TotemAI::UpdateAI(uint32 /*diff*/)
 
 void TotemAI::AttackStart(Unit* /*victim*/)
 {
+    // Sentry totem sends ping on attack
+    if (me->GetEntry() == SENTRY_TOTEM_ENTRY)
+    {
+        if (Unit* owner = me->GetOwner())
+            if (Player* player = owner->ToPlayer())
+            {
+                WorldPacket data(MSG_MINIMAP_PING, (8 + 4 + 4));
+                data << me->GetGUID();
+                data << me->GetPositionX();
+                data << me->GetPositionY();
+                player->SendDirectMessage(&data);
+            }
+    }
 }

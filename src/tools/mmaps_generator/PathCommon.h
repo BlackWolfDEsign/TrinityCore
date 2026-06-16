@@ -15,49 +15,58 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_MMAP_COMMON_H
-#define TRINITYCORE_MMAP_COMMON_H
+#ifndef _MMAP_COMMON_H
+#define _MMAP_COMMON_H
 
-#include "Common.h"
-#include <boost/filesystem/directory.hpp>
-#include <string_view>
-#include <unordered_map>
+#include "Define.h"
+#include <memory>
+#include <string>
+#include <vector>
+
+#ifndef _WIN32
+    #include <cstddef>
+    #include <cstring>
+    #include <dirent.h>
+#else
+    #include <Windows.h>
+#endif
+
+#ifndef _WIN32
+    #include <cerrno>
+#endif
 
 namespace MMAP
 {
-    inline bool matchWildcardFilter(std::string_view filter, std::string_view str)
+    inline bool matchWildcardFilter(char const* filter, char const* str)
     {
-        if (filter.empty() || str.empty())
+        if (!filter || !str)
             return false;
 
-        auto filterItr = filter.begin();
-        auto filterEnd = filter.end();
-        auto strItr = str.begin();
-        auto strEnd = str.end();
-
         // end on null character
-        while (filterItr != filterEnd && strItr != strEnd)
+        while (*filter && *str)
         {
-            if (*filterItr == '*')
+            if (*filter == '*')
             {
-                if (++filterItr == filterEnd)   // wildcard at end of filter means all remaing chars match
+                if (*++filter == '\0')   // wildcard at end of filter means all remaing chars match
                     return true;
 
-                while (*filterItr != *strItr)
+                for (;;)
                 {
-                    if (strItr == strEnd)
+                    if (*filter == *str)
+                        break;
+                    if (*str == '\0')
                         return false;   // reached end of string without matching next filter character
-                    ++strItr;
+                    str++;
                 }
             }
-            else if (*filterItr != *strItr)
+            else if (*filter != *str)
                 return false;           // mismatch
 
-            ++filterItr;
-            ++strItr;
+            filter++;
+            str++;
         }
 
-        return (filterItr == filterEnd || (*filterItr == '*' && filterItr + 1 == filterEnd)) && strItr == strEnd;
+        return ((*filter == '\0' || (*filter == '*' && *++filter == '\0')) && *str == '\0');
     }
 
     enum ListFilesResult
@@ -66,38 +75,53 @@ namespace MMAP
         LISTFILE_OK = 1
     };
 
-    inline ListFilesResult getDirContents(std::vector<std::string>& fileList, boost::filesystem::path const& dirpath,
-        boost::filesystem::file_type type = boost::filesystem::regular_file, std::string_view filter = "*"sv)
+    inline ListFilesResult getDirContents(std::vector<std::string> &fileList, std::string dirpath = ".", std::string filter = "*")
     {
-        boost::system::error_code ec;
-        boost::filesystem::directory_iterator dirItr(dirpath, ec);
-        if (ec)
+    #ifdef WIN32
+        HANDLE hFind;
+        WIN32_FIND_DATAA findFileInfo;
+        std::string directory;
+
+        directory = dirpath + "/" + filter;
+
+        hFind = FindFirstFileA(directory.c_str(), &findFileInfo);
+
+        if (hFind == INVALID_HANDLE_VALUE)
             return LISTFILE_DIRECTORY_NOT_FOUND;
-
-        for (boost::filesystem::directory_entry const& dirEntry : dirItr)
+        do
         {
-            if (dirEntry.status(ec).type() != type || ec)
-                continue;
-
-            std::string fileName = dirEntry.path().filename().string();
-            if (!matchWildcardFilter(filter, fileName))
-                continue;
-
-            fileList.push_back(std::move(fileName));
+            if ((findFileInfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
+                fileList.push_back(std::string(findFileInfo.cFileName));
         }
+        while (FindNextFileA(hFind, &findFileInfo));
+
+        FindClose(hFind);
+
+    #else
+        const char *p = dirpath.c_str();
+        DIR * dirp = opendir(p);
+        struct dirent * dp;
+
+        while (dirp)
+        {
+            errno = 0;
+            if ((dp = readdir(dirp)) != nullptr)
+            {
+                if (strcmp(dp->d_name, ".") != 0 && strcmp(dp->d_name, "..") != 0 && matchWildcardFilter(filter.c_str(), dp->d_name))
+                    fileList.push_back(std::string(dp->d_name));
+            }
+            else
+                break;
+        }
+
+        if (dirp)
+            closedir(dirp);
+        else
+            return LISTFILE_DIRECTORY_NOT_FOUND;
+    #endif
 
         return LISTFILE_OK;
     }
-
-    struct MapEntry
-    {
-        uint8 MapType = 0;
-        int8 InstanceType = 0;
-        int16 ParentMapID = -1;
-        int32 Flags = 0;
-    };
-
-    extern std::unordered_map<uint32, MapEntry> sMapStore;
 }
 
 #endif

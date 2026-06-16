@@ -22,16 +22,17 @@
 #include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "ScriptedCreature.h"
+#include "SpellMgr.h"
+#include "SpellScript.h"
 
 enum Spells
 {
     SPELL_WEB_WRAP              = 28622,
+    SPELL_WEB_SPRAY             = 29484,
     SPELL_POISON_SHOCK          = 28741,
     SPELL_NECROTIC_POISON       = 28776,
     SPELL_FRENZY                = 54123
 };
-
-#define SPELL_WEB_SPRAY RAID_MODE(29484,54125)
 #define SPELL_FRENZY_HELPER RAID_MODE(54123,54124)
 
 enum Emotes
@@ -69,10 +70,7 @@ enum Events
     EVENT_SUMMON,
 };
 
-enum MaexxnaData
-{
-    DATA_WEBWRAP_VICTIM_GUID = 0
-};
+const float WEB_WRAP_MOVE_SPEED = 20.0f;
 
 struct WebTargetSelector
 {
@@ -143,9 +141,12 @@ struct boss_maexxna : public BossAI
                             else // on subsequent iterations, only allow positions that are not equal to the previous one (this is sufficient since we should only have two targets at most, ever)
                                 wrapPos = (wrapPos + urand(1, MAX_WRAP_POSITION - 1)) % MAX_WRAP_POSITION;
 
-                            target->RemoveAura(SPELL_WEB_SPRAY);
+                            target->RemoveAura(sSpellMgr->GetSpellIdForDifficulty(SPELL_WEB_SPRAY, me));
                             if (Creature* wrap = DoSummon(NPC_WEB_WRAP, WrapPositions[wrapPos], 70s, TEMPSUMMON_TIMED_DESPAWN))
-                                wrap->AI()->SetGUID(target->GetGUID(), DATA_WEBWRAP_VICTIM_GUID); // handles application of debuff
+                            {
+                                wrap->AI()->SetGUID(target->GetGUID()); // handles application of debuff
+                                target->GetMotionMaster()->MoveJump(WrapPositions[wrapPos], WEB_WRAP_MOVE_SPEED, WEB_WRAP_MOVE_SPEED); // move after stun to avoid stun cancelling move
+                            }
                         }
                     }
                     events.Repeat(Seconds(40));
@@ -173,6 +174,8 @@ struct boss_maexxna : public BossAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 
@@ -188,41 +191,15 @@ struct npc_webwrap : public NullCreatureAI
         me->SetVisible(false);
     }
 
-    void SetGUID(ObjectGuid const& guid, int32 id) override
+    void SetGUID(ObjectGuid const& guid, int32 /*id*/) override
     {
-        if (id != DATA_WEBWRAP_VICTIM_GUID)
-            return;
-
         if (!guid)
             return;
-
         victimGUID = guid;
         if (Unit* victim = ObjectAccessor::GetUnit(*me, victimGUID))
         {
-            uint32 spellId = 28621;
-            // TODO: not fully correct - should be using different set of script_effect spells first (29280, 29281, 29282, 29283, 29285, 29287)
-            float dist = me->GetDistance2d(victim);
-            float speed = 50.0f;
-            if (dist <= 20.0f)
-            {
-                spellId = 28618;
-                speed = 20.0f;
-            }
-            else if (dist <= 30.0f)
-            {
-                spellId = 28619;
-                speed = 30.0f;
-            }
-            else if (dist <= 40.0f)
-            {
-                spellId = 28620;
-                speed = 40.0f;
-            }
-
-            visibleTimer = (me->GetDistance2d(victim) / speed + 0.5f) * AsUnderlyingType(IN_MILLISECONDS);
-
-            victim->CastSpell(victim, spellId, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                .SetOriginalCaster(me->GetGUID()));
+            visibleTimer = (me->GetDistance2d(victim) / WEB_WRAP_MOVE_SPEED + 0.5f) * AsUnderlyingType(IN_MILLISECONDS);
+            victim->CastSpell(victim, SPELL_WEB_WRAP, me->GetGUID());
         }
     }
 

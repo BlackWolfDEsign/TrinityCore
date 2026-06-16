@@ -18,15 +18,12 @@
 #ifndef _PREPAREDSTATEMENT_H
 #define _PREPAREDSTATEMENT_H
 
-#include "DatabaseEnvFwd.h"
 #include "Define.h"
 #include "Duration.h"
-#include <span>
-#include <string>
-#include <variant>
+#include "SQLOperation.h"
+#include <future>
 #include <vector>
-
-class MySQLConnection;
+#include <variant>
 
 struct PreparedStatementData
 {
@@ -82,10 +79,15 @@ class TC_DATABASE_API PreparedStatementBase
         void setFloat(uint8 index, float value);
         void setDouble(uint8 index, double value);
         void setDate(uint8 index, SystemTimePoint value);
-        void setString(uint8 index, std::string&& value);
-        void setString(uint8 index, std::string_view value);
-        void setBinary(uint8 index, std::vector<uint8>&& value);
-        void setBinary(uint8 index, std::span<uint8 const> value);
+        void setString(uint8 index, std::string const& value);
+        void setStringView(uint8 index, std::string_view value);
+        void setBinary(uint8 index, std::vector<uint8> const& value);
+        template <size_t Size>
+        void setBinary(const uint8 index, std::array<uint8, Size> const& value)
+        {
+            std::vector<uint8> vec(value.begin(), value.end());
+            setBinary(index, vec);
+        }
 
         uint32 GetIndex() const { return m_index; }
         std::vector<PreparedStatementData> const& GetParameters() const { return statement_data; }
@@ -114,11 +116,18 @@ private:
 };
 
 //- Lower-level class, enqueuable operation
-class TC_DATABASE_API PreparedStatementTask
+class TC_DATABASE_API PreparedStatementTask : public SQLOperation
 {
-public:
-    static PreparedQueryResult Query(MySQLConnection* conn, PreparedStatementBase* stmt);
-    static bool Execute(MySQLConnection* conn, PreparedStatementBase* stmt);
-};
+    public:
+        PreparedStatementTask(PreparedStatementBase* stmt, bool async = false);
+        ~PreparedStatementTask();
 
+        bool Execute() override;
+        PreparedQueryResultFuture GetFuture() { return m_result->get_future(); }
+
+    protected:
+        PreparedStatementBase* m_stmt;
+        bool m_has_result;
+        PreparedQueryResultPromise* m_result;
+};
 #endif

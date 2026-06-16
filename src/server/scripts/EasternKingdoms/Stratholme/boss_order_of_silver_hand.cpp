@@ -24,9 +24,9 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
-#include "Player.h"
 #include "ScriptedCreature.h"
 #include "stratholme.h"
+#include "Player.h"
 
 /*#####
 # Additional:
@@ -159,6 +159,8 @@ public:
                     DivineShield_Timer = 40000;
                 }
             } else DivineShield_Timer -= diff;
+
+            DoMeleeAttackIfReady();
         }
     };
 };

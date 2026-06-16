@@ -17,25 +17,23 @@
 
 #include "CreatureAIImpl.h"
 #include "ScriptMgr.h"
-#include "CharmInfo.h"
 #include "CombatAI.h"
 #include "CreatureTextMgr.h"
 #include "G3DPosition.hpp"
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "Log.h"
-#include "Map.h"
 #include "MotionMaster.h"
 #include "MoveSplineInit.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PassiveAI.h"
 #include "Player.h"
-#include "ScriptedCreature.h"
+#include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
-#include "SpellMgr.h"
-#include "SpellScript.h"
+#include "SpellAuraEffects.h"
 #include "SpellInfo.h"
+#include "SpellScript.h"
 #include "TemporarySummon.h"
 #include "Vehicle.h"
 
@@ -71,11 +69,6 @@ enum UnworthyInitiatePhase
     PHASE_EQUIPING,
     PHASE_TO_ATTACK,
     PHASE_ATTACKING,
-};
-
-enum UnworthyInitiateData
-{
-    DATA_PRISONER_GUID = 0
 };
 
 uint32 acherus_soul_prison[12] =
@@ -196,7 +189,7 @@ public:
                 {
                     if (Creature* anchor = me->FindNearestCreature(29521, 30))
                     {
-                        anchor->AI()->SetGUID(me->GetGUID(), DATA_PRISONER_GUID);
+                        anchor->AI()->SetGUID(me->GetGUID());
                         anchor->CastSpell(me, SPELL_SOUL_PRISON_CHAIN, true);
                         anchorGUID = anchor->GetGUID();
                     }
@@ -288,6 +281,8 @@ public:
                         break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
                 break;
             default:
                 break;
@@ -317,11 +312,8 @@ public:
 
         ObjectGuid prisonerGUID;
 
-        void SetGUID(ObjectGuid const& guid, int32 id) override
+        void SetGUID(ObjectGuid const& guid, int32 /*id*/) override
         {
-            if (id != DATA_PRISONER_GUID)
-                return;
-
             prisonerGUID = guid;
         }
 
@@ -345,7 +337,7 @@ class go_acherus_soul_prison : public GameObjectScript
             {
                 if (Creature* anchor = me->FindNearestCreature(29521, 15))
                 {
-                    ObjectGuid prisonerGUID = anchor->AI()->GetGUID(DATA_PRISONER_GUID);
+                    ObjectGuid prisonerGUID = anchor->AI()->GetGUID();
                     if (!prisonerGUID.IsEmpty())
                         if (Creature* prisoner = ObjectAccessor::GetCreature(*player, prisonerGUID))
                             ENSURE_AI(npc_unworthy_initiate::npc_unworthy_initiateAI, prisoner->AI())->EventStart(anchor, player);
@@ -364,6 +356,8 @@ class go_acherus_soul_prison : public GameObjectScript
 // 51519 - Death Knight Initiate Visual
 class spell_death_knight_initiate_visual : public SpellScript
 {
+    PrepareSpellScript(spell_death_knight_initiate_visual);
+
     void HandleScriptEffect(SpellEffIndex /* effIndex */)
     {
         Creature* target = GetHitCreature();
@@ -396,7 +390,7 @@ class spell_death_knight_initiate_visual : public SpellScript
             default: return;
         }
 
-        target->CastSpell(target, spellId, GetSpell());
+        target->CastSpell(target, spellId, true);
         target->LoadEquipment();
     }
 
@@ -429,7 +423,8 @@ enum EyeOfAcherusMisc
     POINT_NEW_AVALON                        = 1
 };
 
-G3D::Vector3 const EyeOfAcherusPath[] =
+static constexpr uint8 const EyeOfAcherusPathSize = 4;
+G3D::Vector3 const EyeOfAcherusPath[EyeOfAcherusPathSize] =
 {
     { 2361.21f,  -5660.45f,  496.744f  },
     { 2341.571f, -5672.797f, 538.3942f },
@@ -441,10 +436,8 @@ struct npc_eye_of_acherus : public ScriptedAI
 {
     npc_eye_of_acherus(Creature* creature) : ScriptedAI(creature)
     {
-        creature->SetDisplayFromModel(0);
+        creature->SetDisplayId(creature->GetCreatureTemplate()->Modelid1);
         creature->SetReactState(REACT_PASSIVE);
-        if (creature->GetCharmInfo())
-            creature->GetCharmInfo()->InitPossessCreateSpells();
     }
 
     void InitializeAI() override
@@ -485,7 +478,8 @@ struct npc_eye_of_acherus : public ScriptedAI
                 {
                     std::function<void(Movement::MoveSplineInit&)> initializer = [=, me = me](Movement::MoveSplineInit& init)
                     {
-                        init.MovebyPath(EyeOfAcherusPath);
+                        Movement::PointsArray path(EyeOfAcherusPath, EyeOfAcherusPath + EyeOfAcherusPathSize);
+                        init.MovebyPath(path);
                         init.SetFly();
                         if (Unit* owner = me->GetCharmerOrOwner())
                             init.SetVelocity(owner->GetSpeed(MOVE_RUN));
@@ -527,6 +521,92 @@ private:
     EventMap _events;
 };
 
+enum DeathComesFromOnHigh
+{
+    SPELL_FORGE_CREDIT                  = 51974,
+    SPELL_TOWN_HALL_CREDIT              = 51977,
+    SPELL_SCARLET_HOLD_CREDIT           = 51980,
+    SPELL_CHAPEL_CREDIT                 = 51982,
+
+    NPC_NEW_AVALON_FORGE                = 28525,
+    NPC_NEW_AVALON_TOWN_HALL            = 28543,
+    NPC_SCARLET_HOLD                    = 28542,
+    NPC_CHAPEL_OF_THE_CRIMSON_FLAME     = 28544
+};
+
+// 51858 - Siphon of Acherus
+class spell_chapter1_siphon_of_acherus : public SpellScript
+{
+    PrepareSpellScript(spell_chapter1_siphon_of_acherus);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo(
+        {
+            SPELL_FORGE_CREDIT,
+            SPELL_TOWN_HALL_CREDIT,
+            SPELL_SCARLET_HOLD_CREDIT,
+            SPELL_CHAPEL_CREDIT
+        });
+    }
+
+    void HandleDummy(SpellEffIndex /*effIndex*/)
+    {
+        uint32 spellId = 0;
+
+        switch (GetHitCreature()->GetEntry())
+        {
+            case NPC_NEW_AVALON_FORGE:
+                spellId = SPELL_FORGE_CREDIT;
+                break;
+            case NPC_NEW_AVALON_TOWN_HALL:
+                spellId = SPELL_TOWN_HALL_CREDIT;
+                break;
+            case NPC_SCARLET_HOLD:
+                spellId = SPELL_SCARLET_HOLD_CREDIT;
+                break;
+            case NPC_CHAPEL_OF_THE_CRIMSON_FLAME:
+                spellId = SPELL_CHAPEL_CREDIT;
+                break;
+            default:
+                return;
+        }
+
+        GetCaster()->CastSpell(nullptr, spellId, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_chapter1_siphon_of_acherus::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+// 52694 - Recall Eye of Acherus
+class spell_chapter1_recall_eye_of_acherus : public SpellScript
+{
+    PrepareSpellScript(spell_chapter1_recall_eye_of_acherus);
+
+    bool Validate(SpellInfo const* /*spell*/) override
+    {
+        return ValidateSpellInfo({ SPELL_THE_EYE_OF_ACHERUS });
+    }
+
+    void HandleDummy(SpellEffIndex /*effIndex*/)
+    {
+        if (Player* player = Object::ToPlayer(GetCaster()->GetCharmerOrOwner()))
+        {
+            player->StopCastingCharm();
+            player->StopCastingBindSight();
+            player->RemoveAura(SPELL_THE_EYE_OF_ACHERUS);
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_chapter1_recall_eye_of_acherus::HandleDummy, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
 /*######
 ## npc_death_knight_initiate
 ######*/
@@ -547,19 +627,7 @@ enum Says_VBM
 
 enum Misc_VBN
 {
-    QUEST_DEATH_CHALLENGE = 12733
-};
-
-enum Paths_VBN
-{
-    PATH_DEATH_KNIGHT_INITIATE      = 10361360,
-    PATH_DEATH_KNIGHT_INITIATE2     = 10361440,
-    PATH_DEATH_KNIGHT_INITIATE3     = 10362320,
-    PATH_DEATH_KNIGHT_INITIATE4     = 10362400,
-    PATH_DEATH_KNIGHT_INITIATE5     = 10362480,
-    PATH_DEATH_KNIGHT_INITIATE6     = 10363520,
-    PATH_DEATH_KNIGHT_INITIATE7     = 10363680,
-    PATH_DEATH_KNIGHT_INITIATE8     = 10363760,
+    QUEST_DEATH_CHALLENGE       = 12733
 };
 
 class npc_death_knight_initiate : public CreatureScript
@@ -695,7 +763,7 @@ public:
 
         bool OnGossipHello(Player* player) override
         {
-            uint32 gossipMenuId = player->GetGossipMenuForSource(me);
+            uint32 gossipMenuId = Player::GetDefaultGossipMenuForSource(me);
             InitGossipMenuFor(player, gossipMenuId);
             if (player->GetQuestStatus(QUEST_DEATH_CHALLENGE) == QUEST_STATUS_INCOMPLETE && me->IsFullHealth())
             {
@@ -705,29 +773,10 @@ public:
                 if (player->IsInCombat() || me->IsInCombat())
                     return true;
 
-                AddGossipItemFor(player, player->GetGossipMenuForSource(me), 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
+                AddGossipItemFor(player, gossipMenuId, 0, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF);
                 SendGossipMenuFor(player, player->GetGossipTextId(me), me->GetGUID());
             }
             return true;
-        }
-
-        void WaypointPathEnded(uint32 /*nodeId*/, uint32 pathId) override
-        {
-            switch (pathId)
-            {
-                case PATH_DEATH_KNIGHT_INITIATE:
-                case PATH_DEATH_KNIGHT_INITIATE2:
-                case PATH_DEATH_KNIGHT_INITIATE3:
-                case PATH_DEATH_KNIGHT_INITIATE4:
-                case PATH_DEATH_KNIGHT_INITIATE5:
-                case PATH_DEATH_KNIGHT_INITIATE6:
-                case PATH_DEATH_KNIGHT_INITIATE7:
-                case PATH_DEATH_KNIGHT_INITIATE8:
-                    me->DespawnOrUnsummon(1s);
-                    break;
-                default:
-                    break;
-            }
         }
     };
 
@@ -877,6 +926,8 @@ enum HorseSeats
 // 52265 - Repo
 class spell_stable_master_repo : public AuraScript
 {
+    PrepareAuraScript(spell_stable_master_repo);
+
     void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Creature* creature = GetTarget()->ToCreature();
@@ -899,6 +950,8 @@ class spell_stable_master_repo : public AuraScript
 // 52264 - Deliver Stolen Horse
 class spell_deliver_stolen_horse : public SpellScript
 {
+    PrepareSpellScript(spell_deliver_stolen_horse);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_DELIVER_STOLEN_HORSE, SPELL_EFFECT_STOLEN_HORSE });
@@ -954,7 +1007,7 @@ public:
 
             deathcharger->RestoreFaction();
             deathcharger->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
-            deathcharger->SetUninteractible(true);
+            deathcharger->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             if (!me->GetVehicle() && deathcharger->IsVehicle() && deathcharger->GetVehicleKit()->HasEmptySeat(0))
                 me->EnterVehicle(deathcharger);
         }
@@ -968,7 +1021,7 @@ public:
             if (killer->GetTypeId() == TYPEID_PLAYER && deathcharger->GetTypeId() == TYPEID_UNIT && deathcharger->IsVehicle())
             {
                 deathcharger->SetNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
-                deathcharger->SetUninteractible(false);
+                deathcharger->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 deathcharger->SetFaction(FACTION_SCARLET_CRUSADE_2);
             }
         }
@@ -1047,7 +1100,7 @@ struct npc_scarlet_ghoul : public ScriptedAI
 
     void FindMinions(Unit* owner)
     {
-        std::list<TempSummon*> MinionList;
+        std::list<Creature*> MinionList;
         owner->GetAllMinionsByEntry(MinionList, NPC_GHOULS);
 
         if (!MinionList.empty())
@@ -1074,22 +1127,31 @@ struct npc_scarlet_ghoul : public ScriptedAI
                 Player* plrOwner = owner->ToPlayer();
                 if (plrOwner && plrOwner->IsInCombat())
                 {
-                    Unit* newTarget = plrOwner->getAttackerForHelper();
-                    if (newTarget && newTarget->GetEntry() == NPC_GHOSTS)
-                        AttackStart(newTarget);
+                    if (plrOwner->getAttackerForHelper() && plrOwner->getAttackerForHelper()->GetEntry() == NPC_GHOSTS)
+                        AttackStart(plrOwner->getAttackerForHelper());
                     else
                         FindMinions(owner);
                 }
             }
         }
 
-        if (!UpdateVictim())
+        if (!UpdateVictim() || !me->GetVictim())
             return;
-    }
 
-    bool CanAIAttack(Unit const* target) const override
-    {
-        return target->GetEntry() == NPC_GHOSTS;
+        //ScriptedAI::UpdateAI(diff);
+        //Check if we have a current target
+        if (me->EnsureVictim()->GetEntry() == NPC_GHOSTS)
+        {
+            if (me->isAttackReady())
+            {
+                //If we are within range melee the target
+                if (me->IsWithinMeleeRange(me->GetVictim()))
+                {
+                    me->AttackerStateUpdate(me->GetVictim());
+                    me->resetAttackTimer();
+                }
+            }
+        }
     }
 };
 
@@ -1102,6 +1164,8 @@ enum GiftOfTheHarvester
 // 52479 - Gift of the Harvester
 class spell_gift_of_the_harvester : public SpellScript
 {
+    PrepareSpellScript(spell_gift_of_the_harvester);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo(
@@ -1136,16 +1200,20 @@ enum Runeforging
     QUEST_RUNEFORGING            = 12842
 };
 
-/* 53343 - Rune of Razorice
+/* 53323 - Rune of Swordshattering
+   53331 - Rune of Lichbane
+   53341 - Rune of Cinderglacier
+   53342 - Rune of Spellshattering
+   53343 - Rune of Razorice
    53344 - Rune of the Fallen Crusader
+   54446 - Rune of Swordbreaking
+   54447 - Rune of Spellbreaking
    62158 - Rune of the Stoneskin Gargoyle
-   326805 - Rune of Sanguination
-   326855 - Rune of Spellwarding
-   326911 - Rune of Hysteria
-   326977 - Rune of Unending Thirst
-   327082 - Rune of the Apocalypse */
+   70164 - Rune of the Nerubian Carapace */
 class spell_chapter1_runeforging_credit : public SpellScript
 {
+    PrepareSpellScript(spell_chapter1_runeforging_credit);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_RUNEFORGING_CREDIT }) &&
@@ -1165,153 +1233,73 @@ class spell_chapter1_runeforging_credit : public SpellScript
     }
 };
 
-enum HearthglenCrusaderPaths : uint32
+enum SkyDarkenerAssault
 {
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN    = 10445360,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN2   = 10445600,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN3   = 10448640,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN4   = 10449200,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN5   = 10452240,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN6   = 10452880,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN7   = 10452960,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN8   = 10453040,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN9   = 10453520,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN10  = 10453680,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN11  = 10454000,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN12  = 10454080,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN13  = 10454160,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN14  = 10454320,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN15  = 10454560,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN16  = 10459440,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN17  = 10460320,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN18  = 10463040,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN19  = 10463120,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN20  = 10463280,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN21  = 10463360,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN22  = 10463520,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN23  = 10463680,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN24  = 10463840,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN25  = 10464080,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN26  = 10464160,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN27  = 10464240,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN28  = 10464320,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN29  = 10464400,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN30  = 10464480,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN31  = 10464720,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN32  = 10464800,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN33  = 10464880,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN34  = 10464960,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN35  = 10465040,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN36  = 10465520,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN37  = 10465600,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN38  = 10466000,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN39  = 10466160,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN40  = 10466320,
-    PATH_HEARTHGLEN_CRUSADER_DESPAWN41  = 10466400,
+    SPELL_SKY_DARKENER_ASSAULT     = 52125
 };
 
-// 29102 - Hearthglen Crusader
-// 29103 - Tirisfal Crusader
-struct npc_hearthglen_crusader : public ScriptedAI
+// 52124 - Sky Darkener Assault
+class spell_chapter1_sky_darkener_assault : public SpellScript
 {
-    npc_hearthglen_crusader(Creature* creature) : ScriptedAI(creature), _minimumRange(0)
+    PrepareSpellScript(spell_chapter1_sky_darkener_assault);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(creature->m_spells[0], creature->GetMap()->GetDifficultyID());
-        if (!spellInfo)
-            return;
-
-        auto [minRange, maxRange] = spellInfo->GetMinMaxRange(false);
-        _minimumRange = minRange;
-
-        if (!_minimumRange)
-            _minimumRange = MELEE_RANGE;
-        creature->m_CombatDistance = maxRange;
-        creature->m_SightDistance = creature->m_CombatDistance;
+        return ValidateSpellInfo({ SPELL_SKY_DARKENER_ASSAULT });
     }
 
-    void AttackStart(Unit* who) override
+    void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        if (!who)
-            return;
-
-        if (me->IsWithinCombatRange(who, _minimumRange))
-        {
-            if (me->Attack(who, true) && !who->IsFlying())
-                me->GetMotionMaster()->MoveChase(who);
-        }
-        else
-        {
-            if (me->Attack(who, false) && !who->IsFlying())
-                me->GetMotionMaster()->MoveChase(who, me->m_CombatDistance);
-        }
-
-        if (who->IsFlying())
-            me->GetMotionMaster()->MoveIdle();
+        GetCaster()->CastSpell(GetHitUnit(), SPELL_SKY_DARKENER_ASSAULT);
     }
 
-    void UpdateAI(uint32 /*diff*/) override
+    void Register() override
     {
-        if (!UpdateVictim())
-            return;
+        OnEffectHitTarget += SpellEffectFn(spell_chapter1_sky_darkener_assault::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
 
-        if (!me->IsWithinCombatRange(me->GetVictim(), _minimumRange))
-            DoSpellAttackIfReady(me->m_spells[0]);
+/*######
+## Quest 12619: The Emblazoned Runeblade
+######*/
+
+// 51769 - Emblazon Runeblade
+class spell_chapter1_emblazon_runeblade : public AuraScript
+{
+    PrepareAuraScript(spell_chapter1_emblazon_runeblade);
+
+    void HandleEffectPeriodic(AuraEffect const* aurEff)
+    {
+        PreventDefaultAction();
+        if (Unit* caster = GetCaster())
+            caster->CastSpell(caster, aurEff->GetSpellEffectInfo().TriggerSpell, aurEff);
     }
 
-    void WaypointPathEnded(uint32 /*nodeId*/, uint32 pathId) override
+    void Register() override
     {
-        switch (pathId)
-        {
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN2:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN3:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN4:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN5:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN6:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN7:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN8:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN9:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN10:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN11:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN12:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN13:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN14:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN15:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN16:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN17:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN18:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN19:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN20:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN21:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN22:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN23:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN24:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN25:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN26:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN27:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN28:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN29:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN30:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN31:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN32:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN33:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN34:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN35:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN36:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN37:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN38:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN39:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN40:
-            case PATH_HEARTHGLEN_CRUSADER_DESPAWN41:
-                me->DespawnOrUnsummon(1s);
-                break;
-            default:
-                break;
-        }
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_chapter1_emblazon_runeblade::HandleEffectPeriodic, EFFECT_0, SPELL_AURA_PERIODIC_TRIGGER_SPELL);
+    }
+};
+
+// 51770 - Emblazon Runeblade
+class spell_chapter1_emblazon_runeblade_effect : public SpellScript
+{
+    PrepareSpellScript(spell_chapter1_emblazon_runeblade_effect);
+
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        return ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_0).CalcValue()) });
     }
 
-private:
-    float _minimumRange;
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        GetCaster()->CastSpell(GetCaster(), uint32(GetEffectValue()), false);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_chapter1_emblazon_runeblade_effect::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
 };
 
 void AddSC_the_scarlet_enclave_c1()
@@ -1321,6 +1309,8 @@ void AddSC_the_scarlet_enclave_c1()
     new go_acherus_soul_prison();
     RegisterSpellScript(spell_death_knight_initiate_visual);
     RegisterCreatureAI(npc_eye_of_acherus);
+    RegisterSpellScript(spell_chapter1_siphon_of_acherus);
+    RegisterSpellScript(spell_chapter1_recall_eye_of_acherus);
     new npc_death_knight_initiate();
     RegisterCreatureAI(npc_dark_rider_of_acherus);
     new npc_salanar_the_horseman();
@@ -1331,5 +1321,7 @@ void AddSC_the_scarlet_enclave_c1()
     RegisterCreatureAI(npc_scarlet_ghoul);
     RegisterSpellScript(spell_gift_of_the_harvester);
     RegisterSpellScript(spell_chapter1_runeforging_credit);
-    RegisterCreatureAI(npc_hearthglen_crusader);
+    RegisterSpellScript(spell_chapter1_sky_darkener_assault);
+    RegisterSpellScript(spell_chapter1_emblazon_runeblade);
+    RegisterSpellScript(spell_chapter1_emblazon_runeblade_effect);
 }

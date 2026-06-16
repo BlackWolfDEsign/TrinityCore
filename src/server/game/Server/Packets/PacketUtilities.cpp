@@ -17,64 +17,46 @@
 
 #include "PacketUtilities.h"
 #include "Hyperlinks.h"
-#include "StringFormat.h"
 #include <utf8.h>
 
-WorldPackets::InvalidStringValueException::InvalidStringValueException(char const* type, std::string_view value)
-    : ByteBufferInvalidValueException(type, value), _value(value)
+WorldPackets::InvalidStringValueException::InvalidStringValueException(std::string const& value) : ByteBufferInvalidValueException("string", value.c_str())
 {
 }
 
-WorldPackets::InvalidUtf8ValueException::InvalidUtf8ValueException(std::string_view value)
-    : InvalidStringValueException("utf8 string", value)
+WorldPackets::InvalidUtf8ValueException::InvalidUtf8ValueException(std::string const& value) : InvalidStringValueException(value)
 {
 }
 
-WorldPackets::InvalidHyperlinkException::InvalidHyperlinkException(std::string_view value, Reason reason)
-    : InvalidStringValueException(GetReasonText(reason), value), _reason(reason)
+WorldPackets::InvalidHyperlinkException::InvalidHyperlinkException(std::string const& value) : InvalidStringValueException(value)
 {
 }
 
-char const* WorldPackets::InvalidHyperlinkException::GetReasonText(Reason reason)
+WorldPackets::IllegalHyperlinkException::IllegalHyperlinkException(std::string const& value) : InvalidStringValueException(value)
 {
-    switch (reason)
-    {
-        case Malformed: return "malformed hyperlink";
-        case NotAllowed: return "not allowed hyperlink";
-        default: return "hyperlink";
-    }
 }
 
-void WorldPackets::Strings::ByteSize::Validate(std::string_view value, std::size_t maxSize)
-{
-    if (std::size_t size = value.size(); size > maxSize)
-        OnInvalidArraySize(size, maxSize);
-}
-
-void WorldPackets::Strings::Utf8::Validate(std::string_view value)
+bool WorldPackets::Strings::Utf8::Validate(std::string const& value)
 {
     if (!utf8::is_valid(value.begin(), value.end()))
         throw InvalidUtf8ValueException(value);
+    return true;
 }
 
-void WorldPackets::Strings::Hyperlinks::Validate(std::string_view value)
+bool WorldPackets::Strings::Hyperlinks::Validate(std::string const& value)
 {
     if (!Trinity::Hyperlinks::CheckAllLinks(value))
-        throw InvalidHyperlinkException(value, InvalidHyperlinkException::Malformed);
+        throw InvalidHyperlinkException(value);
+    return true;
 }
 
-void WorldPackets::Strings::NoHyperlinks::Validate(std::string_view value)
+bool WorldPackets::Strings::NoHyperlinks::Validate(std::string const& value)
 {
     if (value.find('|') != std::string::npos)
-        throw InvalidHyperlinkException(value, InvalidHyperlinkException::NotAllowed);
-}
-
-void WorldPackets::OnInvalidArraySize(std::size_t requestedSize, std::size_t sizeLimit)
-{
-    throw PacketArrayMaxCapacityException(requestedSize, sizeLimit);
+        throw IllegalHyperlinkException(value);
+    return true;
 }
 
 WorldPackets::PacketArrayMaxCapacityException::PacketArrayMaxCapacityException(std::size_t requestedSize, std::size_t sizeLimit)
-    : ByteBufferException(Trinity::StringFormat("Attempted to read more array elements from packet {} than allowed {}", requestedSize, sizeLimit))
 {
+    message().assign("Attempted to read more array elements from packet " + Trinity::ToString(requestedSize) + " than allowed " + Trinity::ToString(sizeLimit));
 }

@@ -29,6 +29,7 @@
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
 #include "SpellScript.h"
+#include "TypeContainerVisitor.h"
 #include "ulduar.h"
 #include <G3D/Vector3.h>
 
@@ -83,9 +84,8 @@ enum Spells
     // Ancient Rune Giant
     SPELL_RUNIC_FORTIFICATION                   = 62942,
     SPELL_RUNE_DETONATION                       = 62526,
+    SPELL_STOMP                                 = 62411
 };
-
-#define SPELL_STOMP RAID_MODE<uint32>(62411,62413)
 
 enum Phases
 {
@@ -202,6 +202,7 @@ enum PreAddSpells
 
     SPELL_RUNIC_STRIKE              = 62322,
     SPELL_AURA_OF_CELERITY          = 62320,
+    SPELL_AURA_OF_CELERITY_VISUAL   = 62398,
 
     SPELL_IMPALE                    = 62331,
     SPELL_WHIRLING_TRIP             = 64151,
@@ -313,6 +314,9 @@ Position const SifSpawnPosition = { 2148.301f, -297.8453f, 438.3308f, 2.687807f 
 
 enum Data
 {
+    ACHIEVEMENT_DONT_STAND_IN_THE_LIGHTNING = 29712972,
+    ACHIEVEMENT_SIFFED                      = 29772978,
+    ACHIEVEMENT_LOSE_YOUR_ILLUSION          = 31763183,
     DATA_CHARGED_PILLAR                     = 1
 };
 
@@ -321,7 +325,7 @@ enum DisplayIds
     THORIM_WEAPON_DISPLAY_ID                = 45900
 };
 
-G3D::Vector3 const LightningOrbPath[] =
+Position const LightningOrbPath[] =
 {
     { 2134.889893f, -298.632996f, 438.247467f },
     { 2134.570068f, -440.317993f, 438.247467f },
@@ -332,6 +336,7 @@ G3D::Vector3 const LightningOrbPath[] =
     { 2202.208008f, -262.939270f, 412.168976f },
     { 2182.310059f, -263.233093f, 414.739410f }
 };
+std::size_t const LightningOrbPathSize = std::extent<decltype(LightningOrbPath)>::value;
 
 // used for trash jump calculation
 Position const ArenaCenter = { 2134.77f, -262.307f };
@@ -339,8 +344,8 @@ Position const ArenaCenter = { 2134.77f, -262.307f };
 // used for lightning field calculation
 Position const LightningFieldCenter = { 2135.178f, -321.122f };
 
-CircleBoundary const ArenaFloorCircle(ArenaCenter, 45.4f);
-CircleBoundary const InvertedBalconyCircle(LightningFieldCenter, 32.0f, true);
+CircleBoundary const ArenaFloorCircle(ArenaCenter, 45.4);
+CircleBoundary const InvertedBalconyCircle(LightningFieldCenter, 32.0, true);
 
 CreatureBoundary const ArenaBoundaries =
 {
@@ -518,6 +523,22 @@ class boss_thorim : public CreatureScript
                 }
             }
 
+            uint32 GetData(uint32 type) const override
+            {
+                switch (type)
+                {
+                    case ACHIEVEMENT_DONT_STAND_IN_THE_LIGHTNING:
+                        return _dontStandInTheLightning ? 1 : 0;
+                    case ACHIEVEMENT_LOSE_YOUR_ILLUSION:
+                    case DATA_THORIM_HARDMODE:
+                        return _hardMode ? 1 : 0;
+                    default:
+                        break;
+                }
+
+                return 0;
+            }
+
             void KilledUnit(Unit* who) override
             {
                 if (who->GetTypeId() == TYPEID_PLAYER)
@@ -634,7 +655,14 @@ class boss_thorim : public CreatureScript
 
                         std::function<void(Movement::MoveSplineInit&)> initializer = [](Movement::MoveSplineInit& init)
                         {
-                            init.MovebyPath(LightningOrbPath);
+                            Movement::PointsArray path;
+                            path.reserve(LightningOrbPathSize);
+                            std::transform(std::begin(LightningOrbPath), std::end(LightningOrbPath), std::back_inserter(path), [](Position const& pos)
+                            {
+                                return G3D::Vector3(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ());
+                            });
+
+                            init.MovebyPath(path);
                         };
                         summon->GetMotionMaster()->LaunchMoveSpline(std::move(initializer), 0, MOTION_PRIORITY_NORMAL, POINT_MOTION_TYPE);
                         break;
@@ -701,7 +729,7 @@ class boss_thorim : public CreatureScript
                             me->SetReactState(REACT_AGGRESSIVE);
                             me->SetDisableGravity(false);
                             me->SetControlled(false, UNIT_STATE_ROOT);
-                            me->GetMotionMaster()->MoveJump(EVENT_JUMP, { 2134.8f, -263.056f, 419.983f }, {}, 5.0f);
+                            me->GetMotionMaster()->MoveJump(2134.8f, -263.056f, 419.983f, me->GetOrientation(), 30.0f, 20.0f);
                             events.ScheduleEvent(EVENT_START_PERIODIC_CHARGE, 2s, 0, PHASE_2);
                             events.ScheduleEvent(EVENT_UNBALANCING_STRIKE, 15s, 0, PHASE_2);
                             events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 20s, 0, PHASE_2);
@@ -790,6 +818,8 @@ class boss_thorim : public CreatureScript
                     if (me->HasUnitState(UNIT_STATE_CASTING))
                         return;
                 }
+
+                DoMeleeAttackIfReady();
             }
 
             void DoAction(int32 action) override
@@ -942,8 +972,6 @@ struct npc_thorim_trashAI : public ScriptedAI
                 _info = &StaticThorimTrashInfo[i];
 
         ASSERT(_info);
-        if (_info->Type == DARK_RUNE_ACOLYTE)
-            me->SetCanMelee(false); // DoSpellAttackIfReady
     }
 
     struct AIHelper
@@ -951,27 +979,27 @@ struct npc_thorim_trashAI : public ScriptedAI
         /// returns heal amount of the given spell including hots
         static uint32 GetTotalHeal(SpellInfo const* spellInfo, Unit const* caster)
         {
-            SpellEffectValue heal = 0;
+            uint32 heal = 0;
             for (SpellEffectInfo const& spellEffectInfo : spellInfo->GetEffects())
             {
                 if (spellEffectInfo.IsEffect(SPELL_EFFECT_HEAL))
                     heal += spellEffectInfo.CalcValue(caster);
 
                 if (spellEffectInfo.IsEffect(SPELL_EFFECT_APPLY_AURA) && spellEffectInfo.IsAura(SPELL_AURA_PERIODIC_HEAL))
-                    heal += spellEffectInfo.GetPeriodicTickCount() * spellEffectInfo.CalcValue(caster);
+                    heal += spellInfo->GetMaxTicks() * spellEffectInfo.CalcValue(caster);
             }
-            return static_cast<uint32>(heal);
+            return heal;
         }
 
         /// returns remaining heal amount on given target
         static uint32 GetRemainingHealOn(Unit* target)
         {
-            SpellEffectValue heal = 0;
+            uint32 heal = 0;
             Unit::AuraEffectList const& auras = target->GetAuraEffectsByType(SPELL_AURA_PERIODIC_HEAL);
             for (AuraEffect const* aurEff : auras)
                 heal += aurEff->GetAmount() * aurEff->GetRemainingTicks();
 
-            return static_cast<uint32>(heal);
+            return heal;
         }
 
         class MostHPMissingInRange
@@ -985,7 +1013,7 @@ struct npc_thorim_trashAI : public ScriptedAI
                     if (_exclSelf && u == _referer)
                         return false;
 
-                    if (_exclAura && u->HasAura(_exclAura))
+                    if (_exclAura && u->HasAura(sSpellMgr->GetSpellIdForDifficulty(_exclAura, _referer)))
                         return false;
 
                     if ((u->GetHealth() + GetRemainingHealOn(u) + _hp) > u->GetMaxHealth())
@@ -1016,9 +1044,9 @@ struct npc_thorim_trashAI : public ScriptedAI
             uint32 const heal = GetTotalHeal(spellInfo, caster);
 
             Unit* target = nullptr;
-            Trinity::MostHPMissingInRange checker(caster, range, heal);
-            Trinity::UnitLastSearcher<Trinity::MostHPMissingInRange> searcher(caster, target, checker);
-            Cell::VisitGridObjects(caster, searcher, 60.0f);
+            MostHPMissingInRange checker(caster, range, heal);
+            Trinity::UnitLastSearcher<MostHPMissingInRange> searcher(caster, target, checker);
+            Cell::VisitGridObjects(caster, searcher, range);
 
             return target;
         }
@@ -1026,7 +1054,7 @@ struct npc_thorim_trashAI : public ScriptedAI
         static Unit* GetHealTarget(SpellInfo const* spellInfo, Unit* caster)
         {
             Unit* healTarget = nullptr;
-            if (!spellInfo->HasAttribute(SPELL_ATTR1_EXCLUDE_CASTER) && !roll_chance(caster->GetHealthPct()) && ((caster->GetHealth() + GetRemainingHealOn(caster) + GetTotalHeal(spellInfo, caster)) <= caster->GetMaxHealth()))
+            if (!spellInfo->HasAttribute(SPELL_ATTR1_CANT_TARGET_SELF) && !roll_chance_f(caster->GetHealthPct()) && ((caster->GetHealth() + GetRemainingHealOn(caster) + GetTotalHeal(spellInfo, caster)) <= caster->GetMaxHealth()))
                 healTarget = caster;
             else
                 healTarget = GetUnitWithMostMissingHp(spellInfo, caster);
@@ -1037,7 +1065,7 @@ struct npc_thorim_trashAI : public ScriptedAI
 
     bool UseAbility(uint32 spellId)
     {
-        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId, GetDifficulty());
+        SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellId);
         if (!spellInfo)
             return false;
 
@@ -1053,8 +1081,7 @@ struct npc_thorim_trashAI : public ScriptedAI
         if (_info->Type == MERCENARY_SOLDIER)
         {
             bool allowMove = true;
-            auto [minRange, maxRange] = spellInfo->GetMinMaxRange();
-            if (me->IsInRange(target, minRange, maxRange))
+            if (me->IsInRange(target, spellInfo->GetMinRange(), spellInfo->GetMaxRange()))
                 allowMove = false;
 
             if (IsCombatMovementAllowed() != allowMove)
@@ -1094,6 +1121,8 @@ struct npc_thorim_trashAI : public ScriptedAI
 
         if (_info->Type == DARK_RUNE_ACOLYTE)
             DoSpellAttackIfReady(SPELL_HOLY_SMITE);
+        else
+            DoMeleeAttackIfReady();
     }
 
     virtual void ExecuteEvent(uint32 eventId) = 0;
@@ -1140,6 +1169,11 @@ class npc_thorim_pre_phase : public CreatureScript
             {
                 if (Creature* thorim = _instance->GetCreature(DATA_THORIM))
                     thorim->AI()->DoAction(ACTION_INCREASE_PREADDS_COUNT);
+            }
+
+            bool ShouldSparWith(Unit const* target) const override
+            {
+                return !target->GetAffectingPlayer();
             }
 
             void DamageTaken(Unit* attacker, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
@@ -1251,7 +1285,7 @@ class npc_thorim_arena_phase : public CreatureScript
 
             void EnterEvadeMode(EvadeReason why) override
             {
-                if (why != EvadeReason::NoHostiles && why != EvadeReason::Boundary)
+                if (why != EVADE_REASON_NO_HOSTILES && why != EVADE_REASON_BOUNDARY)
                     return;
 
                 // this should only happen if theres no alive player in the arena -> summon orb
@@ -1461,6 +1495,8 @@ class npc_runic_colossus : public CreatureScript
 
                 if (!UpdateVictim())
                     return;
+
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -1544,6 +1580,8 @@ class npc_ancient_rune_giant : public CreatureScript
                     if (me->HasUnitState(UNIT_STATE_CASTING))
                         return;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -1663,6 +1701,8 @@ class spell_thorim_blizzard_effect : public SpellScriptLoader
 
         class spell_thorim_blizzard_effect_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_thorim_blizzard_effect_AuraScript);
+
             bool CheckAreaTarget(Unit* target)
             {
                 /// @todo: fix this for all dynobj auras
@@ -1702,6 +1742,8 @@ class spell_thorim_frostbolt_volley : public SpellScriptLoader
 
         class spell_thorim_frostbolt_volley_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_frostbolt_volley_SpellScript);
+
             void FilterTargets(std::list<WorldObject*>& targets)
             {
                 targets.remove_if([](WorldObject* object) -> bool
@@ -1736,6 +1778,8 @@ class spell_thorim_charge_orb : public SpellScriptLoader
 
         class spell_thorim_charge_orb_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_charge_orb_SpellScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo({ SPELL_LIGHTNING_PILLAR_1 });
@@ -1780,6 +1824,8 @@ class spell_thorim_lightning_charge : public SpellScriptLoader
 
         class spell_thorim_lightning_charge_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_lightning_charge_SpellScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo({ SPELL_LIGHTNING_CHARGE });
@@ -1818,6 +1864,8 @@ class spell_thorim_arena_leap : public SpellScriptLoader
 
         class spell_thorim_arena_leap_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_arena_leap_SpellScript);
+
             bool Load() override
             {
                 return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1857,6 +1905,8 @@ class spell_thorim_stormhammer : public SpellScriptLoader
 
         class spell_thorim_stormhammer_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_stormhammer_SpellScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo({ SPELL_STORMHAMMER_BOOMERANG, SPELL_DEAFENING_THUNDER });
@@ -1913,6 +1963,8 @@ class spell_thorim_stormhammer_sif : public SpellScriptLoader
 
         class spell_thorim_stormhammer_sif_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_stormhammer_sif_SpellScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo({ SPELL_STORMHAMMER_BOOMERANG, SPELL_SIF_TRANSFORM });
@@ -1953,6 +2005,8 @@ class spell_thorim_stormhammer_boomerang : public SpellScriptLoader
 
         class spell_thorim_stormhammer_boomerang_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_stormhammer_boomerang_SpellScript);
+
             void RecoverHammer(SpellEffIndex /*effIndex*/)
             {
                 if (Unit* target = GetHitUnit())
@@ -1979,6 +2033,8 @@ class spell_thorim_runic_smash : public SpellScriptLoader
 
         class spell_thorim_runic_smash_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_thorim_runic_smash_SpellScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo({ SPELL_RUNIC_SMASH });
@@ -2031,6 +2087,8 @@ class spell_thorim_activate_lightning_orb_periodic : public SpellScriptLoader
 
         class spell_thorim_activate_lightning_orb_periodic_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_thorim_activate_lightning_orb_periodic_AuraScript);
+
             InstanceScript* instance = nullptr;
 
             void PeriodicTick(AuraEffect const* /*aurEff*/)
@@ -2072,6 +2130,63 @@ class spell_thorim_activate_lightning_orb_periodic : public SpellScriptLoader
         }
 };
 
+// 62320 - Aura of Celerity
+class spell_thorim_aura_of_celerity : public AuraScript
+{
+    PrepareAuraScript(spell_thorim_aura_of_celerity);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_AURA_OF_CELERITY_VISUAL });
+    }
+
+    void AfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->RemoveAurasDueToSpell(SPELL_AURA_OF_CELERITY_VISUAL);
+    }
+
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(spell_thorim_aura_of_celerity::AfterRemove, EFFECT_0, SPELL_AURA_MELEE_SLOW, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+class achievement_dont_stand_in_the_lightning : public AchievementCriteriaScript
+{
+    public:
+        achievement_dont_stand_in_the_lightning() : AchievementCriteriaScript("achievement_dont_stand_in_the_lightning") { }
+
+        bool OnCheck(Player* /*source*/, Unit* target) override
+        {
+            return target && target->GetAI()->GetData(ACHIEVEMENT_DONT_STAND_IN_THE_LIGHTNING);
+        }
+};
+
+class achievement_lose_your_illusion : public AchievementCriteriaScript
+{
+    public:
+        achievement_lose_your_illusion() : AchievementCriteriaScript("achievement_lose_your_illusion") { }
+
+        bool OnCheck(Player* /*source*/, Unit* target) override
+        {
+            return target && target->GetAI()->GetData(ACHIEVEMENT_LOSE_YOUR_ILLUSION);
+        }
+};
+
+class achievement_i_ll_take_you_all_on : public AchievementCriteriaScript
+{
+    public:
+        achievement_i_ll_take_you_all_on() : AchievementCriteriaScript("achievement_i_ll_take_you_all_on"), _check() { }
+
+        bool OnCheck(Player* source, Unit* /*target*/) override
+        {
+            return _check(source);
+        }
+
+    private:
+        OutOfArenaCheck _check;
+};
+
 class condition_thorim_arena_leap : public ConditionScript
 {
     public:
@@ -2079,7 +2194,7 @@ class condition_thorim_arena_leap : public ConditionScript
 
         bool OnConditionCheck(Condition const* condition, ConditionSourceInfo& sourceInfo) override
         {
-            WorldObject const* target = sourceInfo.mConditionTargets[condition->ConditionTarget];
+            WorldObject* target = sourceInfo.mConditionTargets[condition->ConditionTarget];
             InstanceScript* instance = target->GetInstanceScript();
 
             if (!instance)
@@ -2110,5 +2225,9 @@ void AddSC_boss_thorim()
     new spell_thorim_arena_leap();
     new spell_thorim_runic_smash();
     new spell_thorim_activate_lightning_orb_periodic();
+    RegisterSpellScript(spell_thorim_aura_of_celerity);
+    new achievement_dont_stand_in_the_lightning();
+    new achievement_lose_your_illusion();
+    new achievement_i_ll_take_you_all_on();
     new condition_thorim_arena_leap();
 }

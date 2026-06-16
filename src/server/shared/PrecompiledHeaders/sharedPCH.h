@@ -17,8 +17,12 @@
 
 //add here most rarely modified headers to speed up debug build compilation
 
-#include "DatabaseEnv.h"
+#include "Common.h"
+#include "Define.h"
 #include "Errors.h"
-#include "IpAddress.h"
 #include "Log.h"
-#include <algorithm>
+#include <boost/asio/ip/tcp.hpp>
+#include <atomic>
+#include <memory>
+#include <string>
+#include <vector>

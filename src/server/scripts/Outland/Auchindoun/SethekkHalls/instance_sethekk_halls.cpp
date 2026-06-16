@@ -21,21 +21,16 @@
 #include "InstanceScript.h"
 #include "sethekk_halls.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_IKISS_DOOR, DATA_TALON_KING_IKISS, EncounterDoorBehavior::OpenWhenDone },
+    { GO_IKISS_DOOR, DATA_TALON_KING_IKISS, DOOR_TYPE_PASSAGE },
+    { 0,             0,                     DOOR_TYPE_ROOM    } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_TALON_KING_COFFER, DATA_TALON_KING_COFFER },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_DARKWEAVER_SYTH, {{ 1903 }} },
-    { DATA_TALON_KING_IKISS, {{ 1902 }} },
-    { DATA_ANZU, {{ 1904 }} }
+    { 0,                    0                      } // END
 };
 
 class instance_sethekk_halls : public InstanceMapScript
@@ -50,19 +45,7 @@ class instance_sethekk_halls : public InstanceMapScript
                 SetHeaders(DataHeader);
                 SetBossNumber(EncounterCount);
                 LoadDoorData(doorData);
-                LoadObjectData({}, gameObjectData);
-                LoadDungeonEncounterData(encounters);
-            }
-
-            void OnCreatureCreate(Creature* creature) override
-            {
-                if (creature->GetEntry() == NPC_ANZU)
-                {
-                    if (GetBossState(DATA_ANZU) == DONE)
-                        creature->DisappearAndDie();
-                    else
-                        SetBossState(DATA_ANZU, IN_PROGRESS);
-                }
+                LoadObjectData(nullptr, gameObjectData);
             }
 
             bool SetBossState(uint32 type, EncounterState state) override

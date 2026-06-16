@@ -25,52 +25,35 @@
 #include <vector>
 
 class Guild;
-struct GuildReward;
 
 class TC_GAME_API GuildMgr
 {
 private:
     GuildMgr();
     ~GuildMgr();
+    GuildMgr(GuildMgr const&) = delete;
+    GuildMgr& operator=(GuildMgr const&) = delete;
 
 public:
-    typedef std::unordered_map<ObjectGuid::LowType, Trinity::unique_trackable_ptr<Guild>> GuildContainer;
-
-    GuildMgr(GuildMgr const&) = delete;
-    GuildMgr(GuildMgr&&) = delete;
-    GuildMgr& operator=(GuildMgr const&) = delete;
-    GuildMgr& operator=(GuildMgr&&) = delete;
-
     static GuildMgr* instance();
 
     Guild* GetGuildByLeader(ObjectGuid guid) const;
     Guild* GetGuildById(ObjectGuid::LowType guildId) const;
-    Guild* GetGuildByGuid(ObjectGuid guid) const;
     Guild* GetGuildByName(std::string_view guildName) const;
     std::string GetGuildNameById(ObjectGuid::LowType guildId) const;
-
-    GuildContainer const& GetGuildStore() const { return GuildStore; }
-
-    void LoadGuildRewards();
 
     void LoadGuilds();
     void AddGuild(Guild* guild);
     void RemoveGuild(ObjectGuid::LowType guildId);
 
-    void SaveGuilds();
-
-    void ResetReputationCaps();
-
     ObjectGuid::LowType GenerateGuildId();
     void SetNextGuildId(ObjectGuid::LowType Id) { NextGuildId = Id; }
 
-    std::vector<GuildReward> const& GetGuildRewards() const { return GuildRewards; }
-
-    void ResetTimes(bool week);
+    void ResetTimes();
 protected:
+    typedef std::unordered_map<ObjectGuid::LowType, Trinity::unique_trackable_ptr<Guild>> GuildContainer;
     ObjectGuid::LowType NextGuildId;
     GuildContainer GuildStore;
-    std::vector<GuildReward> GuildRewards;
 };
 
 #define sGuildMgr GuildMgr::instance()

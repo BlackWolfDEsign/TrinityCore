@@ -22,6 +22,7 @@
 #include "AsioHacksFwd.h"
 #include "LogCommon.h"
 #include "StringFormat.h"
+
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -40,51 +41,44 @@ namespace Trinity
 
 #define LOGGER_ROOT "root"
 
-typedef Appender*(*AppenderCreatorFn)(uint8 id, std::string name, LogLevel level, AppenderFlags flags, std::vector<std::string_view> const& extraArgs);
+typedef Appender*(*AppenderCreatorFn)(uint8 id, std::string const& name, LogLevel level, AppenderFlags flags, std::vector<std::string_view> const& extraArgs);
 
 template <class AppenderImpl>
-Appender* CreateAppender(uint8 id, std::string name, LogLevel level, AppenderFlags flags, std::vector<std::string_view> const& extraArgs)
+Appender* CreateAppender(uint8 id, std::string const& name, LogLevel level, AppenderFlags flags, std::vector<std::string_view> const& extraArgs)
 {
-    return new AppenderImpl(id, std::move(name), level, flags, extraArgs);
+    return new AppenderImpl(id, name, level, flags, extraArgs);
 }
 
 class TC_COMMON_API Log
 {
+    typedef std::unordered_map<std::string, Logger> LoggerMap;
+
     private:
         Log();
         ~Log();
-
-    public:
         Log(Log const&) = delete;
         Log(Log&&) = delete;
         Log& operator=(Log const&) = delete;
         Log& operator=(Log&&) = delete;
 
-        static Log* instance() noexcept;
+    public:
+        static Log* instance();
 
         void Initialize(Trinity::Asio::IoContext* ioContext);
-        void SetAsynchronous(Trinity::Asio::IoContext* ioContext);
         void SetSynchronous();  // Not threadsafe - should only be called from main() after all threads are joined
         void LoadFromConfig();
         void Close();
-        bool ShouldLog(std::string_view type, LogLevel level) const noexcept;
-        Logger const* GetEnabledLogger(std::string_view type, LogLevel level) const noexcept;
+        bool ShouldLog(std::string const& type, LogLevel level) const;
         bool SetLogLevel(std::string const& name, int32 level, bool isLogger = true);
 
         template<typename... Args>
-        void OutMessage(std::string_view filter, LogLevel level, Trinity::FormatString<Args...> fmt, Args&&... args) noexcept
+        void OutMessage(std::string_view filter, LogLevel const level, Trinity::FormatString<Args...> fmt, Args&&... args)
         {
-            this->OutMessageImpl(GetLoggerByType(filter), filter, level, fmt, Trinity::MakeFormatArgs(args...));
+            this->OutMessageImpl(filter, level, fmt, Trinity::MakeFormatArgs(args...));
         }
 
         template<typename... Args>
-        void OutMessageTo(Logger const* logger, std::string_view filter, LogLevel level, Trinity::FormatString<Args...> fmt, Args&&... args) noexcept
-        {
-            this->OutMessageImpl(logger, filter, level, fmt, Trinity::MakeFormatArgs(args...));
-        }
-
-        template<typename... Args>
-        void OutCommand(uint32 account, Trinity::FormatString<Args...> fmt, Args&&... args) noexcept
+        void OutCommand(uint32 account, Trinity::FormatString<Args...> fmt, Args&&... args)
         {
             if (!ShouldLog("commands.gm", LOG_LEVEL_INFO))
                 return;
@@ -92,7 +86,7 @@ class TC_COMMON_API Log
             this->OutCommandImpl(account, fmt, Trinity::MakeFormatArgs(args...));
         }
 
-        void OutCharDump(std::string const& str, uint32 account_id, uint64 guid, std::string const& name) const noexcept;
+        void OutCharDump(char const* str, uint32 account_id, uint64 guid, char const* name);
 
         void SetRealmId(uint32 id);
 
@@ -105,31 +99,11 @@ class TC_COMMON_API Log
         std::string const& GetLogsDir() const { return m_logsDir; }
         std::string const& GetLogsTimestamp() const { return m_logsTimestamp; }
 
-        void CreateAppenderFromConfigLine(std::string const& name, std::string const& options);
-        void CreateLoggerFromConfigLine(std::string const& name, std::string const& options);
-
-        template <typename StringOrStringView>
-        static constexpr std::string_view make_string_view(StringOrStringView const& stringOrStringView)
-        {
-            return stringOrStringView;
-        }
-
-        template <size_t CharArraySize>
-        static consteval std::string_view make_string_view(char const(&chars)[CharArraySize])
-        {
-            return { std::begin(chars), (chars[CharArraySize - 1] == '\0' ? CharArraySize - 1 : CharArraySize) };
-        }
-
-        template <size_t CharArraySize>
-        static consteval Trinity::FormatStringView make_format_string_view(char const(&chars)[CharArraySize])
-        {
-            return { std::begin(chars), (chars[CharArraySize - 1] == '\0' ? CharArraySize - 1 : CharArraySize) };
-        }
-
     private:
         static std::string GetTimestampStr();
+        void write(std::unique_ptr<LogMessage> msg) const;
 
-        Logger const* GetLoggerByType(std::string_view type) const;
+        Logger const* GetLoggerByType(std::string const& type) const;
         Appender* GetAppenderByName(std::string_view name);
         uint8 NextAppenderId();
         void CreateAppenderFromConfig(std::string const& name);
@@ -137,12 +111,12 @@ class TC_COMMON_API Log
         void ReadAppendersFromConfig();
         void ReadLoggersFromConfig();
         void RegisterAppender(uint8 index, AppenderCreatorFn appenderCreateFn);
-        void OutMessageImpl(Logger const* logger, std::string_view filter, LogLevel level, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs) const noexcept;
-        void OutCommandImpl(uint32 account, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs) const noexcept;
+        void OutMessageImpl(std::string_view filter, LogLevel level, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs);
+        void OutCommandImpl(uint32 account, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs);
 
         std::unordered_map<uint8, AppenderCreatorFn> appenderFactory;
         std::unordered_map<uint8, std::unique_ptr<Appender>> appenders;
-        std::unordered_map<std::string_view, std::unique_ptr<Logger>> loggers;
+        std::unordered_map<std::string, std::unique_ptr<Logger>> loggers;
         uint8 AppenderId;
         LogLevel lowestLogLevel;
 
@@ -156,33 +130,42 @@ class TC_COMMON_API Log
 #define sLog Log::instance()
 
 #ifdef PERFORMANCE_PROFILING
-#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...) ((void)0)
-#else
-#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...)                                                              \
-        do {                                                                                                                    \
-            Log* logInstance = sLog;                                                                                            \
-            if (Logger const* loggerInstance = logInstance->GetEnabledLogger(Log::make_string_view((filterType__)), (level__))) \
-                logInstance->OutMessageTo(loggerInstance, Log::make_string_view((filterType__)), (level__),                     \
-                    Log::make_format_string_view((message__)), ## __VA_ARGS__);                                                 \
+#define TC_LOG_MESSAGE_BODY(filterType__, level__, ...) ((void)0)
+#elif TRINITY_PLATFORM != TRINITY_PLATFORM_WINDOWS
+
+// This will catch format errors on build time
+#define TC_LOG_MESSAGE_BODY(filterType__, level__, ...)                 \
+        do {                                                            \
+            if (sLog->ShouldLog(filterType__, level__))                 \
+                sLog->OutMessage(filterType__, level__, __VA_ARGS__);   \
         } while (0)
+#else
+#define TC_LOG_MESSAGE_BODY(filterType__, level__, ...)                 \
+        __pragma(warning(push))                                         \
+        __pragma(warning(disable:4127))                                 \
+        do {                                                            \
+            if (sLog->ShouldLog(filterType__, level__))                 \
+                sLog->OutMessage(filterType__, level__, __VA_ARGS__);   \
+        } while (0)                                                     \
+        __pragma(warning(pop))
 #endif
 
-#define TC_LOG_TRACE(filterType__, message__, ...) \
-    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_TRACE, message__, ## __VA_ARGS__)
+#define TC_LOG_TRACE(filterType__, ...) \
+    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_TRACE, __VA_ARGS__)
 
-#define TC_LOG_DEBUG(filterType__, message__, ...) \
-    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_DEBUG, message__, ## __VA_ARGS__)
+#define TC_LOG_DEBUG(filterType__, ...) \
+    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_DEBUG, __VA_ARGS__)
 
-#define TC_LOG_INFO(filterType__, message__, ...)  \
-    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_INFO, message__, ## __VA_ARGS__)
+#define TC_LOG_INFO(filterType__, ...)  \
+    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_INFO, __VA_ARGS__)
 
-#define TC_LOG_WARN(filterType__, message__, ...)  \
-    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_WARN, message__, ## __VA_ARGS__)
+#define TC_LOG_WARN(filterType__, ...)  \
+    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_WARN, __VA_ARGS__)
 
-#define TC_LOG_ERROR(filterType__, message__, ...) \
-    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_ERROR, message__, ## __VA_ARGS__)
+#define TC_LOG_ERROR(filterType__, ...) \
+    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_ERROR, __VA_ARGS__)
 
-#define TC_LOG_FATAL(filterType__, message__, ...) \
-    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_FATAL, message__, ## __VA_ARGS__)
+#define TC_LOG_FATAL(filterType__, ...) \
+    TC_LOG_MESSAGE_BODY(filterType__, LOG_LEVEL_FATAL, __VA_ARGS__)
 
 #endif

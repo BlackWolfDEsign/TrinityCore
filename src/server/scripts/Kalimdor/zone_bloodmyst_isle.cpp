@@ -181,7 +181,7 @@ public:
         void Reset() override
         {
             _events.Reset();
-            me->SetDisplayFromModel(1);
+            me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
         }
 
         void JustEngagedWith(Unit* /*who*/) override
@@ -201,9 +201,11 @@ public:
 
             if (Creature* legoso = me->FindNearestCreature(NPC_LEGOSO, SIZE_OF_GRIDS))
             {
+                Group* group = me->GetLootRecipientGroup();
+
                 if (killer->GetGUID() == legoso->GetGUID() ||
-                    (killer->IsPlayer() && me->isTappedBy(killer->ToPlayer())) ||
-                    killer->GetGUID() == legoso->AI()->GetGUID(DATA_EVENT_STARTER_GUID))
+                    (group && group->IsMember(killer->GetGUID())) ||
+                    killer->GetGUID().GetCounter() == legoso->AI()->GetData(DATA_EVENT_STARTER_GUID))
                     legoso->AI()->DoAction(ACTION_LEGOSO_SIRONAS_KILLED);
             }
         }
@@ -235,6 +237,8 @@ public:
                         break;
                 }
             }
+
+            DoMeleeAttackIfReady();
         }
 
         void DoAction(int32 param) override
@@ -245,10 +249,13 @@ public:
                 {
                     DoCast(me, SPELL_SIRONAS_CHANNELING);
                     std::list<Creature*> BeamList;
+                    _beamGuidList.clear();
                     me->GetCreatureListWithEntryInGrid(BeamList, NPC_BLOODMYST_TESLA_COIL, SIZE_OF_GRIDS);
-                    if (!BeamList.empty())
-                        for (std::list<Creature*>::iterator itr = BeamList.begin(); itr != BeamList.end(); ++itr)
-                            (*itr)->CastSpell(*itr, SPELL_BLOODMYST_TESLA);
+                    for (std::list<Creature*>::iterator itr = BeamList.begin(); itr != BeamList.end(); ++itr)
+                    {
+                        _beamGuidList.push_back((*itr)->GetGUID());
+                        (*itr)->CastSpell(*itr, SPELL_BLOODMYST_TESLA);
+                    }
                     break;
                 }
                 case ACTION_SIRONAS_CHANNEL_STOP:
@@ -269,6 +276,7 @@ public:
         }
 
     private:
+        GuidList _beamGuidList;
         EventMap _events;
     };
 
@@ -296,46 +304,51 @@ public:
             Initialize();
         }
 
-        void Initialize()
-        {
-            _phase = PHASE_NONE;
-            _moveTimer = 0;
-        }
-
         void OnQuestAccept(Player* player, Quest const* quest) override
         {
             if (quest->GetQuestId() == QUEST_ENDING_THEIR_WORLD)
             {
-                SetGUID(player->GetGUID(), DATA_EVENT_STARTER_GUID);
+                SetData(DATA_EVENT_STARTER_GUID, player->GetGUID().GetCounter());
                 LoadPath(PATH_ESCORT_LEGOSO);
                 Start(true, player->GetGUID(), quest);
             }
         }
 
-        ObjectGuid GetGUID(int32 type) const override
+        uint32 GetData(uint32 id) const override
         {
-            if (type == DATA_EVENT_STARTER_GUID)
-                return _eventStarterGuid;
-
-            return ObjectGuid::Empty;
-        }
-
-        void SetGUID(ObjectGuid const& guid, int32 type) override
-        {
-            switch (type)
+            switch (id)
             {
                 case DATA_EVENT_STARTER_GUID:
-                    _eventStarterGuid = guid;
+                    return _eventStarterGuidLow;
+                default:
+                    return 0;
+            }
+        }
+
+        void SetData(uint32 data, uint32 value) override
+        {
+            switch (data)
+            {
+                case DATA_EVENT_STARTER_GUID:
+                    _eventStarterGuidLow = value;
                     break;
                 default:
                     break;
             }
         }
 
+        void Initialize()
+        {
+            _phase = PHASE_NONE;
+            _moveTimer = 0;
+            _eventStarterGuidLow = 0;
+        }
+
         void Reset() override
         {
-            me->SetCanDualWield(true);
             Initialize();
+            me->SetCanDualWield(true);
+
             _events.Reset();
             _events.ScheduleEvent(EVENT_FROST_SHOCK, 1s);
             _events.ScheduleEvent(EVENT_HEALING_SURGE, 5s);
@@ -389,6 +402,8 @@ public:
                             break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
 
             if (HasEscortState(STATE_ESCORT_NONE))
@@ -438,7 +453,7 @@ public:
                             _explosivesGuids.clear();
                             for (uint8 i = 0; i != MAX_EXPLOSIVES; ++i)
                             {
-                                if (GameObject* explosive = me->SummonGameObject(GO_DRAENEI_EXPLOSIVES_1, ExplosivesPos[0][i], QuaternionData::fromEulerAnglesZYX(ExplosivesPos[0][i].GetOrientation(), 0.0f, 0.0f), 0s))
+                                if (GameObject* explosive = me->SummonGameObject(GO_DRAENEI_EXPLOSIVES_1, ExplosivesPos[0][i], QuaternionData(), 0s))
                                     _explosivesGuids.push_back(explosive->GetGUID());
                             }
                             me->HandleEmoteCommand(EMOTE_ONESHOT_NONE); // reset anim state
@@ -535,7 +550,7 @@ public:
                             _explosivesGuids.clear();
                             for (uint8 i = 0; i != MAX_EXPLOSIVES; ++i)
                             {
-                                if (GameObject* explosive = me->SummonGameObject(GO_DRAENEI_EXPLOSIVES_2, ExplosivesPos[1][i], QuaternionData::fromEulerAnglesZYX(ExplosivesPos[1][i].GetOrientation(), 0.0f, 0.0f), 0s))
+                                if (GameObject* explosive = me->SummonGameObject(GO_DRAENEI_EXPLOSIVES_2, ExplosivesPos[1][i], QuaternionData(), 0s))
                                     _explosivesGuids.push_back(explosive->GetGUID());
                             }
                             if (Player* player = GetPlayerForEscort())
@@ -735,7 +750,7 @@ public:
     private:
         int8 _phase;
         uint32 _moveTimer;
-        ObjectGuid _eventStarterGuid;
+        ObjectGuid::LowType _eventStarterGuidLow;
         GuidList _explosivesGuids;
         EventMap _events;
     };
@@ -774,6 +789,8 @@ uint32 const CocoonSummonSpells[10] =
 // 30950 - Free Webbed Creature
 class spell_free_webbed : public SpellScript
 {
+    PrepareSpellScript(spell_free_webbed);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(CocoonSummonSpells);
@@ -793,6 +810,8 @@ class spell_free_webbed : public SpellScript
 // 31009 - Free Webbed Creature
 class spell_free_webbed_on_quest : public SpellScript
 {
+    PrepareSpellScript(spell_free_webbed_on_quest);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(CocoonSummonSpells) && ValidateSpellInfo({ SPELL_FREE_WEBBED_11 });
@@ -805,7 +824,7 @@ class spell_free_webbed_on_quest : public SpellScript
         Unit* caster = GetCaster();
         Unit* target = GetHitUnit();
 
-        if (roll_chance(66))
+        if (roll_chance_i(66))
             caster->CastSpell(caster, Trinity::Containers::SelectRandomContainerElement(CocoonSummonSpells), true);
         else
             target->CastSpell(caster, SPELL_FREE_WEBBED_11, true);

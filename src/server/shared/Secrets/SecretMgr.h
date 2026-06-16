@@ -34,28 +34,14 @@ enum Secrets : uint32
     NUM_SECRETS
 };
 
-enum SecretOwner
-{
-    SECRET_OWNER_BNETSERVER,
-    SECRET_OWNER_WORLDSERVER,
-
-    NUM_SECRET_OWNERS
-};
-
 class TC_SHARED_API SecretMgr
 {
     private:
-        SecretMgr();
-        ~SecretMgr();
+        SecretMgr() {}
+        ~SecretMgr() {}
 
     public:
-        static SecretOwner OWNER;
-
         SecretMgr(SecretMgr const&) = delete;
-        SecretMgr(SecretMgr&&) = delete;
-        SecretMgr& operator=(SecretMgr const&) = delete;
-        SecretMgr& operator=(SecretMgr&&) = delete;
-
         static SecretMgr* instance();
 
         struct Secret
@@ -74,11 +60,11 @@ class TC_SHARED_API SecretMgr
             friend class SecretMgr;
         };
 
-        void Initialize(SecretOwner owner);
+        void Initialize();
         Secret const& GetSecret(Secrets i);
 
     private:
-        void AttemptLoad(Secrets i, LogLevel errorLevel, std::scoped_lock<std::mutex> const&);
+        void AttemptLoad(Secrets i, LogLevel errorLevel, std::unique_lock<std::mutex> const&);
         Optional<std::string> AttemptTransition(Secrets i, Optional<BigNumber> const& newSecret, Optional<BigNumber> const& oldSecret, bool hadOldSecret) const;
 
         std::array<Secret, NUM_SECRETS> _secrets;

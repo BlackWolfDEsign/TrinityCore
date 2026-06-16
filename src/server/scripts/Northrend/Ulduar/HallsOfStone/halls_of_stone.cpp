@@ -672,6 +672,8 @@ struct npc_brann_hos : public EscortAI
 
         if (!UpdateVictim())
             return;
+
+        DoMeleeAttackIfReady();
     }
 
     bool OnGossipSelect(Player* player, uint32 /*menuId*/, uint32 gossipListId) override

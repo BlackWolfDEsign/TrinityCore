@@ -41,24 +41,11 @@ std::array<uint32, 4> const CandysSpells =
     SPELL_HALLOWS_END_CANDY_GHOST
 };
 
-enum HallowsEndChildrensCustomeSpells
-{
-    SPELL_HALLOWS_END_SCARY_TIKI_MASK             = 97095,
-    SPELL_HALLOWS_END_SCARY_WITCH_HAT             = 97134,
-    SPELL_HALLOWS_END_SCARY_PUMPKIN_MASK          = 97144,
-    SPELL_HALLOWS_END_SCARY_TIKI_MASK_2           = 100315,
-    SPELL_HALLOWS_END_FANCY_TOP_HAT               = 100321
-};
-
-enum HallowsEndMiscSpells
-{
-    SPELL_HALLOWS_END_DUMMY_NUKE                  = 21912,
-    SPELL_HALLOWS_END_DREAD_FERTILIZER            = 191546
-};
-
 // 24930 - Hallow's End Candy
 class spell_hallow_end_candy : public SpellScript
 {
+    PrepareSpellScript(spell_hallow_end_candy);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(CandysSpells);
@@ -78,6 +65,8 @@ class spell_hallow_end_candy : public SpellScript
 // 24926 - Hallow's End Candy
 class spell_hallow_end_candy_pirate : public AuraScript
 {
+    PrepareAuraScript(spell_hallow_end_candy_pirate);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(
@@ -106,6 +95,32 @@ class spell_hallow_end_candy_pirate : public AuraScript
     }
 };
 
+enum TrickInitial
+{
+    SPELL_TRICK_INITIAL     = 24750
+};
+
+// 24714 - Trick
+class spell_hallow_end_trick_initial : public SpellScript
+{
+    PrepareSpellScript(spell_hallow_end_trick_initial);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_TRICK_INITIAL });
+    }
+
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        GetHitUnit()->CastSpell(GetHitUnit(), SPELL_TRICK_INITIAL);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_hallow_end_trick_initial::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
 enum TrickSpells
 {
     SPELL_PIRATE_COSTUME_MALE           = 24708,
@@ -123,6 +138,8 @@ enum TrickSpells
 // 24750 - Trick
 class spell_hallow_end_trick : public SpellScript
 {
+    PrepareSpellScript(spell_hallow_end_trick);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo(
@@ -191,6 +208,8 @@ enum TrickOrTreatSpells
 // 24751 - Trick or Treat
 class spell_hallow_end_trick_or_treat : public SpellScript
 {
+    PrepareSpellScript(spell_hallow_end_trick_or_treat);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_TRICK, SPELL_TREAT, SPELL_TRICKED_OR_TREATED });
@@ -201,7 +220,7 @@ class spell_hallow_end_trick_or_treat : public SpellScript
         Unit* caster = GetCaster();
         if (Player* target = GetHitPlayer())
         {
-            caster->CastSpell(target, roll_chance(50) ? SPELL_TRICK : SPELL_TREAT, true);
+            caster->CastSpell(target, roll_chance_i(50) ? SPELL_TRICK : SPELL_TREAT, true);
             caster->CastSpell(target, SPELL_TRICKED_OR_TREATED, true);
         }
     }
@@ -215,6 +234,8 @@ class spell_hallow_end_trick_or_treat : public SpellScript
 // 44436 - Tricky Treat
 class spell_hallow_end_tricky_treat : public SpellScript
 {
+    PrepareSpellScript(spell_hallow_end_tricky_treat);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo(
@@ -228,7 +249,7 @@ class spell_hallow_end_tricky_treat : public SpellScript
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
         Unit* caster = GetCaster();
-        if (caster->HasAura(SPELL_TRICKY_TREAT_TRIGGER) && caster->GetAuraCount(SPELL_TRICKY_TREAT_SPEED) > 3 && roll_chance(33))
+        if (caster->HasAura(SPELL_TRICKY_TREAT_TRIGGER) && caster->GetAuraCount(SPELL_TRICKY_TREAT_SPEED) > 3 && roll_chance_i(33))
             caster->CastSpell(caster, SPELL_UPSET_TUMMY, true);
     }
 
@@ -253,6 +274,8 @@ enum HallowendData
 // 24717, 24718, 24719, 24720, 24724, 24733, 24737, 24741
 class spell_hallow_end_wand : public SpellScript
 {
+    PrepareSpellScript(spell_hallow_end_wand);
+
     bool Validate(SpellInfo const* /*spellEntry*/) override
     {
         return ValidateSpellInfo(
@@ -305,60 +328,32 @@ class spell_hallow_end_wand : public SpellScript
     }
 };
 
-// 97135 - Children's Costume Aura
-class spell_hallows_end_childrens_custome_aura : public AuraScript
+enum CreateWaterBucket
 {
-    static constexpr std::array<uint32, 5> ChildrensCustomeSpells =
-    {
-        SPELL_HALLOWS_END_SCARY_TIKI_MASK,
-        SPELL_HALLOWS_END_SCARY_WITCH_HAT,
-        SPELL_HALLOWS_END_SCARY_PUMPKIN_MASK,
-        SPELL_HALLOWS_END_SCARY_TIKI_MASK_2,
-        SPELL_HALLOWS_END_FANCY_TOP_HAT
-    };
-
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo(ChildrensCustomeSpells);
-    }
-
-    void HandleAfterApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
-    {
-        GetTarget()->CastSpell(GetTarget(), Trinity::Containers::SelectRandomContainerElement(ChildrensCustomeSpells), aurEff);
-    }
-
-    void HandlePeriodic(AuraEffect const* aurEff)
-    {
-        for (uint32 spell : ChildrensCustomeSpells)
-            GetTarget()->RemoveAura(spell);
-
-        GetTarget()->CastSpell(GetTarget(), Trinity::Containers::SelectRandomContainerElement(ChildrensCustomeSpells), aurEff);
-    }
-
-    void Register() override
-    {
-        AfterEffectApply += AuraEffectApplyFn(spell_hallows_end_childrens_custome_aura::HandleAfterApply, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY, AURA_EFFECT_HANDLE_REAL);
-        OnEffectPeriodic += AuraEffectPeriodicFn(spell_hallows_end_childrens_custome_aura::HandlePeriodic, EFFECT_0, SPELL_AURA_PERIODIC_DUMMY);
-    }
+    SPELL_CREATE_WATER_BUCKET_BARREL_SPLASH    = 43244,
+    SPELL_JUST_LOOTED_WATER_BARREL             = 44410
 };
 
-// 191547 - Powder Blast
-class spell_hallows_end_powder_blast : public AuraScript
+// 42144 - Headless Horseman - Create Water Bucket
+class spell_hallow_end_create_water_bucket : public SpellScript
 {
+    PrepareSpellScript(spell_hallow_end_create_water_bucket);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
-        return ValidateSpellInfo({ SPELL_HALLOWS_END_DUMMY_NUKE, SPELL_HALLOWS_END_DREAD_FERTILIZER });
+        return ValidateSpellInfo({ SPELL_CREATE_WATER_BUCKET_BARREL_SPLASH, SPELL_JUST_LOOTED_WATER_BARREL });
     }
 
-    void HandleProc(AuraEffect* /*aurEff*/, ProcEventInfo& eventInfo)
+    void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetTarget()->CastSpell(GetTarget(), SPELL_HALLOWS_END_DUMMY_NUKE);
-        eventInfo.GetActor()->CastSpell(GetTarget(), SPELL_HALLOWS_END_DREAD_FERTILIZER);
+        Unit* target = GetHitUnit();
+        target->CastSpell(target, SPELL_CREATE_WATER_BUCKET_BARREL_SPLASH);
+        target->CastSpell(target, SPELL_JUST_LOOTED_WATER_BARREL);
     }
 
     void Register() override
     {
-        OnEffectProc += AuraEffectProcFn(spell_hallows_end_powder_blast::HandleProc, EFFECT_0, SPELL_AURA_PROC_TRIGGER_SPELL);
+        OnEffectHitTarget += SpellEffectFn(spell_hallow_end_create_water_bucket::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
@@ -366,10 +361,10 @@ void AddSC_event_hallows_end()
 {
     RegisterSpellScript(spell_hallow_end_candy);
     RegisterSpellScript(spell_hallow_end_candy_pirate);
+    RegisterSpellScript(spell_hallow_end_trick_initial);
     RegisterSpellScript(spell_hallow_end_trick);
     RegisterSpellScript(spell_hallow_end_trick_or_treat);
     RegisterSpellScript(spell_hallow_end_tricky_treat);
     RegisterSpellScript(spell_hallow_end_wand);
-    RegisterSpellScript(spell_hallows_end_childrens_custome_aura);
-    RegisterSpellScript(spell_hallows_end_powder_blast);
+    RegisterSpellScript(spell_hallow_end_create_water_bucket);
 }

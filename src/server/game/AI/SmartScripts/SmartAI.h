@@ -19,14 +19,11 @@
 #define TRINITY_SMARTAI_H
 
 #include "Define.h"
-#include "AreaTriggerAI.h"
 #include "CreatureAI.h"
 #include "GameObjectAI.h"
+#include "Position.h"
 #include "SmartScript.h"
 #include "WaypointDefines.h"
-
-enum class AreaTriggerExitReason : uint8;
-enum class MovementStopReason : uint8;
 
 enum SmartEscortState : uint8
 {
@@ -43,7 +40,7 @@ class TC_GAME_API SmartAI : public CreatureAI
 {
     public:
         ~SmartAI() { }
-        explicit SmartAI(Creature* creature, uint32 scriptId = {});
+        explicit SmartAI(Creature* creature);
 
         // core related
         static int32 Permissible(Creature const* /*creature*/) { return PERMIT_BASE_NO; }
@@ -52,8 +49,7 @@ class TC_GAME_API SmartAI : public CreatureAI
         bool IsAIControlled() const;
 
         // Start moving to the desired MovePoint
-        void StartPath(uint32 pathId = 0, bool repeat = false, Unit* invoker = nullptr, uint32 nodeId = 0,
-            uint32 fadeObjectDuration = 0, Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult = {});
+        void StartPath(uint32 pathId = 0, bool repeat = false, Unit* invoker = nullptr, uint32 nodeId = 1);
         WaypointPath const* LoadPath(uint32 entry);
         void PausePath(uint32 delay, bool forced = false);
         bool CanResumePath();
@@ -72,8 +68,12 @@ class TC_GAME_API SmartAI : public CreatureAI
         {
             _escortState &= ~escortState;
         }
+        void SetAutoAttack(bool on)
+        {
+            _canAutoAttack = on;
+        }
         void SetCombatMove(bool on, bool stopMoving = false);
-        bool CanCombatMove() const
+        bool CanCombatMove()
         {
             return _canCombatMove;
         }
@@ -84,7 +84,7 @@ class TC_GAME_API SmartAI : public CreatureAI
         void WaypointReached(uint32 nodeId, uint32 pathId) override;
         void WaypointPathEnded(uint32 nodeId, uint32 pathId) override;
 
-        void SetTimedActionList(SmartScriptHolder& e, uint32 entry, Unit* invoker, uint32 startFromEventId = 0);
+        void SetTimedActionList(SmartScriptHolder& e, uint32 entry, Unit* invoker);
         SmartScript* GetScript()
         {
             return &_script;
@@ -97,7 +97,7 @@ class TC_GAME_API SmartAI : public CreatureAI
         void JustEngagedWith(Unit* enemy) override;
 
         // Called for reaction at stopping attack at no attackers or targets
-        void EnterEvadeMode(EvadeReason why) override;
+        void EnterEvadeMode(EvadeReason why = EVADE_REASON_OTHER) override;
 
         // Called when the creature is killed
         void JustDied(Unit* killer) override;
@@ -181,23 +181,25 @@ class TC_GAME_API SmartAI : public CreatureAI
         void OnCharmed(bool isNew) override;
 
         // Used in scripts to share variables
-        void DoAction(int32 param) override;
+        void DoAction(int32 param = 0) override;
 
         // Used in scripts to share variables
-        uint32 GetData(uint32 id) const override;
+        uint32 GetData(uint32 id = 0) const override;
 
         // Used in scripts to share variables
         void SetData(uint32 id, uint32 value) override { SetData(id, value, nullptr); }
         void SetData(uint32 id, uint32 value, Unit* invoker);
 
         // Used in scripts to share variables
-        void SetGUID(ObjectGuid const& guid, int32 id) override;
+        void SetGUID(ObjectGuid const& guid, int32 id = 0) override;
 
         // Used in scripts to share variables
-        ObjectGuid GetGUID(int32 id) const override;
+        ObjectGuid GetGUID(int32 id = 0) const override;
 
         // Makes the creature run/walk
         void SetRun(bool run = true);
+
+        void SetDisableGravity(bool disable = true);
 
         void SetEvadeDisabled(bool disable = true);
 
@@ -210,7 +212,7 @@ class TC_GAME_API SmartAI : public CreatureAI
         bool OnGossipSelect(Player* player, uint32 menuId, uint32 gossipListId) override;
         bool OnGossipSelectCode(Player* player, uint32 menuId, uint32 gossipListId, char const* code) override;
         void OnQuestAccept(Player* player, Quest const* quest) override;
-        void OnQuestReward(Player* player, Quest const* quest, LootItemType type, uint32 opt) override;
+        void OnQuestReward(Player* player, Quest const* quest, uint32 opt) override;
         void OnGameEvent(bool start, uint16 eventId) override;
 
         void SetDespawnTime (uint32 t)
@@ -261,7 +263,7 @@ class TC_GAME_API SmartAI : public CreatureAI
         uint32 _escortState;
         uint32 _escortNPCFlags;
         uint32 _escortInvokerCheckTimer;
-        uint32 _currentWaypointNodeId;
+        uint32 _currentWaypointNode;
         bool _waypointReached;
         uint32 _waypointPauseTimer;
         bool _waypointPauseForced;
@@ -271,6 +273,7 @@ class TC_GAME_API SmartAI : public CreatureAI
 
         bool _run;
         bool _evadeDisabled;
+        bool _canAutoAttack;
         bool _canCombatMove;
         uint32 _invincibilityHPLevel;
 
@@ -290,7 +293,7 @@ class TC_GAME_API SmartAI : public CreatureAI
 class TC_GAME_API SmartGameObjectAI : public GameObjectAI
 {
     public:
-        SmartGameObjectAI(GameObject* go, uint32 scriptId = {}) : GameObjectAI(go, scriptId), _gossipReturn(false) { }
+        SmartGameObjectAI(GameObject* go) : GameObjectAI(go), _gossipReturn(false) { }
         ~SmartGameObjectAI() { }
 
         void UpdateAI(uint32 diff) override;
@@ -309,7 +312,7 @@ class TC_GAME_API SmartGameObjectAI : public GameObjectAI
         bool OnGossipSelect(Player* player, uint32 menuId, uint32 gossipListId) override;
         bool OnGossipSelectCode(Player* player, uint32 menuId, uint32 gossipListId, char const* code) override;
         void OnQuestAccept(Player* player, Quest const* quest) override;
-        void OnQuestReward(Player* player, Quest const* quest, LootItemType type, uint32 opt) override;
+        void OnQuestReward(Player* player, Quest const* quest, uint32 opt) override;
         bool OnReportUse(Player* player) override;
         void Destroyed(WorldObject* attacker, uint32 eventId) override;
         void SetData(uint32 id, uint32 value, Unit* invoker);
@@ -338,23 +341,6 @@ class TC_GAME_API SmartGameObjectAI : public GameObjectAI
 
         // Gossip
         bool _gossipReturn;
-};
-
-class TC_GAME_API SmartAreaTriggerAI : public AreaTriggerAI
-{
-public:
-    using AreaTriggerAI::AreaTriggerAI;
-
-    void OnInitialize() override;
-    void OnUpdate(uint32 diff) override;
-    void OnUnitEnter(Unit* unit) override;
-    void OnUnitExit(Unit* unit, AreaTriggerExitReason reason) override;
-
-    SmartScript* GetScript() { return &mScript; }
-    void SetTimedActionList(SmartScriptHolder& e, uint32 entry, Unit* invoker);
-
-private:
-    SmartScript mScript;
 };
 
 /// Registers scripts required by the SAI scripting system

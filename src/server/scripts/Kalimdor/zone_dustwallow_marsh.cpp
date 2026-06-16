@@ -22,23 +22,17 @@
 
 enum OozeZap
 {
-    SPELL_OOZE_ZAP              = 42489,
-    SPELL_OOZE_CHANNEL_CREDIT   = 42486,
-    SPELL_ENERGIZED             = 42492,
+    SPELL_OOZE_CHANNEL_CREDIT   = 42486
 };
 
 // 42489 - Cast Ooze Zap When Energized
 class spell_ooze_zap : public SpellScript
 {
-    bool Validate(SpellInfo const* spellInfo) override
-    {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_1 } })
-            && ValidateSpellInfo({ SPELL_OOZE_ZAP });
-    }
+    PrepareSpellScript(spell_ooze_zap);
 
     SpellCastResult CheckRequirement()
     {
-        if (!GetCaster()->HasAura(GetEffectInfo(EFFECT_1).CalcValueAsInt()))
+        if (!GetCaster()->HasAura(GetEffectInfo(EFFECT_1).CalcValue()))
             return SPELL_FAILED_CANT_DO_THAT_RIGHT_NOW; // This is actually correct
 
         if (!GetExplTargetUnit())
@@ -51,7 +45,7 @@ class spell_ooze_zap : public SpellScript
     {
         PreventHitDefaultEffect(effIndex);
         if (GetHitUnit())
-            GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()), true);
+            GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true);
     }
 
     void Register() override
@@ -64,6 +58,8 @@ class spell_ooze_zap : public SpellScript
 // 42485 - End of Ooze Channel
 class spell_ooze_zap_channel_end : public SpellScript
 {
+    PrepareSpellScript(spell_ooze_zap_channel_end);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_OOZE_CHANNEL_CREDIT });
@@ -86,16 +82,13 @@ class spell_ooze_zap_channel_end : public SpellScript
 // 42492 - Cast Energized
 class spell_energize_aoe : public SpellScript
 {
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo({ SPELL_ENERGIZED });
-    }
+    PrepareSpellScript(spell_energize_aoe);
 
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         for (std::list<WorldObject*>::iterator itr = targets.begin(); itr != targets.end();)
         {
-            if ((*itr)->GetTypeId() == TYPEID_PLAYER && (*itr)->ToPlayer()->GetQuestStatus(GetEffectInfo(EFFECT_1).CalcValueAsInt()) == QUEST_STATUS_INCOMPLETE)
+            if ((*itr)->GetTypeId() == TYPEID_PLAYER && (*itr)->ToPlayer()->GetQuestStatus(GetEffectInfo(EFFECT_1).CalcValue()) == QUEST_STATUS_INCOMPLETE)
                 ++itr;
             else
                 targets.erase(itr++);
@@ -106,7 +99,7 @@ class spell_energize_aoe : public SpellScript
     void HandleScript(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetCaster()->CastSpell(GetCaster(), uint32(GetEffectValueAsInt()), true);
+        GetCaster()->CastSpell(GetCaster(), uint32(GetEffectValue()), true);
     }
 
     void Register() override
@@ -130,6 +123,8 @@ enum RecoverTheCargo
 // 42287 - Salvage Wreckage
 class spell_dustwallow_marsh_salvage_wreckage : public SpellScript
 {
+    PrepareSpellScript(spell_dustwallow_marsh_salvage_wreckage);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_SUMMON_LOCKBOX, SPELL_SUMMON_BURROWER });
@@ -137,12 +132,42 @@ class spell_dustwallow_marsh_salvage_wreckage : public SpellScript
 
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetCaster(), roll_chance(50) ? SPELL_SUMMON_LOCKBOX : SPELL_SUMMON_BURROWER);
+        GetCaster()->CastSpell(GetCaster(), roll_chance_i(50) ? SPELL_SUMMON_LOCKBOX : SPELL_SUMMON_BURROWER);
     }
 
     void Register() override
     {
         OnEffectHit += SpellEffectFn(spell_dustwallow_marsh_salvage_wreckage::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+/*######
+## Quest 11142: Survey Alcaz Island
+######*/
+
+enum SurveyAlcazIsland
+{
+    SPELL_ALCAZ_SURVEY_CREDIT     = 42316
+};
+
+// 42385 - Alcaz Survey Aura
+class spell_dustwallow_marsh_alcaz_survey_aura : public AuraScript
+{
+    PrepareAuraScript(spell_dustwallow_marsh_alcaz_survey_aura);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_ALCAZ_SURVEY_CREDIT });
+    }
+
+    void AfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->CastSpell(GetTarget(), SPELL_ALCAZ_SURVEY_CREDIT, true);
+    }
+
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(spell_dustwallow_marsh_alcaz_survey_aura::AfterRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -152,4 +177,5 @@ void AddSC_dustwallow_marsh()
     RegisterSpellScript(spell_ooze_zap_channel_end);
     RegisterSpellScript(spell_energize_aoe);
     RegisterSpellScript(spell_dustwallow_marsh_salvage_wreckage);
+    RegisterSpellScript(spell_dustwallow_marsh_alcaz_survey_aura);
 }

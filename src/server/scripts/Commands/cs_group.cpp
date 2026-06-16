@@ -19,21 +19,18 @@
 #include "CharacterCache.h"
 #include "ChatCommandTags.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "DatabaseEnv.h"
-#include "DB2Stores.h"
-#include "Group.h"
+#include "DBCStores.h"
 #include "GroupMgr.h"
 #include "Language.h"
 #include "LFG.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
-#include "PhasingHandler.h"
 #include "Player.h"
 #include "RBAC.h"
 #include "WorldSession.h"
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
@@ -44,9 +41,9 @@ class group_commandscript : public CommandScript
 public:
     group_commandscript() : CommandScript("group_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommandTable groupSetCommandTable =
+        static std::vector<ChatCommand> groupSetCommandTable =
         {
             { "leader",     rbac::RBAC_PERM_COMMAND_GROUP_LEADER,     false, &HandleGroupLeaderCommand,     "" },
             { "assistant",  rbac::RBAC_PERM_COMMAND_GROUP_ASSISTANT,  false, &HandleGroupAssistantCommand,  "" },
@@ -54,7 +51,7 @@ public:
             { "mainassist", rbac::RBAC_PERM_COMMAND_GROUP_MAINASSIST, false, &HandleGroupMainAssistCommand, "" }
         };
 
-        static ChatCommandTable groupCommandTable =
+        static std::vector<ChatCommand> groupCommandTable =
         {
             { "set",     rbac::RBAC_PERM_COMMAND_GROUP_SET,       false, nullptr,                    "", groupSetCommandTable },
             { "leader",  rbac::RBAC_PERM_COMMAND_GROUP_LEADER,    false, &HandleGroupLeaderCommand,  "" },
@@ -68,7 +65,7 @@ public:
             { "level",   rbac::RBAC_PERM_COMMAND_CHARACTER_LEVEL, true,  &HandleGroupLevelCommand,   "" }
         };
 
-        static ChatCommandTable commandTable =
+        static std::vector<ChatCommand> commandTable =
         {
             { "group", rbac::RBAC_PERM_COMMAND_GROUP, false, nullptr, "", groupCommandTable },
         };
@@ -92,24 +89,27 @@ public:
         if (!groupTarget)
             return false;
 
-        for (GroupReference const& it : groupTarget->GetMembers())
+        for (GroupReference* it = groupTarget->GetFirstMember(); it != nullptr; it = it->next())
         {
-            target = it.GetSource();
-            uint8 oldlevel = static_cast<uint8>(target->GetLevel());
-
-            if (level != oldlevel)
+            target = it->GetSource();
+            if (target)
             {
-                target->SetLevel(static_cast<uint8>(level));
-                target->InitTalentForLevel();
-                target->SetXP(0);
-            }
+                uint8 oldlevel = static_cast<uint8>(target->GetLevel());
 
-            if (handler->needReportToTarget(target))
-            {
-                if (oldlevel < static_cast<uint8>(level))
-                    ChatHandler(target->GetSession()).PSendSysMessage(LANG_YOURS_LEVEL_UP, handler->GetNameLink().c_str(), level);
-                else                                                // if (oldlevel > newlevel)
-                    ChatHandler(target->GetSession()).PSendSysMessage(LANG_YOURS_LEVEL_DOWN, handler->GetNameLink().c_str(), level);
+                if (level != oldlevel)
+                {
+                    target->SetLevel(static_cast<uint8>(level));
+                    target->InitTalentForLevel();
+                    target->SetXP(0);
+                }
+
+                if (handler->needReportToTarget(target))
+                {
+                    if (oldlevel < static_cast<uint8>(level))
+                        ChatHandler(target->GetSession()).PSendSysMessage(LANG_YOURS_LEVEL_UP, handler->GetNameLink().c_str(), level);
+                    else                                                // if (oldlevel > newlevel)
+                        ChatHandler(target->GetSession()).PSendSysMessage(LANG_YOURS_LEVEL_DOWN, handler->GetNameLink().c_str(), level);
+                }
             }
         }
         return true;
@@ -125,12 +125,15 @@ public:
         if (!groupTarget)
             return false;
 
-        for (GroupReference const& it : groupTarget->GetMembers())
+        for (GroupReference* it = groupTarget->GetFirstMember(); it != nullptr; it = it->next())
         {
-            Player* target = it.GetSource();
-            target->ResurrectPlayer(target->GetSession()->HasPermission(rbac::RBAC_PERM_RESURRECT_WITH_FULL_HPS) ? 1.0f : 0.5f);
-            target->SpawnCorpseBones();
-            target->SaveToDB();
+            Player* target = it->GetSource();
+            if (target)
+            {
+                target->ResurrectPlayer(target->GetSession()->HasPermission(rbac::RBAC_PERM_RESURRECT_WITH_FULL_HPS) ? 1.0f : 0.5f);
+                target->SpawnCorpseBones();
+                target->SaveToDB();
+            }
         }
 
         return true;
@@ -147,8 +150,14 @@ public:
         if (!groupTarget)
             return false;
 
-        for (GroupReference const& it : groupTarget->GetMembers())
-            it.GetSource()->DurabilityRepairAll(false, 0, false);
+        for (GroupReference* it = groupTarget->GetFirstMember(); it != nullptr; it = it->next())
+        {
+            Player* target = it->GetSource();
+            if (target)
+            {
+                target->DurabilityRepairAll(false, 0, false);
+            }
+        }
 
         return true;
     }
@@ -192,11 +201,11 @@ public:
             }
         }
 
-        for (GroupReference const& itr : group->GetMembers())
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* player = itr.GetSource();
+            Player* player = itr->GetSource();
 
-            if (player == gmPlayer)
+            if (!player || player == gmPlayer || !player->GetSession())
                 continue;
 
             // check online security
@@ -239,7 +248,7 @@ public:
             // before GM
             float x, y, z;
             gmPlayer->GetClosePoint(x, y, z, player->GetCombatReach());
-            player->TeleportTo(gmPlayer->GetMapId(), x, y, z, player->GetOrientation(), TELE_TO_NONE, gmPlayer->GetInstanceId());
+            player->TeleportTo(gmPlayer->GetMapId(), x, y, z, player->GetOrientation());
         }
 
         return true;
@@ -434,7 +443,7 @@ public:
         {
             // If not, we extract it from the SQL.
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GROUP_MEMBER);
-            stmt->setUInt64(0, target.GetGUID().GetCounter());
+            stmt->setUInt32(0, target.GetGUID().GetCounter());
             PreparedQueryResult resultGroup = CharacterDatabase.Query(stmt);
             if (resultGroup)
                 groupTarget = sGroupMgr->GetGroupByDbStoreId((*resultGroup)[0].GetUInt32());
@@ -452,7 +461,7 @@ public:
         Group::MemberSlotList const& members = groupTarget->GetMemberSlots();
 
         // To avoid a cluster fuck, namely trying multiple queries to simply get a group member count...
-        handler->PSendSysMessage(LANG_GROUP_TYPE, (groupTarget->isRaidGroup() ? "raid" : "party"), std::to_string(members.size()).c_str());
+        handler->PSendSysMessage(LANG_GROUP_TYPE, (groupTarget->isRaidGroup() ? "raid" : "party"), members.size());
         // ... we simply move the group type and member count print after retrieving the slots and simply output it's size.
 
         // While rather dirty codestyle-wise, it saves space (if only a little). For each member, we look several informations up.
@@ -485,16 +494,16 @@ public:
 
             // Check if iterator is online. If is...
             Player* p = ObjectAccessor::FindPlayer((*itr).guid);
-            std::string phases;
+            uint32 phase = 0;
             if (p)
             {
                 // ... than, it prints information like "is online", where he is, etc...
                 onlineState = "online";
                 LocaleConstant locale = handler->GetSessionDbcLocale();
-                phases = PhasingHandler::FormatPhases(p->GetPhaseShift());
+                phase = (!p->IsGameMaster() ? p->GetPhaseMask() : -1);
 
                 AreaTableEntry const* area = sAreaTableStore.LookupEntry(p->GetAreaId());
-                if (area && area->GetFlags().HasFlag(AreaFlags::IsSubzone))
+                if (area)
                 {
                     AreaTableEntry const* zone = sAreaTableStore.LookupEntry(area->ParentAreaID);
                     if (zone)
@@ -504,7 +513,7 @@ public:
 
             // Now we can print those informations for every single member of each group!
             handler->PSendSysMessage(LANG_GROUP_PLAYER_NAME_GUID, slot.name.c_str(), onlineState,
-                zoneName, phases.c_str(), slot.guid.ToString().c_str(), flags.c_str(),
+                zoneName, phase, slot.guid.ToString().c_str(), flags.c_str(),
                 lfg::GetRolesString(slot.roles).c_str());
         }
 

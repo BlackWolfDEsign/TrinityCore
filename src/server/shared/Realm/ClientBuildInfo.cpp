@@ -61,69 +61,7 @@ bool Platform::IsValid(std::string_view platform)
     switch (ToFourCC(platform))
     {
         case Win_x86:
-        case Win_x64:
-        case Win_arm64:
         case Mac_x86:
-        case Mac_x64:
-        case Mac_arm64:
-            return true;
-        default:
-            break;
-    }
-
-    return false;
-}
-
-bool PlatformType::IsValid(std::string_view platformType)
-{
-    if (platformType.length() > sizeof(uint32))
-        return false;
-
-    switch (ToFourCC(platformType))
-    {
-        case Windows:
-        case macOS:
-            return true;
-        default:
-            break;
-    }
-
-    return false;
-}
-
-bool Arch::IsValid(std::string_view arch)
-{
-    if (arch.length() > sizeof(uint32))
-        return false;
-
-    switch (ToFourCC(arch))
-    {
-        case x86:
-        case x64:
-        case Arm32:
-        case Arm64:
-        case WA32:
-            return true;
-        default:
-            break;
-    }
-
-    return false;
-}
-
-bool Type::IsValid(std::string_view type)
-{
-    if (type.length() > sizeof(uint32))
-        return false;
-
-    switch (ToFourCC(type))
-    {
-        case Retail:
-        case RetailChina:
-        case Beta:
-        case BetaRelease:
-        case Ptr:
-        case PtrRelease:
             return true;
         default:
             break;
@@ -146,7 +84,7 @@ void LoadBuildInfo()
             build.MajorVersion = fields[0].GetUInt32();
             build.MinorVersion = fields[1].GetUInt32();
             build.BugfixVersion = fields[2].GetUInt32();
-            std::string_view hotfixVersion = fields[3].GetStringView();
+            std::string hotfixVersion = fields[3].GetString();
             if (hotfixVersion.length() < build.HotfixVersion.size())
                 std::ranges::copy(hotfixVersion, build.HotfixVersion.begin());
             else
@@ -157,8 +95,8 @@ void LoadBuildInfo()
         } while (result->NextRow());
     }
 
-    //                                                        0           1       2       3      4
-    if (QueryResult result = LoginDatabase.Query("SELECT `build`, `platform`, `arch`, `type`, `key` FROM `build_auth_key`"))
+    //                                                        0           1                 2
+    if (QueryResult result = LoginDatabase.Query("SELECT `build`, `platform`, `executableHash` FROM `build_executable_hash`"))
     {
         do
         {
@@ -168,34 +106,20 @@ void LoadBuildInfo()
             auto buildInfo = std::ranges::find(Builds, build, &Info::Build);
             if (buildInfo == Builds.end())
             {
-                TC_LOG_ERROR("sql.sql", "ClientBuild::LoadBuildInfo: Unknown `build` {} in `build_auth_key` - missing from `build_info`, skipped.", build);
+                TC_LOG_ERROR("sql.sql", "ClientBuild::LoadBuildInfo: Unknown `build` {} in `build_executable_hash` - missing from `build_info`, skipped.", build);
                 continue;
             }
 
-            std::string_view platformType = fields[1].GetStringView();
-            if (!PlatformType::IsValid(platformType))
+            std::string_view platform = fields[1].GetStringView();
+            if (!Platform::IsValid(platform))
             {
-                TC_LOG_ERROR("sql.sql", "ClientBuild::LoadBuildInfo: Invalid platform {} for `build` {} in `build_auth_key`, skipped.", platformType, build);
+                TC_LOG_ERROR("sql.sql", "ClientBuild::LoadBuildInfo: Invalid platform {} for `build` {} in `build_executable_hash`, skipped.", platform, build);
                 continue;
             }
 
-            std::string_view arch = fields[2].GetStringView();
-            if (!Arch::IsValid(arch))
-            {
-                TC_LOG_ERROR("sql.sql", "ClientBuild::LoadBuildInfo: Invalid `arch` {} for `build` {} in `build_auth_key`, skipped.", arch, build);
-                continue;
-            }
-
-            std::string_view type = fields[3].GetStringView();
-            if (!Type::IsValid(type))
-            {
-                TC_LOG_ERROR("sql.sql", "ClientBuild::LoadBuildInfo: Invalid `type` {} for `build` {} in `build_auth_key`, skipped.", type, build);
-                continue;
-            }
-
-            AuthKey& buildKey = buildInfo->AuthKeys.emplace_back();
-            buildKey.Variant = { .Platform = ToFourCC(platformType), .Arch = ToFourCC(arch), .Type = ToFourCC(type) };
-            buildKey.Key = fields[4].GetBinary<AuthKey::Size>();
+            ExecutableHash& buildKey = buildInfo->ExecutableHashes.emplace_back();
+            buildKey.Platform = ToFourCC(platform);
+            buildKey.Hash = fields[2].GetBinary<ExecutableHash::Size>();
 
         } while (result->NextRow());
     }

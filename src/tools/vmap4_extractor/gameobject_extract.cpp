@@ -15,94 +15,59 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "adtfile.h"
-#include "DB2CascFileSource.h"
-#include "Errors.h"
-#include "ExtractorDB2LoadInfo.h"
-#include "Memory.h"
-#include "StringConvert.h"
 #include "model.h"
-#include "StringFormat.h"
+#include "dbcfile.h"
+#include "adtfile.h"
 #include "vmapexport.h"
 #include "VMapDefinitions.h"
-#include <CascLib.h>
 #include <algorithm>
-#include <cstdio>
-#include "advstd.h"
+#include <stdio.h>
 
-ExtractedModelData const* ExtractSingleModel(std::string& fname)
+bool ExtractSingleModel(std::string& fname)
 {
     if (fname.length() < 4)
-        return nullptr;
+        return false;
 
-    std::string_view extension = std::string_view(fname).substr(fname.length() - 4, 4);
-    if (StringEqualI(extension, ".mdx"sv) || StringEqualI(extension, ".mdl"sv))
-        fname.replace(fname.length() - 2, 2, "2");
+    std::string extension = fname.substr(fname.length() - 4, 4);
+    if (extension == ".mdx" || extension == ".MDX" || extension == ".mdl" || extension == ".MDL")
+    {
+        fname.erase(fname.length() - 2, 2);
+        fname.append("2");
+    }
 
     std::string originalName = fname;
 
-    fname = GetPlainName(fname);
-    NormalizeFileName(fname);
-
-    auto [model, shouldExtract] = BeginModelExtraction(fname);
-    if (!shouldExtract)
-    {
-        model->Wait();
-        return model->State.load(std::memory_order::relaxed) == ExtractedModelData::Ok ? model : nullptr;
-    }
-
-    auto stateGuard = Trinity::make_unique_ptr_with_deleter<&ExtractedModelData::Fail>(model);
-
-    Model mdl(originalName);
-    if (!mdl.open())
-        return nullptr;
+    char* name = GetPlainName((char*)fname.c_str());
+    FixNameCase(name, strlen(name));
+    FixNameSpaces(name, strlen(name));
 
     std::string output(szWorkDirWmo);
     output += "/";
-    output += fname;
+    output += name;
 
-    if (!mdl.ConvertToVMAPModel(output.c_str()))
-        return nullptr;
+    if (FileExists(output.c_str()))
+        return true;
 
-    stateGuard->Complete();
-    return stateGuard.release();
-}
-
-extern std::shared_ptr<CASC::Storage> CascStorage;
-
-bool GetHeaderMagic(std::string const& fileName, std::array<char, 4>* magic)
-{
-    *magic = { };
-    std::unique_ptr<CASC::File> file(CascStorage->OpenFile(fileName.c_str(), CASC_LOCALE_ALL_WOW));
-    if (!file)
+    Model mdl(originalName);
+    if (!mdl.open())
         return false;
 
-    uint32 bytesToRead = uint32(magic->size() * sizeof(std::remove_pointer_t<decltype(magic)>::value_type));
-    uint32 bytesRead = 0;
-    if (!file->ReadFile(magic->data(), bytesToRead, &bytesRead) || bytesRead != bytesToRead)
-        return false;
-
-    return true;
+    return mdl.ConvertToVMAPModel(output.c_str());
 }
 
 void ExtractGameobjectModels()
 {
-    printf("Extracting GameObject models...\n");
-
-    DB2CascFileSource source(CascStorage, GameobjectDisplayInfoLoadInfo::Instance.Meta->FileDataId);
-    DB2FileLoader db2;
-    try
+    printf("Extracting GameObject models...");
+    DBCFile dbc("DBFilesClient\\GameObjectDisplayInfo.dbc");
+    if(!dbc.open())
     {
-        db2.Load(&source, &GameobjectDisplayInfoLoadInfo::Instance);
-    }
-    catch (std::exception const& e)
-    {
-        printf("Fatal error: Invalid GameObjectDisplayInfo.db2 file format!\n%s\n", e.what());
+        printf("Fatal error: Invalid GameObjectDisplayInfo.dbc file format!\n");
         exit(1);
     }
 
     std::string basepath = szWorkDirWmo;
     basepath += "/";
+    std::string path;
 
     std::string modelListPath = basepath + "temp_gameobject_models";
     FILE* model_list = fopen(modelListPath.c_str(), "wb");
@@ -114,44 +79,43 @@ void ExtractGameobjectModels()
 
     fwrite(VMAP::RAW_VMAP_MAGIC, 1, 8, model_list);
 
-    for (uint32 rec = 0; rec < db2.GetRecordCount(); ++rec)
+    for (DBCFile::Iterator it = dbc.begin(); it != dbc.end(); ++it)
     {
-        DB2Record record = db2.GetRecord(rec);
-        if (!record)
+        path = it->getString(1);
+
+        if (path.length() < 4)
             continue;
 
-        uint32 fileId = record.GetUInt32("FileDataID");
-        if (!fileId)
+        FixNameCase((char*)path.c_str(), path.size());
+        char * name = GetPlainName((char*)path.c_str());
+        FixNameSpaces(name, strlen(name));
+
+        char * ch_ext = GetExtension(name);
+        if (!ch_ext)
             continue;
 
-        std::string fileName = Trinity::StringFormat("FILE{:08X}.xxx", fileId);
+        strToLower(ch_ext);
+
         bool result = false;
-        std::array<char, 4> headerRaw;
-        if (!GetHeaderMagic(fileName, &headerRaw))
-            continue;
-
-        std::string_view header(headerRaw.data(), headerRaw.size());
-        if (header == "REVM")
+        uint8 isWmo = 0;
+        if (!strcmp(ch_ext, ".wmo"))
         {
-            ExtractedModelData const* wmo = ExtractSingleWmo(fileName);
-            result = wmo && wmo->HasCollision();
+            isWmo = 1;
+            result = ExtractSingleWmo(path);
         }
-        else if (header == "MD20" || header == "MD21")
-            result = ExtractSingleModel(fileName) != nullptr;
-        else if (header == "BLP2")
-            continue;   // broken db2 data
-        else
-            ABORT_MSG("%s header: 0x%X%X%X%X - " STRING_VIEW_FMT, fileName.c_str(),
-                uint32(headerRaw[3]), uint32(headerRaw[2]), uint32(headerRaw[1]), uint32(headerRaw[0]),
-                STRING_VIEW_FMT_ARG(header));
+        else if (!strcmp(ch_ext, ".mdl"))   // TODO: extract .mdl files, if needed
+            continue;
+        else //if (!strcmp(ch_ext, ".mdx") || !strcmp(ch_ext, ".m2"))
+            result = ExtractSingleModel(path);
 
         if (result)
         {
-            uint32 displayId = record.GetId();
-            uint32 path_length = fileName.length();
+            uint32 displayId = it->getUInt(0);
+            uint32 path_length = strlen(name);
             fwrite(&displayId, sizeof(uint32), 1, model_list);
+            fwrite(&isWmo, sizeof(uint8), 1, model_list);
             fwrite(&path_length, sizeof(uint32), 1, model_list);
-            fwrite(fileName.c_str(), sizeof(char), path_length, model_list);
+            fwrite(name, sizeof(char), path_length, model_list);
         }
     }
 

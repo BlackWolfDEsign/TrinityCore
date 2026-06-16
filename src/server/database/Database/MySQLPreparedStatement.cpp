@@ -115,7 +115,7 @@ void MySQLPreparedStatement::SetParameter(uint8 index, std::nullptr_t)
     m_paramsSet[index] = true;
     MYSQL_BIND* param = &m_bind[index];
     param->buffer_type = MYSQL_TYPE_NULL;
-    delete[] static_cast<char *>(param->buffer);
+    delete[] static_cast<char*>(param->buffer);
     param->buffer = nullptr;
     param->buffer_length = 0;
     param->is_null_value = 1;
@@ -197,7 +197,7 @@ void MySQLPreparedStatement::SetParameter(uint8 index, std::vector<uint8> const&
     MYSQL_BIND* param = &m_bind[index];
     uint32 len = uint32(value.size());
     param->buffer_type = MYSQL_TYPE_BLOB;
-    delete [] static_cast<char *>(param->buffer);
+    delete [] static_cast<char*>(param->buffer);
     param->buffer = new char[len];
     param->buffer_length = len;
     param->is_null_value = 0;

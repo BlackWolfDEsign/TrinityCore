@@ -30,14 +30,13 @@ enum Spells
     SPELL_SUMMON_MENAGERIE                        = 50476,
     SPELL_SUMMON_MENAGERIE_2                      = 50495,
     SPELL_SUMMON_MENAGERIE_3                      = 50496,
+    SPELL_EMPOWERED_ARCANE_EXPLOSION              = 51110,
     SPELL_FROSTBOMB                               = 51103,
     SPELL_TELEPORT                                = 51112,
+    SPELL_TIME_BOMB                               = 51121,
     SPELL_EVOCATE                                 = 51602,
     SPELL_FROST_BUFFET                            = 58025
 };
-
-#define SPELL_EMPOWERED_ARCANE_EXPLOSION DUNGEON_MODE(51110, 59377)
-#define SPELL_TIME_BOMB DUNGEON_MODE(51121, 59376)
 
 enum Events
 {
@@ -273,6 +272,8 @@ struct boss_urom : public BossAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -336,6 +337,8 @@ private:
 // 51103 - Frostbomb
 class spell_urom_frostbomb : public AuraScript
 {
+    PrepareAuraScript(spell_urom_frostbomb);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_FROST_BUFFET });

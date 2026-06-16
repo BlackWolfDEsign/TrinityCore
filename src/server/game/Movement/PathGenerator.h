@@ -18,12 +18,13 @@
 #ifndef _PATH_GENERATOR_H
 #define _PATH_GENERATOR_H
 
+#include "MapDefines.h"
 #include "DetourNavMesh.h"
 #include "DetourNavMeshQuery.h"
-#include "MMapDefines.h"
 #include "MoveSplineInitArgs.h"
 #include <G3D/Vector3.h>
 
+class Unit;
 class WorldObject;
 
 // 74*4.0f=296y number_of_points*interval = max_path_len
@@ -58,16 +59,10 @@ class TC_GAME_API PathGenerator
         explicit PathGenerator(WorldObject const* owner);
         ~PathGenerator();
 
-        PathGenerator(PathGenerator const& right) = delete;
-        PathGenerator(PathGenerator&& right) = delete;
-        PathGenerator& operator=(PathGenerator const& right) = delete;
-        PathGenerator& operator=(PathGenerator&& right) = delete;
-
         // Calculate the path from owner to given destination
         // return: true if new path was calculated, false otherwise (no change needed)
-        bool CalculatePath(float srcX, float srcY, float srcZ, float destX, float destY, float destZ, bool forceDest = false);
         bool CalculatePath(float destX, float destY, float destZ, bool forceDest = false);
-        bool IsInvalidDestinationZ(WorldObject const* target) const;
+        bool IsInvalidDestinationZ(Unit const* target) const;
 
         // option setters - use optional
         void SetUseStraightPath(bool useStraightPath) { _useStraightPath = useStraightPath; }
@@ -80,12 +75,11 @@ class TC_GAME_API PathGenerator
         G3D::Vector3 const& GetActualEndPosition() const { return _actualEndPosition; }
 
         Movement::PointsArray const& GetPath() const { return _pathPoints; }
-        float GetPathLength() const;
 
         PathType GetPathType() const { return _type; }
 
         // shortens the path until the destination is the specified distance from the target point
-        void ShortenPathUntilDist(G3D::Vector3 const& target, float dist);
+        void ShortenPathUntilDist(G3D::Vector3 const& point, float dist);
 
     private:
 
@@ -133,7 +127,7 @@ class TC_GAME_API PathGenerator
         void BuildPointPath(float const* startPoint, float const* endPoint);
         void BuildShortcut();
 
-        NavTerrainFlag GetNavTerrain(float x, float y, float z) const;
+        NavTerrainFlag GetNavTerrain(float x, float y, float z);
         void CreateFilter();
         void UpdateFilter();
 
@@ -143,7 +137,7 @@ class TC_GAME_API PathGenerator
                             unsigned char& steerPosFlag, dtPolyRef& steerPosRef);
         dtStatus FindSmoothPath(float const* startPos, float const* endPos,
                               dtPolyRef const* polyPath, uint32 polyPathSize,
-                              float* smoothPath, int* smoothPathSize, uint32 maxSmoothPathSize);
+                              float* smoothPath, int* smoothPathSize, uint32 smoothPathMaxSize);
 
         void AddFarFromPolyFlags(bool startFarFromPoly, bool endFarFromPoly);
 };

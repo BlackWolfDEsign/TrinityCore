@@ -18,9 +18,14 @@
 #ifndef TRINITYCORE_CHAT_H
 #define TRINITYCORE_CHAT_H
 
+#include "Common.h"
+#include "ChatCommand.h"
 #include "ObjectGuid.h"
+#include "SharedDefines.h"
 #include "StringFormat.h"
 #include <fmt/printf.h>
+#include <string>
+#include <vector>
 
 class ChatHandler;
 class Creature;
@@ -30,10 +35,9 @@ class Player;
 class Unit;
 class WorldSession;
 class WorldObject;
+class WorldPacket;
 
 struct GameTele;
-
-enum LocaleConstant : uint8;
 
 class TC_GAME_API ChatHandler
 {
@@ -43,46 +47,41 @@ class TC_GAME_API ChatHandler
         WorldSession const* GetSession() const { return m_session; }
         Player* GetPlayer() const;
         explicit ChatHandler(WorldSession* session) : m_session(session), sentErrorMessage(false) { }
-        ChatHandler(ChatHandler const&) = delete;
-        ChatHandler(ChatHandler&&) = delete;
-        ChatHandler& operator=(ChatHandler const&) = delete;
-        ChatHandler& operator=(ChatHandler&&) = delete;
-        virtual ~ChatHandler() = default;
+        virtual ~ChatHandler() { }
 
-        static char* LineFromMessage(char*& pos);
+        static char* LineFromMessage(char*& pos) { char* start = strtok(pos, "\n"); pos = nullptr; return start; }
 
         // function with different implementation for chat/console
         virtual char const* GetTrinityString(uint32 entry) const;
         virtual void SendSysMessage(std::string_view str, bool escapeCharacters = false);
 
         void SendSysMessage(uint32 entry);
-        void SendSysMessage(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept;
 
         template<typename... Args>
         void PSendSysMessage(char const* fmt, Args&&... args)
         {
-            this->SendSysMessage(fmt, fmt::make_printf_args(args...));
+            SendSysMessage(StringVPrintf(fmt, fmt::make_printf_args(args...)));
         }
 
         template<typename... Args>
         void PSendSysMessage(uint32 entry, Args&&... args)
         {
-            this->PSendSysMessage(GetTrinityString(entry), std::forward<Args>(args)...);
+            SendSysMessage(PGetParseString(entry, std::forward<Args>(args)...));
         }
 
         template<typename... Args>
-        static std::string PGetParseString(std::string_view fmt, Args&&... args) noexcept
+        static std::string PGetParseString(std::string_view fmt, Args&&... args)
         {
             return StringVPrintf(fmt, fmt::make_printf_args(args...));
         }
 
         template<typename... Args>
-        std::string PGetParseString(uint32 entry, Args&&... args) const noexcept
+        std::string PGetParseString(uint32 entry, Args&&... args) const
         {
             return PGetParseString(GetTrinityString(entry), std::forward<Args>(args)...);
         }
 
-        static std::string StringVPrintf(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept;
+        static std::string StringVPrintf(std::string_view messageFormat, fmt::printf_args messageFormatArgs);
 
         bool _ParseCommands(std::string_view text);
         virtual bool ParseCommands(std::string_view text);
@@ -112,13 +111,13 @@ class TC_GAME_API ChatHandler
         char* extractKeyFromLink(char* text, char const* const* linkTypes, int* found_idx, char** something1 = nullptr);
         char* extractQuotedArg(char* args);
         ObjectGuid::LowType extractLowGuidFromLink(char* text, HighGuid& guidHigh);
-        bool GetPlayerGroupAndGUIDByName(const char* cname, Player*& player, Group*& group, ObjectGuid& guid, bool offline = false);
+        bool GetPlayerGroupAndGUIDByName(char const* cname, Player*& player, Group*& group, ObjectGuid& guid, bool offline = false);
         std::string extractPlayerNameFromLink(char* text);
         // select by arg (name/link) or in-game selection online/offline player or self if a creature is selected
         bool extractPlayerTarget(char* args, Player** player, ObjectGuid* player_guid = nullptr, std::string* player_name = nullptr);
 
-        std::string playerLink(std::string const& name) const;
-        std::string GetNameLink(Player* chr) const;
+        std::string playerLink(std::string const& name) const { return m_session ? "|cffffffff|Hplayer:"+name+"|h["+name+"]|h|r" : name; }
+        std::string GetNameLink(Player const* chr) const;
 
         GameObject* GetNearbyGameObject();
         GameObject* GetObjectFromPlayerMapByDbGuid(ObjectGuid::LowType lowguid);

@@ -15,187 +15,68 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include "loadlib.h"
-#include <CascLib.h>
-#include <algorithm>
+#include "mpq_libmpq.h"
+#include <cstdio>
 
-ChunkedFile::ChunkedFile()
+class MPQFile;
+
+u_map_fcc MverMagic = { {'R','E','V','M'} };
+
+FileLoader::FileLoader()
 {
-    data = nullptr;
+    data = 0;
     data_size = 0;
+    version = 0;
 }
 
-ChunkedFile::~ChunkedFile()
+FileLoader::~FileLoader()
 {
     free();
 }
 
-bool ChunkedFile::loadFile(std::shared_ptr<CASC::Storage const> mpq, std::string const& fileName, bool log)
+bool FileLoader::loadFile(std::string const& fileName, bool log)
 {
     free();
-    std::unique_ptr<CASC::File> file(mpq->OpenFile(fileName.c_str(), CASC_LOCALE_ALL_WOW, log));
-    if (!file)
+    MPQFile mf(fileName.c_str());
+    if(mf.isEof())
+    {
+        if (log)
+            printf("No such file %s\n", fileName.c_str());
         return false;
+    }
 
-    int64 fileSize = file->GetSize();
-    if (fileSize == -1)
-        return false;
+    data_size = mf.getSize();
 
-    data_size = uint32(fileSize);
-    data = new uint8[data_size];
-    uint32 bytesRead = 0;
-    if (!file->ReadFile(data, data_size, &bytesRead) || bytesRead != data_size)
-        return false;
-
-    parseChunks();
+    data = new uint8 [data_size];
+    mf.read(data, data_size);
+    mf.close();
     if (prepareLoadedData())
         return true;
 
-    printf("Error loading %s\n", fileName.c_str());
+    printf("Error loading %s", fileName.c_str());
+    mf.close();
     free();
-
     return false;
 }
 
-bool ChunkedFile::loadFile(std::shared_ptr<CASC::Storage const> mpq, uint32 fileDataId, std::string const& description, bool log)
+bool FileLoader::prepareLoadedData()
 {
-    free();
-    std::unique_ptr<CASC::File> file(mpq->OpenFile(fileDataId, CASC_LOCALE_ALL_WOW, log));
-    if (!file)
-        return false;
-
-    int64 fileSize = file->GetSize();
-    if (fileSize == -1)
-        return false;
-
-    data_size = fileSize;
-    data = new uint8[data_size];
-    uint32 bytesRead = 0;
-    if (!file->ReadFile(data, data_size, &bytesRead) || bytesRead != data_size)
-        return false;
-
-    parseChunks();
-    if (prepareLoadedData())
-        return true;
-
-    printf("Error loading %s\n", description.c_str());
-    free();
-
-    return false;
-}
-
-bool ChunkedFile::prepareLoadedData()
-{
-    FileChunk const* chunk = GetChunk("MVER");
-    if (!chunk)
-        return false;
-
     // Check version
-    file_MVER* version = chunk->As<file_MVER>();
+    version = (file_MVER *) data;
+    if (version->fcc != MverMagic.fcc)
+        return false;
     if (version->ver != FILE_FORMAT_VERSION)
         return false;
     return true;
 }
 
-void ChunkedFile::free()
+void FileLoader::free()
 {
-    chunks.clear();
-
     delete[] data;
-    data = nullptr;
+    data = 0;
     data_size = 0;
-}
-
-u_map_fcc constexpr InterestingChunks[] =
-{
-    { .fcc_txt = { 'R', 'E', 'V', 'M' } },
-    { .fcc_txt = { 'N', 'I', 'A', 'M' } },
-    { .fcc_txt = { 'O', '2', 'H', 'M' } },
-    { .fcc_txt = { 'K', 'N', 'C', 'M' } },
-    { .fcc_txt = { 'T', 'V', 'C', 'M' } },
-    { .fcc_txt = { 'O', 'M', 'W', 'M' } },
-    { .fcc_txt = { 'Q', 'L', 'C', 'M' } },
-    { .fcc_txt = { 'O', 'B', 'F', 'M' } },
-    { .fcc_txt = { 'D', 'H', 'P', 'M' } },
-    { .fcc_txt = { 'D', 'I', 'A', 'M' } }
-};
-
-bool IsInterestingChunk(u_map_fcc const& fcc)
-{
-    for (u_map_fcc const& f : InterestingChunks)
-        if (f.fcc == fcc.fcc)
-            return true;
-
-    return false;
-}
-
-void ChunkedFile::parseChunks()
-{
-    uint8* ptr = GetData();
-    // Make sure there's enough data to read u_map_fcc struct and the uint32 size after it
-    while (ptr <= GetData() + GetDataSize() - 8)
-    {
-        u_map_fcc& header = *(u_map_fcc*)ptr;
-        if (IsInterestingChunk(header))
-        {
-            uint32 size = *(uint32*)(ptr + 4);
-            if (size <= data_size)
-            {
-                std::ranges::reverse(header.fcc_txt);
-
-                FileChunk& chunk = chunks.emplace(std::piecewise_construct, std::forward_as_tuple(header.fcc_txt, 4), std::forward_as_tuple(ptr, size))->second;
-                chunk.parseSubChunks();
-            }
-
-            // move to next chunk
-            ptr += size + 8;
-        }
-        else
-            ++ptr;
-    }
-}
-
-FileChunk const* ChunkedFile::GetChunk(std::string_view name) const
-{
-    auto range = chunks.equal_range(name);
-    if (std::distance(range.first, range.second) == 1)
-        return &range.first->second;
-
-    return nullptr;
-}
-
-FileChunk::~FileChunk() = default;
-
-void FileChunk::parseSubChunks()
-{
-    uint8* ptr = data + 8; // skip self
-    while (ptr < data + size)
-    {
-        u_map_fcc& header = *(u_map_fcc*)ptr;
-        if (IsInterestingChunk(header))
-        {
-            uint32 subsize = *(uint32*)(ptr + 4);
-            if (subsize < size)
-            {
-                std::ranges::reverse(header.fcc_txt);
-
-                FileChunk& chunk = subchunks.emplace(std::piecewise_construct, std::forward_as_tuple(header.fcc_txt, 4), std::forward_as_tuple(ptr, subsize))->second;
-                chunk.parseSubChunks();
-            }
-
-            // move to next chunk
-            ptr += subsize + 8;
-        }
-        else
-            ++ptr;
-    }
-}
-
-FileChunk const* FileChunk::GetSubChunk(std::string_view name) const
-{
-    auto range = subchunks.equal_range(name);
-    if (std::distance(range.first, range.second) == 1)
-        return &range.first->second;
-
-    return nullptr;
+    version = 0;
 }

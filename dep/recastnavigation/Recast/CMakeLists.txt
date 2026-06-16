@@ -8,13 +8,10 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_library(Recast STATIC)
-
-target_sources(Recast
-  PRIVATE
+set(Recast_STAT_SRCS
     Source/Recast.cpp 
     Source/RecastAlloc.cpp 
-    Source/RecastAssert.cpp 
+	Source/RecastAssert.cpp 
     Source/RecastArea.cpp 
     Source/RecastContour.cpp 
     Source/RecastFilter.cpp 
@@ -22,20 +19,20 @@ target_sources(Recast
     Source/RecastMesh.cpp 
     Source/RecastMeshDetail.cpp 
     Source/RecastRasterization.cpp 
-    Source/RecastRegion.cpp)
+    Source/RecastRegion.cpp 
+)
 
-target_sources(Recast
+add_library(Recast STATIC ${Recast_STAT_SRCS})
+
+target_include_directories(Recast
   PUBLIC
-    FILE_SET HEADERS
-    BASE_DIRS Include
-    FILES
-      Include/RecastAlloc.h
-      Include/RecastAssert.h
-      Include/Recast.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/Include)
 
 target_link_libraries(Recast
   PRIVATE
-    trinity-dependency-interface)
+    trinity-dependency-interface
+  PUBLIC
+    zlib)
 
 set_target_properties(Recast
     PROPERTIES

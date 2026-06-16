@@ -95,6 +95,7 @@ struct boss_gizrul_the_slavener : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+        DoMeleeAttackIfReady();
     }
 };
 

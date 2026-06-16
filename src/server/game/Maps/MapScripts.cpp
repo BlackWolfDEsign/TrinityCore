@@ -24,11 +24,12 @@
 #include "Log.h"
 #include "MapManager.h"
 #include "MotionMaster.h"
-#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Pet.h"
+#include "ScriptMgr.h"
 #include "Transport.h"
 #include "WaypointManager.h"
+#include "World.h"
 
 /// Put scripts in the execution queue
 void Map::ScriptsStart(std::map<uint32, std::multimap<uint32, ScriptInfo>> const& scripts, uint32 id, Object* source, Object* target)
@@ -325,11 +326,11 @@ void Map::ScriptsProcess()
         {
             switch (step.sourceGUID.GetHigh())
             {
-                case HighGuid::Item:
+                case HighGuid::Item: // as well as HighGuid::Container
                     if (Player* player = GetPlayer(step.ownerGUID))
                         source = player->GetItemByGuid(step.sourceGUID);
                     break;
-                case HighGuid::Creature:
+                case HighGuid::Unit:
                 case HighGuid::Vehicle:
                     source = GetCreature(step.sourceGUID);
                     break;
@@ -346,6 +347,9 @@ void Map::ScriptsProcess()
                 case HighGuid::Corpse:
                     source = GetCorpse(step.sourceGUID);
                     break;
+                case HighGuid::Mo_Transport:
+                    source = GetTransport(step.sourceGUID);
+                    break;
                 default:
                     TC_LOG_ERROR("scripts", "{} source with unsupported high guid {}.",
                         step.script->GetDebugInfo(), step.sourceGUID.ToString());
@@ -358,7 +362,7 @@ void Map::ScriptsProcess()
         {
             switch (step.targetGUID.GetHigh())
             {
-                case HighGuid::Creature:
+                case HighGuid::Unit:
                 case HighGuid::Vehicle:
                     target = GetCreature(step.targetGUID);
                     break;
@@ -374,6 +378,9 @@ void Map::ScriptsProcess()
                     break;
                 case HighGuid::Corpse:
                     target = GetCorpse(step.targetGUID);
+                    break;
+                case HighGuid::Mo_Transport:
+                    target = GetTransport(step.targetGUID);
                     break;
                 default:
                     TC_LOG_ERROR("scripts", "{} target with unsupported high guid {}.",
@@ -446,6 +453,20 @@ void Map::ScriptsProcess()
                 }
                 break;
 
+            case SCRIPT_COMMAND_FIELD_SET:
+                // Source or target must be Creature.
+                if (Creature* cSource = _GetScriptCreatureSourceOrTarget(source, target, step.script))
+                {
+                    // Validate field number.
+                    if (step.script->FieldSet.FieldID <= OBJECT_FIELD_ENTRY || step.script->FieldSet.FieldID >= cSource->GetValuesCount())
+                        TC_LOG_ERROR("scripts", "{} wrong field {} (max count: {}) in object (TypeId: {}, {}) specified, skipping.",
+                            step.script->GetDebugInfo(), step.script->FieldSet.FieldID,
+                            cSource->GetValuesCount(), cSource->GetTypeId(), cSource->GetGUID().ToString());
+                    else
+                        cSource->SetUInt32Value(step.script->FieldSet.FieldID, step.script->FieldSet.FieldValue);
+                }
+                break;
+
             case SCRIPT_COMMAND_MOVE_TO:
                 // Source or target must be Creature.
                 if (Creature* cSource = _GetScriptCreatureSourceOrTarget(source, target, step.script))
@@ -458,6 +479,34 @@ void Map::ScriptsProcess()
                     }
                     else
                         unit->NearTeleportTo(step.script->MoveTo.DestX, step.script->MoveTo.DestY, step.script->MoveTo.DestZ, unit->GetOrientation());
+                }
+                break;
+
+            case SCRIPT_COMMAND_FLAG_SET:
+                // Source or target must be Creature.
+                if (Creature* cSource = _GetScriptCreatureSourceOrTarget(source, target, step.script))
+                {
+                    // Validate field number.
+                    if (step.script->FlagToggle.FieldID <= OBJECT_FIELD_ENTRY || step.script->FlagToggle.FieldID >= cSource->GetValuesCount())
+                        TC_LOG_ERROR("scripts", "{} wrong field {} (max count: {}) in object {} specified, skipping.",
+                            step.script->GetDebugInfo(), step.script->FlagToggle.FieldID,
+                            cSource->GetValuesCount(), cSource->GetGUID().ToString());
+                    else
+                        cSource->SetFlag(step.script->FlagToggle.FieldID, step.script->FlagToggle.FieldValue);
+                }
+                break;
+
+            case SCRIPT_COMMAND_FLAG_REMOVE:
+                // Source or target must be Creature.
+                if (Creature* cSource = _GetScriptCreatureSourceOrTarget(source, target, step.script))
+                {
+                    // Validate field number.
+                    if (step.script->FlagToggle.FieldID <= OBJECT_FIELD_ENTRY || step.script->FlagToggle.FieldID >= cSource->GetValuesCount())
+                        TC_LOG_ERROR("scripts", "{} wrong field {} (max count: {}) in object {} specified, skipping.",
+                            step.script->GetDebugInfo(), step.script->FlagToggle.FieldID,
+                            cSource->GetValuesCount(), cSource->GetGUID().ToString());
+                    else
+                        cSource->RemoveFlag(step.script->FlagToggle.FieldID, step.script->FlagToggle.FieldValue);
                 }
                 break;
 
@@ -878,12 +927,6 @@ void Map::ScriptsProcess()
                             break;
                     }
                 }
-                break;
-
-            case SCRIPT_COMMAND_PLAY_ANIMKIT:
-                // Source must be Creature.
-                if (Creature* cSource = _GetScriptCreature(source, true, step.script))
-                    cSource->PlayOneShotAnimKitId(step.script->PlayAnimKit.AnimKitID);
                 break;
 
             default:

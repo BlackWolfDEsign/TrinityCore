@@ -16,11 +16,10 @@
  */
 
 #include "ScriptMgr.h"
-#include "Creature.h"
-#include "CreatureAI.h"
+#include "CreatureAIImpl.h"
 #include "Player.h"
+#include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
-#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "Vehicle.h"
 
@@ -56,11 +55,7 @@ enum FeastOnSpells
    61788 - Feast On Stuffing */
 class spell_pilgrims_bounty_feast_on : public SpellScript
 {
-    bool Validate(SpellInfo const* spellInfo) override
-    {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } })
-            && ValidateSpellEffect({ { uint32(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()), EFFECT_0 } });
-    }
+    PrepareSpellScript(spell_pilgrims_bounty_feast_on);
 
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
@@ -93,14 +88,13 @@ class spell_pilgrims_bounty_feast_on : public SpellScript
                 if (Player* player = target->ToPlayer())
                 {
                     player->CastSpell(player, SPELL_ON_PLATE_EAT_VISUAL, true);
-                    caster->CastSpell(player, _spellId, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                        .SetOriginalCaster(player->GetGUID()));
+                    caster->CastSpell(player, _spellId, player->GetGUID());
                 }
 
-        if (Aura* aura = caster->GetAura(GetEffectValueAsInt()))
+        if (Aura* aura = caster->GetAura(GetEffectValue()))
         {
             if (aura->GetStackAmount() == 1)
-                caster->RemoveAurasDueToSpell(aura->GetSpellInfo()->GetEffect(EFFECT_0).CalcValueAsInt());
+                caster->RemoveAurasDueToSpell(aura->GetSpellInfo()->GetEffect(EFFECT_0).CalcValue());
             aura->ModStackAmount(-1);
         }
     }
@@ -124,6 +118,8 @@ enum TheTurkinator
 // 62014 - Turkey Tracker
 class spell_pilgrims_bounty_turkey_tracker : public SpellScript
 {
+    PrepareSpellScript(spell_pilgrims_bounty_turkey_tracker);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_KILL_COUNTER_VISUAL, SPELL_KILL_COUNTER_VISUAL_MAX });
@@ -178,6 +174,8 @@ enum SpiritOfSharing
 
 class spell_pilgrims_bounty_well_fed : public SpellScript
 {
+    PrepareSpellScript(spell_pilgrims_bounty_well_fed);
+
     uint32 _triggeredSpellId;
 
 public:
@@ -265,6 +263,8 @@ enum BountifulTableMisc
    66262 - Pass The Sweet Potatoes */
 class spell_pilgrims_bounty_on_plate : public SpellScript
 {
+    PrepareSpellScript(spell_pilgrims_bounty_on_plate);
+
     uint32 _triggeredSpellId1;
     uint32 _triggeredSpellId2;
     uint32 _triggeredSpellId3;
@@ -369,6 +369,8 @@ private:
    61797 - Sweet Potatoes Server */
 class spell_pilgrims_bounty_a_serving_of : public AuraScript
 {
+    PrepareAuraScript(spell_pilgrims_bounty_a_serving_of);
+
     uint32 _triggeredSpellId;
 
 public:
@@ -383,14 +385,14 @@ private:
     void OnApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
-        target->CastSpell(target, uint32(aurEff->GetAmountAsInt()), true);
+        target->CastSpell(target, uint32(aurEff->GetAmount()), true);
         HandlePlate(target, true);
     }
 
     void OnRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
-        target->RemoveAurasDueToSpell(aurEff->GetAmountAsInt());
+        target->RemoveAurasDueToSpell(aurEff->GetAmount());
         HandlePlate(target, false);
     }
 

@@ -158,8 +158,8 @@ public:
         {
             if (spellInfo->Id == SPELL_INFERNAL_RELAY)
             {
-                me->SetDisplayId(me->GetNativeDisplayId());
-                me->SetUninteractible(true);
+                me->SetDisplayId(me->GetUInt32Value(UNIT_FIELD_NATIVEDISPLAYID));
+                me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 HellfireTimer = 4000;
                 CleanupTimer = 170000;
             }
@@ -314,7 +314,7 @@ public:
 
         void EnfeebleHealthEffect()
         {
-            SpellInfo const* info = sSpellMgr->GetSpellInfo(SPELL_ENFEEBLE_EFFECT, GetDifficulty());
+            SpellInfo const* info = sSpellMgr->GetSpellInfo(SPELL_ENFEEBLE_EFFECT);
             if (!info)
                 return;
 
@@ -428,7 +428,7 @@ public:
                     //models
                     SetEquipmentSlots(false, EQUIP_ID_AXE, EQUIP_ID_AXE, EQUIP_NO_CHANGE);
 
-                    me->SetBaseAttackTime(OFF_ATTACK, (me->GetBaseAttackTime(BASE_ATTACK)*150)/100);
+                    me->SetAttackTime(OFF_ATTACK, (me->GetAttackTime(BASE_ATTACK)*150)/100);
                     me->SetCanDualWield(true);
                 }
             }
@@ -453,7 +453,7 @@ public:
                         Creature* axe = me->SummonCreature(MALCHEZARS_AXE, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0, TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 1s);
                         if (axe)
                         {
-                            axe->SetUninteractible(true);
+                            axe->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                             axe->SetFaction(me->GetFaction());
                             axes[i] = axe->GetGUID();
                             if (target)
@@ -549,6 +549,30 @@ public:
                     ShadowNovaTimer = 5000;
                     EnfeebleResetTimer = 9000;
                 } else EnfeebleTimer -= diff;
+            }
+
+            if (phase == 2)
+                DoMeleeAttacksIfReady();
+            else
+                DoMeleeAttackIfReady();
+        }
+
+        void DoMeleeAttacksIfReady()
+        {
+            if (me->IsWithinMeleeRange(me->GetVictim()) && !me->IsNonMeleeSpellCast(false))
+            {
+                //Check for base attack
+                if (me->isAttackReady() && me->GetVictim())
+                {
+                    me->AttackerStateUpdate(me->GetVictim());
+                    me->resetAttackTimer();
+                }
+                //Check for offhand attack
+                if (me->isAttackReady(OFF_ATTACK) && me->GetVictim())
+                {
+                    me->AttackerStateUpdate(me->GetVictim(), OFF_ATTACK);
+                    me->resetAttackTimer(OFF_ATTACK);
+                }
             }
         }
 

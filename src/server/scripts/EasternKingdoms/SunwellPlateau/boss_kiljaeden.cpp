@@ -35,7 +35,6 @@ EndScriptData */
 #include "ScriptedCreature.h"
 #include "sunwell_plateau.h"
 #include "TemporarySummon.h"
-#include <cmath>
 
 /*** Speech and sounds***/
 enum Yells
@@ -264,7 +263,7 @@ public:
         {
             Initialize();
             me->SetDisableGravity(true);
-            me->SetUninteractible(true);
+            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             me->setActive(true);
             me->SetFarVisible(true);
 
@@ -444,7 +443,7 @@ public:
 
         void InitializeAI() override
         {
-            me->SetUninteractible(true);
+            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
             me->AddUnitState(UNIT_STATE_STUNNED);
 
@@ -590,7 +589,7 @@ public:
             if (Creature* pKalec = instance->GetCreature(DATA_KALECGOS_KJ))
                 pKalec->RemoveDynObject(SPELL_RING_OF_BLUE_FLAMES);
 
-            me->SetCombatReach(12.0f);
+            me->SetCombatReach(12);
             summons.DespawnAll();
         }
 
@@ -617,7 +616,7 @@ public:
         {
             if (summoned->GetEntry() == NPC_ARMAGEDDON_TARGET)
             {
-                summoned->SetUninteractible(true);
+                summoned->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 summoned->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
         //      summoned->SetVisibility(VISIBILITY_OFF);  //with this we cant see the armageddon visuals
             }
@@ -864,6 +863,7 @@ public:
                      }
                 }
             }
+            DoMeleeAttackIfReady();
             //Time runs over!
             for (uint8 i = 0; i < ActiveTimers; ++i)
                 if (!TimerIsDeactivated[i])
@@ -997,6 +997,8 @@ public:
                         AddThreat(ref->GetVictim(), 1.0f, pPortal);
                 FelfirePortalTimer = 20000;
             } else FelfirePortalTimer -= diff;
+
+            DoMeleeAttackIfReady();
         }
     };
 
@@ -1035,8 +1037,7 @@ public:
         void Reset() override
         {
             Initialize();
-            me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-            me->SetUninteractible(true);
+            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE|UNIT_FLAG_NON_ATTACKABLE);
         }
 
         void JustSummoned(Creature* summoned) override
@@ -1217,7 +1218,7 @@ public:
             c = 0;
             mx = ShieldOrbLocations[0][0];
             my = ShieldOrbLocations[0][1];
-            bClockwise = roll_chance(50);
+            bClockwise = roll_chance_i(50);
         }
 
         InstanceScript* instance;
@@ -1358,6 +1359,7 @@ public:
                         DoCastVictim(SPELL_SR_MOONFIRE, false);
                         uiTimer[1] = urand(2000, 4000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_HUNTER:
                     if (uiTimer[1] <= diff)
@@ -1377,6 +1379,7 @@ public:
                             DoCastVictim(SPELL_SR_MULTI_SHOT, false);
                             uiTimer[0] = urand(6000, 8000);
                         }
+                        DoMeleeAttackIfReady();
                     }
                     break;
                 case CLASS_MAGE:
@@ -1385,6 +1388,7 @@ public:
                         DoCastVictim(SPELL_SR_FIREBALL, false);
                         uiTimer[1] = urand(2000, 4000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_WARLOCK:
                     if (uiTimer[1] <= diff)
@@ -1397,6 +1401,7 @@ public:
                         DoCast(SelectTarget(SelectTargetMethod::Random, 0, 100, true), SPELL_SR_CURSE_OF_AGONY, true);
                         uiTimer[2] = urand(2000, 4000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_WARRIOR:
                     if (uiTimer[1] <= diff)
@@ -1404,6 +1409,7 @@ public:
                         DoCastVictim(SPELL_SR_WHIRLWIND, false);
                         uiTimer[1] = urand(9000, 11000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_PALADIN:
                     if (uiTimer[1] <= diff)
@@ -1416,6 +1422,7 @@ public:
                         DoCastVictim(SPELL_SR_HOLY_SHOCK, false);
                         uiTimer[2] = urand(2000, 4000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_PRIEST:
                     if (uiTimer[1] <= diff)
@@ -1428,6 +1435,7 @@ public:
                         DoCast(me, SPELL_SR_RENEW, false);
                         uiTimer[2] = urand(6000, 8000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_SHAMAN:
                     if (uiTimer[1] <= diff)
@@ -1435,6 +1443,7 @@ public:
                         DoCastVictim(SPELL_SR_EARTH_SHOCK, false);
                         uiTimer[1] = urand(4000, 6000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
                 case CLASS_ROGUE:
                     if (uiTimer[1] <= diff)
@@ -1442,6 +1451,7 @@ public:
                         DoCastVictim(SPELL_SR_HEMORRHAGE, true);
                         uiTimer[1] = urand(4000, 6000);
                     }
+                    DoMeleeAttackIfReady();
                     break;
             }
             TC_LOG_DEBUG("scripts", "Sinister-Timer");

@@ -19,12 +19,11 @@
 #define TRINITY_PASSIVEAI_H
 
 #include "CreatureAI.h"
-#include "Timer.h"
 
 class TC_GAME_API PassiveAI : public CreatureAI
 {
     public:
-        explicit PassiveAI(Creature* creature, uint32 scriptId = {}) noexcept;
+        explicit PassiveAI(Creature* creature);
 
         void MoveInLineOfSight(Unit*) override { }
         void AttackStart(Unit*) override { }
@@ -36,7 +35,7 @@ class TC_GAME_API PassiveAI : public CreatureAI
 class TC_GAME_API PossessedAI : public CreatureAI
 {
     public:
-        explicit PossessedAI(Creature* creature, uint32 scriptId = {}) noexcept;
+        explicit PossessedAI(Creature* creature);
 
         void MoveInLineOfSight(Unit*) override { }
         void AttackStart(Unit* target) override;
@@ -54,7 +53,7 @@ class TC_GAME_API PossessedAI : public CreatureAI
 class TC_GAME_API NullCreatureAI : public CreatureAI
 {
     public:
-        explicit NullCreatureAI(Creature* creature, uint32 scriptId = {}) noexcept;
+        explicit NullCreatureAI(Creature* creature);
 
         void MoveInLineOfSight(Unit*) override { }
         void AttackStart(Unit*) override { }
@@ -71,23 +70,20 @@ class TC_GAME_API NullCreatureAI : public CreatureAI
 class TC_GAME_API CritterAI : public PassiveAI
 {
     public:
-        explicit CritterAI(Creature* creature, uint32 scriptId = {}) noexcept;
+        explicit CritterAI(Creature* creature) : PassiveAI(creature) { }
 
         void JustEngagedWith(Unit* /*who*/) override;
+        void EnterEvadeMode(EvadeReason why) override;
 
-        void UpdateAI(uint32 diff) override;
+        void MovementInform(uint32 type, uint32 id) override;
 
         static int32 Permissible(Creature const* creature);
-
-    private:
-        TimeTracker _evadeTimer;
 };
 
 class TC_GAME_API TriggerAI : public NullCreatureAI
 {
     public:
-        using NullCreatureAI::NullCreatureAI;
-
+        explicit TriggerAI(Creature* creature) : NullCreatureAI(creature) { }
         void IsSummonedBy(WorldObject* summoner) override;
 
         static int32 Permissible(Creature const* creature);

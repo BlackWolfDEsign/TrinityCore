@@ -19,7 +19,6 @@
 #define AUCTION_HOUSE_BOT_H
 
 #include "Define.h"
-#include "ObjectGuid.h"
 #include "SharedDefines.h"
 #include <string>
 #include <unordered_map>
@@ -209,15 +208,12 @@ enum AuctionBotConfigFloatValues
 class TC_GAME_API AuctionBotConfig
 {
 private:
-    AuctionBotConfig();
-    ~AuctionBotConfig();
+    AuctionBotConfig(): _itemsPerCycleBoost(1000), _itemsPerCycleNormal(20) {}
+    ~AuctionBotConfig() {}
+    AuctionBotConfig(AuctionBotConfig const&) = delete;
+    AuctionBotConfig& operator=(AuctionBotConfig const&) = delete;
 
 public:
-    AuctionBotConfig(AuctionBotConfig const&) = delete;
-    AuctionBotConfig(AuctionBotConfig&&) = delete;
-    AuctionBotConfig& operator=(AuctionBotConfig const&) = delete;
-    AuctionBotConfig& operator=(AuctionBotConfig&&) = delete;
-
     static AuctionBotConfig* instance();
 
     bool Initialize();
@@ -238,18 +234,17 @@ public:
 
     uint32 GetItemPerCycleBoost() const { return _itemsPerCycleBoost; }
     uint32 GetItemPerCycleNormal() const { return _itemsPerCycleNormal; }
-    ObjectGuid GetRandChar() const;
-    ObjectGuid GetRandCharExclude(ObjectGuid exclude) const;
-    bool IsBotChar(ObjectGuid characterID) const;
+    uint32 GetRandChar() const;
+    uint32 GetRandCharExclude(uint32 exclude) const;
+    bool IsBotChar(uint32 characterID) const;
     void Reload() { GetConfigFromFile(); }
 
-    uint32 GetAuctionHouseId(AuctionHouseType houseType) const;
     static char const* GetHouseTypeName(AuctionHouseType houseType);
 
 private:
     std::string _AHBotIncludes;
     std::string _AHBotExcludes;
-    std::vector<ObjectGuid> _AHBotCharacters;
+    std::vector<uint32> _AHBotCharacters;
     uint32 _itemsPerCycleBoost;
     uint32 _itemsPerCycleNormal;
 
@@ -273,12 +268,8 @@ private:
 class AuctionBotAgent
 {
 public:
-    AuctionBotAgent() = default;
-    AuctionBotAgent(AuctionBotAgent const&) = delete;
-    AuctionBotAgent(AuctionBotAgent&&) = delete;
-    AuctionBotAgent& operator=(AuctionBotAgent const&) = delete;
-    AuctionBotAgent& operator=(AuctionBotAgent&&) = delete;
-    virtual ~AuctionBotAgent() = default;
+    AuctionBotAgent() {}
+    virtual ~AuctionBotAgent() {}
     virtual bool Initialize() = 0;
     virtual bool Update(AuctionHouseType houseType) = 0;
 };
@@ -296,13 +287,10 @@ class TC_GAME_API AuctionHouseBot
 private:
     AuctionHouseBot();
     ~AuctionHouseBot();
+    AuctionHouseBot(AuctionHouseBot const&) = delete;
+    AuctionHouseBot& operator=(AuctionHouseBot const&) = delete;
 
 public:
-    AuctionHouseBot(AuctionHouseBot const&) = delete;
-    AuctionHouseBot(AuctionHouseBot&&) = delete;
-    AuctionHouseBot& operator=(AuctionHouseBot const&) = delete;
-    AuctionHouseBot& operator=(AuctionHouseBot&&) = delete;
-
     static AuctionHouseBot* instance();
 
     void Update();
@@ -316,7 +304,7 @@ public:
     void ReloadAllConfig();
     void Rebuild(bool all);
 
-    void PrepareStatusInfos(std::array<AuctionHouseBotStatusInfoPerType, MAX_AUCTION_HOUSE_TYPE>& statusInfo);
+    void PrepareStatusInfos(std::unordered_map<AuctionHouseType, AuctionHouseBotStatusInfoPerType>& statusInfo);
 private:
     void InitializeAgents();
 

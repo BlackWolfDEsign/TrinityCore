@@ -25,8 +25,8 @@ EndScriptData */
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
 #include "Map.h"
-#include "MapReference.h"
 #include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "temple_of_ahnqiraj.h"
 #include "TemporarySummon.h"
@@ -209,8 +209,7 @@ public:
             //Reset flags
             me->RemoveAurasDueToSpell(SPELL_RED_COLORATION);
             me->RemoveAurasDueToSpell(SPELL_FREEZE_ANIM);
-            me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-            me->SetUninteractible(false);
+            me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_NON_ATTACKABLE);
             me->SetVisible(true);
 
             //Reset Phase
@@ -421,8 +420,7 @@ public:
                     me->RemoveAurasDueToSpell(SPELL_RED_COLORATION);
 
                     //Reset to normal emote state and prevent select and attack
-                    me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_NON_ATTACKABLE);
 
                     //Remove Target field
                     me->SetTarget(ObjectGuid::Empty);
@@ -525,8 +523,7 @@ public:
 
             //Reset flags
             me->RemoveAurasDueToSpell(SPELL_TRANSFORM);
-            me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-            me->SetUninteractible(true);
+            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_NON_ATTACKABLE);
             me->SetVisible(false);
 
             instance->SetData(DATA_CTHUN_PHASE, PHASE_NOT_STARTED);
@@ -635,8 +632,7 @@ public:
                         me->SetFullHealth();
 
                         me->SetVisible(true);
-                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetUninteractible(false);
+                        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_NON_ATTACKABLE);
 
                         //Emerging phase
                         //AttackStart(ObjectAccessor::GetUnit(*me, HoldpPlayer));
@@ -753,8 +749,7 @@ public:
                             //Set target in stomach
                             Stomach_Map[target->GetGUID()] = true;
                             target->InterruptNonMeleeSpells(false);
-                            target->CastSpell(target, SPELL_MOUTH_TENTACLE, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                                .SetOriginalCaster(me->GetGUID()));
+                            target->CastSpell(target, SPELL_MOUTH_TENTACLE, me->GetGUID());
                             StomachEnterTarget = target->GetGUID();
                             StomachEnterVisTimer = 3800;
                         }
@@ -1069,6 +1064,8 @@ public:
                 DoCastVictim(SPELL_HAMSTRING);
                 HamstringTimer = 5000;
             } else HamstringTimer -= diff;
+
+            DoMeleeAttackIfReady();
         }
     };
 
@@ -1191,6 +1188,8 @@ public:
                 DoCastVictim(SPELL_HAMSTRING);
                 HamstringTimer = 10000;
             } else HamstringTimer -= diff;
+
+            DoMeleeAttackIfReady();
         }
     };
 

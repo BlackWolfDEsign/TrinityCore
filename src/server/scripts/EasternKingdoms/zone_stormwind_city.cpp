@@ -15,679 +15,503 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "AreaTrigger.h"
-#include "AreaTriggerAI.h"
-#include "Containers.h"
-#include "Conversation.h"
-#include "ConversationAI.h"
-#include "CreatureAIImpl.h"
+/* ScriptData
+SDName: Stormwind_City
+SD%Complete: 100
+SDComment: Quest support: 1640, 1447, 434.
+SDCategory: Stormwind City
+EndScriptData */
+
+/* ContentData
+npc_tyrion
+npc_tyrion_spybot
+npc_marzon_silent_blade
+npc_lord_gregor_lescovar
+EndContentData */
+
+#include "ScriptMgr.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
-#include "PhasingHandler.h"
 #include "Player.h"
-#include "ScriptMgr.h"
-#include "ScriptedCreature.h"
+#include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
-#include "SpellAuras.h"
-#include "SpellAuraEffects.h"
-#include "SpellInfo.h"
-#include "Spell.h"
-#include "SpellScript.h"
 #include "TemporarySummon.h"
 
-namespace Scripts::EasternKingdoms::StormwindCity
+/*######
+## npc_lord_gregor_lescovar
+######*/
+
+enum LordGregorLescovar
 {
-namespace Spells
-{
-    // The King's Command
-    static constexpr uint32 MOPAllianceIntroMoviePlay = 130805;
-    static constexpr uint32 FadeToBlack               = 130411;
+    SAY_GUARD_2         = 0,
+    SAY_LESCOVAR_2      = 0,
+    SAY_LESCOVAR_3      = 1,
+    SAY_LESCOVAR_4      = 2,
+    SAY_MARZON_1        = 0,
+    SAY_MARZON_2        = 1,
+    SAY_TYRION_2        = 1,
 
-    // The Mission
-    static constexpr uint32 TeleportPrep              = 130832;
-    static constexpr uint32 TeleportTimer             = 132032;
-    static constexpr uint32 TheMissionTeleportPlayer  = 130321;
-}
+    NPC_STORMWIND_ROYAL = 1756,
+    NPC_MARZON_BLADE    = 1755,
+    NPC_TYRION          = 7766,
 
-enum TidesOfWarData
-{
-    QUEST_TIDES_OF_WAR                      = 46727,
-
-    QUEST_OBJECTIVE_ATTEND_COUNCIL          = 337817,
-
-    MOVIE_POST_TIDES_OF_WAR                 = 858,
-
-    NPC_JAINA_TIDES_OF_WAR                  = 120590,
-    NPC_ANDUIN_TIDES_OF_WAR                 = 120756,
-    NPC_VISION_OF_SAILORS_MEMORY            = 139645,
-
-    SPELL_JAINA_ARCANE_CHANNEL              = 54219,
-    SPELL_CONVO_POST_MOVIE_TIDES_OF_WAR     = 281343,
-
-    CONVERSATION_START_COUNCIL_TIDES_OF_WAR = 4857,
-
-    PATH_JAINA_VISION_START                 = 12059000,
-    PATH_JAINA_VISION_FINISH                = 12059001
+    QUEST_THE_ATTACK    = 434
 };
 
-enum NationOfKulTirasData
-{
-    QUEST_NATION_OF_KULTIRAS            = 46728,
-    QUEST_NATION_OF_KULTIRAS_NPE        = 59641,
-    QUEST_OUT_LIKE_FLYNN                = 47098,
-    QUEST_DAUGHTER_OF_THE_SEA           = 51341,
-
-    SAY_JAINA_LEAVE_COUNCIL             = 0,
-
-    SPELL_JAINA_TELEPORT                = 40163,
-    SPELL_SKIP_KULTIRAS_INTRO           = 279998,
-    SPELL_SKIP_TOLDAGOR_TELEPORT        = 247285,
-    SPELL_BORALUS_TRANSITION            = 240872,
-    SPELL_BORALUS_TRANSITION_MOVIE      = 240873,
-
-    CONVERSATION_JAINA_LEAVE_COUNCIL    = 4896,
-
-    ACTION_JAINA_LEAVE_COUNCIL          = 1,
-
-    GOSSIP_MENU_NATION_OF_KULTIRAS      = 22328,
-
-    GOSSIP_OPTION_START_KULTIRAS_INTRO  = 0,
-    GOSSIP_OPTION_SKIP_KULTIRAS_INTRO   = 1
-};
-
-// 55 - Stormwind Keep - Tides of War
-struct at_stormwind_keep_tides_of_war : AreaTriggerAI
-{
-    at_stormwind_keep_tides_of_war(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
-
-    void OnUnitEnter(Unit* unit) override
-    {
-        Player* player = unit->ToPlayer();
-        if (!player || player->GetQuestStatus(QUEST_TIDES_OF_WAR) != QUEST_STATUS_INCOMPLETE)
-            return;
-
-        // @TODO: cooldown after generic impl
-
-        Conversation::CreateConversation(CONVERSATION_START_COUNCIL_TIDES_OF_WAR, unit, unit->GetPosition(), unit->GetGUID(), nullptr, false);
-    }
-};
-
-Position const VisionOfSailorsMemoryPosition = { -8384.131f, 324.383f, 148.443f, 1.559973f };
-
-// 4857 - Conversation
-class conversation_start_council_tides_of_war : public ConversationAI
+class npc_lord_gregor_lescovar : public CreatureScript
 {
 public:
-    conversation_start_council_tides_of_war(Conversation* conversation) : ConversationAI(conversation) { }
+    npc_lord_gregor_lescovar() : CreatureScript("npc_lord_gregor_lescovar") { }
 
-    enum Events
+    CreatureAI* GetAI(Creature* creature) const override
     {
-        EVENT_JAINA_WALK            = 1,
-        EVENT_KILL_CREDIT
-    };
-
-    enum ConversatonData
-    {
-        CONVO_ACTOR_JAINA           = 467,
-
-        CONVO_LINE_JAINA_WALK       = 19485,
-        CONVO_LINE_JAINA_CREDIT     = 19486,
-    };
-
-    void OnCreate(Unit* creator) override
-    {
-        Creature* jainaObject = GetClosestCreatureWithOptions(creator, 30.0f, { .CreatureId = NPC_JAINA_TIDES_OF_WAR, .IgnorePhases = true });
-        if (!jainaObject)
-            return;
-
-        TempSummon* jainaClone = jainaObject->SummonPersonalClone(jainaObject->GetPosition(), TEMPSUMMON_MANUAL_DESPAWN, 0s, 0, 0, creator->ToPlayer());
-        if (!jainaClone)
-            return;
-
-        conversation->AddActor(CONVO_ACTOR_JAINA, 3, jainaClone->GetGUID());
-        conversation->Start();
+        return new npc_lord_gregor_lescovarAI(creature);
     }
 
-    void OnStart() override
+    struct npc_lord_gregor_lescovarAI : public EscortAI
     {
-        LocaleConstant privateOwnerLocale = conversation->GetPrivateObjectOwnerLocale();
-
-        if (Milliseconds const* jainaWalkStartTime = conversation->GetLineStartTime(privateOwnerLocale, CONVO_LINE_JAINA_WALK))
-            _events.ScheduleEvent(EVENT_JAINA_WALK, *jainaWalkStartTime);
-
-        _events.ScheduleEvent(EVENT_KILL_CREDIT, conversation->GetLineEndTime(privateOwnerLocale, CONVO_LINE_JAINA_CREDIT));
-    }
-
-    void OnUpdate(uint32 diff) override
-    {
-        _events.Update(diff);
-
-        switch (_events.ExecuteEvent())
+        npc_lord_gregor_lescovarAI(Creature* creature) : EscortAI(creature)
         {
-            case EVENT_JAINA_WALK:
-            {
-                Creature* jainaClone = conversation->GetActorCreature(3);
-                if (!jainaClone)
-                    break;
-
-                jainaClone->GetMotionMaster()->MovePath(PATH_JAINA_VISION_START, false);
-                break;
-            }
-            case EVENT_KILL_CREDIT:
-            {
-                Unit* privateObjectOwner = ObjectAccessor::GetUnit(*conversation, conversation->GetPrivateObjectOwner());
-                if (!privateObjectOwner)
-                    break;
-
-                Player* player = privateObjectOwner->ToPlayer();
-                if (!player)
-                    break;
-
-                player->KilledMonsterCredit(NPC_ANDUIN_TIDES_OF_WAR);
-                privateObjectOwner->SummonCreature(NPC_VISION_OF_SAILORS_MEMORY, VisionOfSailorsMemoryPosition, TEMPSUMMON_MANUAL_DESPAWN, 0s, 0, 0, privateObjectOwner->GetGUID());
-                break;
-            }
-            default:
-                break;
+            Initialize();
         }
-    }
 
-private:
-    EventMap _events;
-};
-
-// 120590 - Jaina Proudmoore
-struct npc_jaina_proudmoore_tides_of_war : public ScriptedAI
-{
-    npc_jaina_proudmoore_tides_of_war(Creature* creature) : ScriptedAI(creature) { }
-
-    bool OnGossipSelect(Player* player, uint32 menuId, uint32 gossipListId) override
-    {
-        if (menuId == GOSSIP_MENU_NATION_OF_KULTIRAS)
+        void Initialize()
         {
-            if (gossipListId == GOSSIP_OPTION_START_KULTIRAS_INTRO)
+            uiTimer = 0;
+            uiPhase = 0;
+
+            MarzonGUID.Clear();
+        }
+
+        uint32 uiTimer;
+        uint32 uiPhase;
+
+        ObjectGuid MarzonGUID;
+
+        void Reset() override
+        {
+            Initialize();
+        }
+
+        void EnterEvadeMode(EvadeReason /*why*/) override
+        {
+            me->DisappearAndDie();
+
+            if (Creature* pMarzon = ObjectAccessor::GetCreature(*me, MarzonGUID))
             {
-                CloseGossipMenuFor(player);
-                player->CastSpell(nullptr, SPELL_BORALUS_TRANSITION, false);
-            }
-            else if (gossipListId == GOSSIP_OPTION_SKIP_KULTIRAS_INTRO)
-            {
-                CloseGossipMenuFor(player);
-                player->CastSpell(nullptr, SPELL_SKIP_KULTIRAS_INTRO, false);
+                if (pMarzon->IsAlive())
+                    pMarzon->DisappearAndDie();
             }
         }
-        return true;
-    }
 
-    void WaypointPathEnded(uint32 /*nodeId*/, uint32 pathId) override
-    {
-        if (pathId == PATH_JAINA_VISION_START)
+        void JustEngagedWith(Unit* who) override
         {
-            me->SetFacingTo(5.1164f);
-            DoCastAOE(SPELL_JAINA_ARCANE_CHANNEL);
-
-            _scheduler.Schedule(14s, [this](TaskContext const& /*context*/)
+            if (Creature* pMarzon = ObjectAccessor::GetCreature(*me, MarzonGUID))
             {
-                me->InterruptSpell(CURRENT_CHANNELED_SPELL);
-                me->GetMotionMaster()->MovePath(PATH_JAINA_VISION_FINISH, false);
-            });
+                if (pMarzon->IsAlive() && !pMarzon->IsInCombat())
+                    pMarzon->AI()->AttackStart(who);
+            }
         }
-        else if (pathId == PATH_JAINA_VISION_FINISH)
-            me->DespawnOrUnsummon();
-    }
 
-    void DoAction(int32 action) override
-    {
-        if (action == ACTION_JAINA_LEAVE_COUNCIL)
+        void WaypointReached(uint32 waypointId, uint32 /*pathId*/) override
         {
-            _scheduler.Schedule(1s, [this](TaskContext& task)
+            switch (waypointId)
             {
-                Talk(SAY_JAINA_LEAVE_COUNCIL, me);
-                task.Schedule(4s, [this](TaskContext& task)
-                {
-                    DoCastSelf(SPELL_JAINA_TELEPORT);
-                    task.Schedule(2s, [this](TaskContext const& /*task*/)
+                case 14:
+                    SetEscortPaused(true);
+                    Talk(SAY_LESCOVAR_2);
+                    uiTimer = 3000;
+                    uiPhase = 1;
+                    break;
+                case 16:
+                    SetEscortPaused(true);
+                    if (Creature* pMarzon = me->SummonCreature(NPC_MARZON_BLADE, -8411.360352f, 480.069733f, 123.760895f, 4.941504f, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 1s))
                     {
-                        Unit* privateObjectOwner = ObjectAccessor::GetUnit(*me, me->GetPrivateObjectOwner());
-                        if (!privateObjectOwner)
-                            return;
-
-                        Conversation::CreateConversation(CONVERSATION_JAINA_LEAVE_COUNCIL, privateObjectOwner, *privateObjectOwner, privateObjectOwner->GetGUID(), nullptr, true);
-                        me->DespawnOrUnsummon();
-                    });
-                });
-            });
+                        pMarzon->GetMotionMaster()->MovePoint(0, -8408.000977f, 468.611450f, 123.759903f);
+                        MarzonGUID = pMarzon->GetGUID();
+                    }
+                    uiTimer = 2000;
+                    uiPhase = 4;
+                    break;
+            }
         }
-    }
+        //TO-DO: We don't have movemaps, also we can't make 2 npcs walks to one point propperly (and we can not use escort ai, because they are 2 different spawns and with same entry), because of it we make them, disappear.
+        void DoGuardsDisappearAndDie()
+        {
+            std::list<Creature*> GuardList;
+            me->GetCreatureListWithEntryInGrid(GuardList, NPC_STORMWIND_ROYAL, 8.0f);
+            if (!GuardList.empty())
+            {
+                for (std::list<Creature*>::const_iterator itr = GuardList.begin(); itr != GuardList.end(); ++itr)
+                {
+                    if (Creature* pGuard = *itr)
+                        pGuard->DisappearAndDie();
+                }
+            }
+        }
 
-    void UpdateAI(uint32 diff) override
-    {
-        _scheduler.Update(diff);
-    }
+        void UpdateAI(uint32 uiDiff) override
+        {
+            if (uiPhase)
+            {
+                if (uiTimer <= uiDiff)
+                {
+                    switch (uiPhase)
+                    {
+                        case 1:
+                            if (Creature* pGuard = me->FindNearestCreature(NPC_STORMWIND_ROYAL, 8.0f, true))
+                                pGuard->AI()->Talk(SAY_GUARD_2);
+                            uiTimer = 3000;
+                            uiPhase = 2;
+                            break;
+                        case 2:
+                            DoGuardsDisappearAndDie();
+                            uiTimer = 2000;
+                            uiPhase = 3;
+                            break;
+                        case 3:
+                            SetEscortPaused(false);
+                            uiTimer = 0;
+                            uiPhase = 0;
+                            break;
+                        case 4:
+                            Talk(SAY_LESCOVAR_3);
+                            uiTimer = 0;
+                            uiPhase = 0;
+                            break;
+                        case 5:
+                            if (Creature* pMarzon = ObjectAccessor::GetCreature(*me, MarzonGUID))
+                                pMarzon->AI()->Talk(SAY_MARZON_1);
+                            uiTimer = 3000;
+                            uiPhase = 6;
+                            break;
+                        case 6:
+                            Talk(SAY_LESCOVAR_4);
+                            if (Player* player = GetPlayerForEscort())
+                                player->AreaExploredOrEventHappens(QUEST_THE_ATTACK);
+                            uiTimer = 2000;
+                            uiPhase = 7;
+                            break;
+                        case 7:
+                            if (Creature* pTyrion = me->FindNearestCreature(NPC_TYRION, 20.0f, true))
+                                pTyrion->AI()->Talk(SAY_TYRION_2);
+                            if (Creature* pMarzon = ObjectAccessor::GetCreature(*me, MarzonGUID))
+                                pMarzon->SetFaction(FACTION_MONSTER);
+                            me->SetFaction(FACTION_MONSTER);
+                            uiTimer = 0;
+                            uiPhase = 0;
+                            break;
+                    }
+                } else uiTimer -= uiDiff;
+            }
+            EscortAI::UpdateAI(uiDiff);
 
-private:
-    TaskScheduler _scheduler;
+            if (!UpdateVictim())
+                return;
+
+            DoMeleeAttackIfReady();
+        }
+    };
 };
 
-// 858 - Movie
-class player_conv_after_movie_tides_of_war : public PlayerScript
+/*######
+## npc_marzon_silent_blade
+######*/
+
+class npc_marzon_silent_blade : public CreatureScript
 {
 public:
-    player_conv_after_movie_tides_of_war() : PlayerScript("player_conv_after_movie_tides_of_war") { }
+    npc_marzon_silent_blade() : CreatureScript("npc_marzon_silent_blade") { }
 
-    void OnMovieComplete(Player* player, uint32 movieId) override
+    CreatureAI* GetAI(Creature* creature) const override
     {
-        if (movieId == MOVIE_POST_TIDES_OF_WAR)
-        {
-            Creature* jainaClone = GetClosestCreatureWithOptions(player, 30.0f, { .CreatureId = NPC_JAINA_TIDES_OF_WAR, .IgnorePhases = true, .PrivateObjectOwnerGuid = player->GetGUID() });
-            if (!jainaClone)
-                return;
+        return new npc_marzon_silent_bladeAI(creature);
+    }
 
-            jainaClone->DespawnOrUnsummon();
-            player->CastSpell(player, SPELL_CONVO_POST_MOVIE_TIDES_OF_WAR, true);
+    struct npc_marzon_silent_bladeAI : public ScriptedAI
+    {
+        npc_marzon_silent_bladeAI(Creature* creature) : ScriptedAI(creature)
+        {
+            me->SetWalk(true);
         }
-    }
-};
 
-// 284807 - Despawn
-class spell_despawn_sailor_memory : public SpellScript
-{
-    void HandleHitTarget(SpellEffIndex /*effIndex*/)
-    {
-        if (Creature* creature = GetHitUnit()->ToCreature())
-            creature->DespawnOrUnsummon();
-    }
-
-    void Register() override
-    {
-        OnEffectHitTarget += SpellEffectFn(spell_despawn_sailor_memory::HandleHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
-    }
-};
-
-// 120756 - Anduin Wrynn
-struct npc_anduin_wrynn_nation_of_kultiras : public ScriptedAI
-{
-    npc_anduin_wrynn_nation_of_kultiras(Creature* creature) : ScriptedAI(creature) { }
-
-    void OnQuestAccept(Player* player, Quest const* quest) override
-    {
-        if (quest->GetQuestId() == QUEST_NATION_OF_KULTIRAS)
+        void Reset() override
         {
-            PhasingHandler::OnConditionChange(player);
-
-            Creature* jainaObject = GetClosestCreatureWithOptions(player, 15.0f, { .CreatureId = NPC_JAINA_TIDES_OF_WAR, .IgnorePhases = true });
-            if (!jainaObject)
-                return;
-
-            TempSummon* jainaClone = jainaObject->SummonPersonalClone(jainaObject->GetPosition(), TEMPSUMMON_MANUAL_DESPAWN, 0s, 0, 0, player->ToPlayer());
-            if (!jainaClone)
-                return;
-
-            jainaClone->AI()->DoAction(ACTION_JAINA_LEAVE_COUNCIL);
+            me->RestoreFaction();
         }
-    }
-};
 
-// 279998 - Kul Tiras: Skip Intro
-class spell_kultiras_skip_intro : public SpellScript
-{
-    static constexpr std::array<uint32, 4> QuestsToSkip = { QUEST_NATION_OF_KULTIRAS, QUEST_NATION_OF_KULTIRAS_NPE, QUEST_OUT_LIKE_FLYNN, QUEST_DAUGHTER_OF_THE_SEA };
-
-    void HandleHitTarget(SpellEffIndex /*effIndex*/) const
-    {
-        if (Player* player = GetCaster()->ToPlayer())
+        void JustEngagedWith(Unit* who) override
         {
-            player->CastSpell(nullptr, SPELL_SKIP_TOLDAGOR_TELEPORT, false);
-            player->SkipQuests(QuestsToSkip);
-        }
-    }
+            Talk(SAY_MARZON_2);
 
-    void Register() override
-    {
-        OnEffectHitTarget += SpellEffectFn(spell_kultiras_skip_intro::HandleHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
-    }
-};
-
-// 240876 - Stormwind Harbor to Boralus transition
-class spell_stormwind_harbor_to_boralus_transition : public AuraScript
-{
-    bool Validate(SpellInfo const* spellInfo) override
-    {
-        return ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_1).CalcValueAsInt()) });
-    }
-
-    void OnApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
-    {
-        if (Unit* caster = GetCaster())
-            caster->CastSpell(caster, aurEff->GetAmountAsInt(), false);
-    }
-
-    void Register() override
-    {
-        AfterEffectApply += AuraEffectRemoveFn(spell_stormwind_harbor_to_boralus_transition::OnApply, EFFECT_1, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
-
-enum AncientCursesData
-{
-    QUEST_ANCIENT_CURSES            = 75891,
-
-    NPC_ARKONARIN_STARSHADE         = 207353,
-    NPC_LYSANDER_STARSHADE          = 202700,
-
-    DISPLAY_ID_STARSHADE_MOUNT      = 63626,
-
-    CONVERSATION_ANCIENT_CURSES     = 22025,
-
-    POINT_LYSANDER_STEP_TO_DOOR     = 1,
-
-    PATH_ARKONARIN_WALK_TO_MOUNT_UP = 20735300,
-    PATH_ARKONARIN_FLY_TO_FELWOOD   = 20735301,
-    PATH_LYSANDER_WALK_TO_MOUNT_UP  = 20270001,
-    PATH_LYSANDER_FLY_TO_FELWOOD    = 20270002
-};
-
-Position const LysanderWalkToTheDoor = { -8051.493f, 820.21704f, 68.30904f };
-
-// 207353 - Arko'narin Starshade
-struct npc_arkonarin_starshade_ancient_curses : public ScriptedAI
-{
-    npc_arkonarin_starshade_ancient_curses(Creature* creature) : ScriptedAI(creature) { }
-
-    void OnQuestAccept(Player* player, Quest const* quest) override
-    {
-        if (quest->GetQuestId() == QUEST_ANCIENT_CURSES)
-        {
-            PhasingHandler::OnConditionChange(player);
-            Conversation::CreateConversation(CONVERSATION_ANCIENT_CURSES, player, *player, player->GetGUID(), nullptr, false);
-        }
-    }
-
-    void WaypointPathEnded(uint32 /*nodeId*/, uint32 pathId) override
-    {
-        if (pathId == PATH_ARKONARIN_WALK_TO_MOUNT_UP)
-        {
-            me->SetDisableGravity(true, true);
-            me->SetMountDisplayId(DISPLAY_ID_STARSHADE_MOUNT);
-            _scheduler.Schedule(2s + 500ms, [this](TaskContext const& /*context*/)
+            if (me->IsSummon())
             {
-                me->GetMotionMaster()->MovePath(PATH_ARKONARIN_FLY_TO_FELWOOD, false);
-                me->DespawnOrUnsummon(5s);
-            });
+                if (Unit* summoner = me->ToTempSummon()->GetSummonerUnit())
+                {
+                    if (summoner->GetTypeId() == TYPEID_UNIT && summoner->IsAlive() && !summoner->IsInCombat())
+                        summoner->ToCreature()->AI()->AttackStart(who);
+                }
+            }
         }
-    }
 
-    void UpdateAI(uint32 diff) override
-    {
-        _scheduler.Update(diff);
-    }
-
-private:
-    TaskScheduler _scheduler;
-};
-
-// 202700 - Lysander Starshade
-struct npc_lysande_starshade_ancient_curses : public ScriptedAI
-{
-    npc_lysande_starshade_ancient_curses(Creature* creature) : ScriptedAI(creature) { }
-
-    void WaypointPathEnded(uint32 /*nodeId*/, uint32 pathId) override
-    {
-        if (pathId == PATH_LYSANDER_WALK_TO_MOUNT_UP)
+        void EnterEvadeMode(EvadeReason /*why*/) override
         {
-            me->SetDisableGravity(true, true);
-            me->SetMountDisplayId(DISPLAY_ID_STARSHADE_MOUNT);
-            _scheduler.Schedule(2s + 500ms, [this](TaskContext const& /*context*/)
+            me->DisappearAndDie();
+
+            if (me->IsSummon())
             {
-                me->GetMotionMaster()->MovePath(PATH_LYSANDER_FLY_TO_FELWOOD, false);
-                me->DespawnOrUnsummon(5s);
-            });
+                if (Unit* summoner = me->ToTempSummon()->GetSummonerUnit())
+                {
+                    if (summoner->GetTypeId() == TYPEID_UNIT && summoner->IsAlive())
+                        summoner->ToCreature()->DisappearAndDie();
+                }
+            }
         }
-    }
 
-    void UpdateAI(uint32 diff) override
-    {
-        _scheduler.Update(diff);
-    }
+        void MovementInform(uint32 uiType, uint32 /*uiId*/) override
+        {
+            if (uiType != POINT_MOTION_TYPE)
+                return;
 
-private:
-    TaskScheduler _scheduler;
+            if (me->IsSummon())
+            {
+                Unit* summoner = me->ToTempSummon()->GetSummonerUnit();
+                if (summoner && summoner->GetTypeId() == TYPEID_UNIT && summoner->IsAIEnabled())
+                {
+                    npc_lord_gregor_lescovar::npc_lord_gregor_lescovarAI* ai =
+                        CAST_AI(npc_lord_gregor_lescovar::npc_lord_gregor_lescovarAI, summoner->GetAI());
+                    if (ai)
+                    {
+                        ai->uiTimer = 2000;
+                        ai->uiPhase = 5;
+                    }
+                    //me->ChangeOrient(0.0f, summoner);
+                }
+            }
+        }
+
+        void UpdateAI(uint32 /*diff*/) override
+        {
+            if (!UpdateVictim())
+                return;
+
+            DoMeleeAttackIfReady();
+        }
+    };
 };
 
-// 22025 - Conversation
-class conversation_quest_ancient_curses_accept : public ConversationAI
+/*######
+## npc_tyrion_spybot
+######*/
+
+enum TyrionSpybot
+{
+    SAY_QUEST_ACCEPT_ATTACK  = 0,
+    SAY_SPYBOT_1             = 1,
+    SAY_SPYBOT_2             = 2,
+    SAY_SPYBOT_3             = 3,
+    SAY_SPYBOT_4             = 4,
+    SAY_TYRION_1             = 0,
+    SAY_GUARD_1              = 1,
+    SAY_LESCOVAR_1           = 3,
+
+    NPC_PRIESTESS_TYRIONA    = 7779,
+    NPC_LORD_GREGOR_LESCOVAR = 1754,
+};
+
+static constexpr uint32 PATH_ESCORT_LESCOVAR = 70850;
+
+class npc_tyrion_spybot : public CreatureScript
 {
 public:
-    conversation_quest_ancient_curses_accept(Conversation* conversation) : ConversationAI(conversation) { }
+    npc_tyrion_spybot() : CreatureScript("npc_tyrion_spybot") { }
 
-    enum AncientCursesConversationEvents
+    CreatureAI* GetAI(Creature* creature) const override
     {
-        EVENT_ARKONARIN_START_PATH      = 1,
-        EVENT_LYSANDER_START_PATH       = 2
-    };
-
-    enum AncientCursesConversationData
-    {
-        CONVO_LINE_ARKONARIN_START_PATH = 58685,
-        CONVO_LINE_LYSANDER_START_PATH  = 60113,
-    };
-
-    void OnCreate(Unit* creator) override
-    {
-        Creature* arkonarinObject = GetClosestCreatureWithOptions(creator, 20.0f, { .CreatureId = NPC_ARKONARIN_STARSHADE, .IgnorePhases = true });
-        Creature* lysanderObject = GetClosestCreatureWithOptions(creator, 20.0f, { .CreatureId = NPC_LYSANDER_STARSHADE, .IgnorePhases = true });
-        if (!arkonarinObject || !lysanderObject)
-            return;
-
-        TempSummon* arkonarinClone = arkonarinObject->SummonPersonalClone(arkonarinObject->GetPosition(), TEMPSUMMON_MANUAL_DESPAWN, 0s, 0, 0, creator->ToPlayer());
-        TempSummon* lysanderClone = lysanderObject->SummonPersonalClone(lysanderObject->GetPosition(), TEMPSUMMON_MANUAL_DESPAWN, 0s, 0, 0, creator->ToPlayer());
-        if (!arkonarinClone || !lysanderClone)
-            return;
-
-        arkonarinClone->RemoveNpcFlag(NPCFlags(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER));
-        lysanderClone->RemoveNpcFlag(NPCFlags(UNIT_NPC_FLAG_GOSSIP));
-        lysanderClone->SetWalk(true);
-        lysanderClone->GetMotionMaster()->MovePoint(POINT_LYSANDER_STEP_TO_DOOR, LysanderWalkToTheDoor);
-
-        conversation->AddActor(CONVERSATION_ANCIENT_CURSES, 1, arkonarinClone->GetGUID());
-        conversation->AddActor(CONVERSATION_ANCIENT_CURSES, 2, lysanderClone->GetGUID());
-        conversation->Start();
+        return new npc_tyrion_spybotAI(creature);
     }
 
-    void OnStart() override
+    struct npc_tyrion_spybotAI : public EscortAI
     {
-        LocaleConstant privateOwnerLocale = conversation->GetPrivateObjectOwnerLocale();
-
-        if (Milliseconds const* lysanderPathStartTime = conversation->GetLineStartTime(privateOwnerLocale, CONVO_LINE_ARKONARIN_START_PATH))
-            _events.ScheduleEvent(EVENT_ARKONARIN_START_PATH, *lysanderPathStartTime + 2s);
-
-        if (Milliseconds const* lysanderPathStartTime = conversation->GetLineStartTime(privateOwnerLocale, CONVO_LINE_LYSANDER_START_PATH))
-            _events.ScheduleEvent(EVENT_LYSANDER_START_PATH, *lysanderPathStartTime);
-    }
-
-    void OnUpdate(uint32 diff) override
-    {
-        _events.Update(diff);
-
-        switch (_events.ExecuteEvent())
+        npc_tyrion_spybotAI(Creature* creature) : EscortAI(creature)
         {
-            case EVENT_ARKONARIN_START_PATH:
-            {
-                Creature* arkonarinClone = conversation->GetActorCreature(1);
-                if (!arkonarinClone)
-                    break;
-
-                arkonarinClone->GetMotionMaster()->MovePath(PATH_ARKONARIN_WALK_TO_MOUNT_UP, false);
-                break;
-            }
-            case EVENT_LYSANDER_START_PATH:
-            {
-                Creature* lysanderClone = conversation->GetActorCreature(2);
-                if (!lysanderClone)
-                    break;
-
-                lysanderClone->GetMotionMaster()->MovePath(PATH_LYSANDER_WALK_TO_MOUNT_UP, false);
-                break;
-            }
-            default:
-                break;
+            Initialize();
         }
-    }
-private:
-    EventMap _events;
+
+        void Initialize()
+        {
+            uiTimer = 0;
+            uiPhase = 0;
+        }
+
+        uint32 uiTimer;
+        uint32 uiPhase;
+
+        void Reset() override
+        {
+            Initialize();
+        }
+
+        void WaypointReached(uint32 waypointId, uint32 /*pathId*/) override
+        {
+            switch (waypointId)
+            {
+                case 1:
+                    SetEscortPaused(true);
+                    uiTimer = 2000;
+                    uiPhase = 1;
+                    break;
+                case 5:
+                    SetEscortPaused(true);
+                    Talk(SAY_SPYBOT_1);
+                    uiTimer = 2000;
+                    uiPhase = 5;
+                    break;
+                case 17:
+                    SetEscortPaused(true);
+                    Talk(SAY_SPYBOT_3);
+                    uiTimer = 3000;
+                    uiPhase = 8;
+                    break;
+            }
+        }
+
+        void UpdateAI(uint32 uiDiff) override
+        {
+            if (uiPhase)
+            {
+                if (uiTimer <= uiDiff)
+                {
+                    switch (uiPhase)
+                    {
+                        case 1:
+                            Talk(SAY_QUEST_ACCEPT_ATTACK);
+                            uiTimer = 3000;
+                            uiPhase = 2;
+                            break;
+                        case 2:
+                            if (Creature* pTyrion = me->FindNearestCreature(NPC_TYRION, 10.0f))
+                            {
+                                if (Player* player = GetPlayerForEscort())
+                                    pTyrion->AI()->Talk(SAY_TYRION_1, player);
+                            }
+                            uiTimer = 3000;
+                            uiPhase = 3;
+                            break;
+                        case 3:
+                            me->UpdateEntry(NPC_PRIESTESS_TYRIONA);
+                            uiTimer = 2000;
+                            uiPhase = 4;
+                            break;
+                        case 4:
+                           SetEscortPaused(false);
+                           uiPhase = 0;
+                           uiTimer = 0;
+                           break;
+                        case 5:
+                            if (Creature* pGuard = me->FindNearestCreature(NPC_STORMWIND_ROYAL, 10.0f, true))
+                                pGuard->AI()->Talk(SAY_GUARD_1);
+                            uiTimer = 3000;
+                            uiPhase = 6;
+                            break;
+                        case 6:
+                            Talk(SAY_SPYBOT_2);
+                            uiTimer = 3000;
+                            uiPhase = 7;
+                            break;
+                        case 7:
+                            SetEscortPaused(false);
+                            uiTimer = 0;
+                            uiPhase = 0;
+                            break;
+                        case 8:
+                            if (Creature* pLescovar = me->FindNearestCreature(NPC_LORD_GREGOR_LESCOVAR, 10.0f))
+                                pLescovar->AI()->Talk(SAY_LESCOVAR_1);
+                            uiTimer = 3000;
+                            uiPhase = 9;
+                            break;
+                        case 9:
+                            Talk(SAY_SPYBOT_4);
+                            uiTimer = 3000;
+                            uiPhase = 10;
+                            break;
+                        case 10:
+                            if (Creature* pLescovar = me->FindNearestCreature(NPC_LORD_GREGOR_LESCOVAR, 10.0f))
+                            {
+                                if (Player* player = GetPlayerForEscort())
+                                {
+                                    if (EscortAI* ai = CAST_AI(EscortAI, pLescovar->AI()))
+                                    {
+                                        ai->LoadPath(PATH_ESCORT_LESCOVAR);
+                                        ai->Start(false, player->GetGUID());
+                                        ai->SetMaxPlayerDistance(200.0f);
+                                    }
+                                }
+                            }
+                            me->DisappearAndDie();
+                            uiTimer = 0;
+                            uiPhase = 0;
+                            break;
+                    }
+                } else uiTimer -= uiDiff;
+            }
+            EscortAI::UpdateAI(uiDiff);
+
+            if (!UpdateVictim())
+                return;
+
+            DoMeleeAttackIfReady();
+        }
+    };
 };
 
-// 130804 - The King's Command Movie Aura
-class spell_the_kings_command_movie_aura : public SpellScript
+/*######
+## npc_tyrion
+######*/
+
+enum Tyrion
 {
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo({
-            Spells::FadeToBlack
-        });
-    }
-
-    void HandleHitTarget(SpellEffIndex /*effIndex*/) const
-    {
-        GetHitUnit()->CastSpell(nullptr, Spells::FadeToBlack, CastSpellExtraArgsInit{
-            .TriggerFlags = TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR,
-            .TriggeringSpell = GetSpell()
-        });
-    }
-
-    void Register() override
-    {
-        OnEffectHitTarget += SpellEffectFn(spell_the_kings_command_movie_aura::HandleHitTarget, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
-    }
+    NPC_TYRION_SPYBOT = 8856
 };
 
-// 130804 - The King's Command Movie Aura
-class spell_the_kings_command_movie_aura_aura : public AuraScript
+static constexpr uint32 PATH_ESCORT_TYRION_SPYBOT = 14034;
+
+class npc_tyrion : public CreatureScript
 {
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo({
-            Spells::MOPAllianceIntroMoviePlay
-        });
-    }
+public:
+    npc_tyrion() : CreatureScript("npc_tyrion") { }
 
-    void HandleAfterEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/) const
+    struct npc_tyrionAI : ScriptedAI
     {
-        GetTarget()->CastSpell(nullptr, Spells::MOPAllianceIntroMoviePlay, CastSpellExtraArgsInit{
-            .TriggerFlags = TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR
-        });
-    }
+        npc_tyrionAI(Creature* creature) : ScriptedAI(creature) { }
 
-    void Register() override
-    {
-        AfterEffectRemove += AuraEffectRemoveFn(spell_the_kings_command_movie_aura_aura::HandleAfterEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
+        void OnQuestAccept(Player* player, Quest const* quest) override
+        {
+            if (quest->GetQuestId() == QUEST_THE_ATTACK)
+            {
+                if (Creature* spybot = me->FindNearestCreature(NPC_TYRION_SPYBOT, 5.0f, true))
+                {
+                    if (EscortAI* ai = CAST_AI(EscortAI, spybot->AI()))
+                    {
+                        ai->LoadPath(PATH_ESCORT_TYRION_SPYBOT);
+                        ai->Start(false, player->GetGUID());
+                        ai->SetMaxPlayerDistance(200.0f);
+                    }
+                }
+            }
+        }
+    };
 
-// 140885 - Admiral Rogers Script Effect
-class spell_admiral_rogers_script_effect : public SpellScript
-{
-    bool Validate(SpellInfo const* /*spellInfo*/) override
+    CreatureAI* GetAI(Creature* creature) const override
     {
-        return ValidateSpellInfo({
-            Spells::TeleportPrep
-        });
-    }
-
-    void HandleHitTarget(SpellEffIndex /*effIndex*/) const
-    {
-        GetHitUnit()->CastSpell(nullptr, Spells::TeleportPrep, CastSpellExtraArgsInit{
-            .TriggerFlags = TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR,
-            .TriggeringSpell = GetSpell()
-        });
-    }
-
-    void Register() override
-    {
-        OnEffectHitTarget += SpellEffectFn(spell_admiral_rogers_script_effect::HandleHitTarget, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+        return new npc_tyrionAI(creature);
     }
 };
-
-// 130832 - Teleport Prep
-class spell_teleport_prep_alliance : public SpellScript
-{
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo({
-            Spells::TeleportTimer
-        });
-    }
-
-    void HandleHitTarget(SpellEffIndex /*effIndex*/) const
-    {
-        Unit* hitUnit = GetHitUnit();
-
-        hitUnit->CancelMountAura();
-        hitUnit->CastSpell(nullptr, Spells::TeleportTimer, CastSpellExtraArgsInit{
-            .TriggerFlags = TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR,
-            .TriggeringSpell = GetSpell()
-        });
-    }
-
-    void Register() override
-    {
-        OnEffectHitTarget += SpellEffectFn(spell_teleport_prep_alliance::HandleHitTarget, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
-    }
-};
-
-// 132032 - Teleport Timer
-class spell_teleport_timer_alliance : public AuraScript
-{
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo({
-            Spells::TheMissionTeleportPlayer
-        });
-    }
-
-    void HandleAfterEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/) const
-    {
-        Unit* target = GetTarget();
-
-        target->CancelTravelShapeshiftForm();
-        target->CastSpell(nullptr, Spells::TheMissionTeleportPlayer, CastSpellExtraArgsInit{
-            .TriggerFlags = TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR
-        });
-    }
-
-    void Register() override
-    {
-        AfterEffectRemove += AuraEffectRemoveFn(spell_teleport_timer_alliance::HandleAfterEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
-    }
-};
-}
 
 void AddSC_stormwind_city()
 {
-    using namespace Scripts::EasternKingdoms::StormwindCity;
-
-    // Creature
-    RegisterCreatureAI(npc_jaina_proudmoore_tides_of_war);
-    RegisterCreatureAI(npc_anduin_wrynn_nation_of_kultiras);
-    RegisterCreatureAI(npc_arkonarin_starshade_ancient_curses);
-    RegisterCreatureAI(npc_lysande_starshade_ancient_curses);
-
-    // Conversation
-    RegisterConversationAI(conversation_start_council_tides_of_war);
-    RegisterConversationAI(conversation_quest_ancient_curses_accept);
-
-    // PlayerScript
-    new player_conv_after_movie_tides_of_war();
-
-    // AreaTrigger
-    RegisterAreaTriggerAI(at_stormwind_keep_tides_of_war);
-
-    // Spells
-    RegisterSpellScript(spell_despawn_sailor_memory);
-    RegisterSpellScript(spell_kultiras_skip_intro);
-    RegisterSpellScript(spell_stormwind_harbor_to_boralus_transition);
-    RegisterSpellAndAuraScriptPair(spell_the_kings_command_movie_aura, spell_the_kings_command_movie_aura_aura);
-    RegisterSpellScript(spell_admiral_rogers_script_effect);
-    RegisterSpellScript(spell_teleport_prep_alliance);
-    RegisterSpellScript(spell_teleport_timer_alliance);
+    new npc_tyrion();
+    new npc_tyrion_spybot();
+    new npc_lord_gregor_lescovar();
+    new npc_marzon_silent_blade();
 }

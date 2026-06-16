@@ -17,41 +17,37 @@
 
 #include "ahnkahet.h"
 #include "AreaBoundary.h"
+#include "Creature.h"
 #include "GameObject.h"
 #include "InstanceScript.h"
+#include "Map.h"
 #include "ScriptMgr.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_PRINCE_TALDARAM_GATE, DATA_PRINCE_TALDARAM, EncounterDoorBehavior::OpenWhenDone },
+    { GO_PRINCE_TALDARAM_GATE, DATA_PRINCE_TALDARAM, DOOR_TYPE_PASSAGE },
+    { 0,                       0,                    DOOR_TYPE_ROOM } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_ELDER_NADOX,         DATA_ELDER_NADOX         },
     { NPC_PRINCE_TALDARAM,     DATA_PRINCE_TALDARAM     },
     { NPC_JEDOGA_SHADOWSEEKER, DATA_JEDOGA_SHADOWSEEKER },
     { NPC_AMANITAR,            DATA_AMANITAR            },
     { NPC_HERALD_VOLAZJ,       DATA_HERALD_VOLAZJ       },
+    { 0,                       0                        }
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_PRINCE_TALDARAM_PLATFORM, DATA_PRINCE_TALDARAM_PLATFORM },
+    { 0,                           0                             } //END
 };
 
 BossBoundaryData const boundaries =
 {
     { DATA_JEDOGA_SHADOWSEEKER, new ParallelogramBoundary(Position(460.365f, -661.997f, -20.985f), Position(364.958f,-790.211f, -14.207f), Position(347.436f,-657.978f,14.478f)) }
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_ELDER_NADOX, {{ 1969 }} },
-    { DATA_PRINCE_TALDARAM, {{ 1966 }} },
-    { DATA_JEDOGA_SHADOWSEEKER, {{ 1967 }} },
-    { DATA_AMANITAR, {{ 1989 }} },
-    { DATA_HERALD_VOLAZJ, {{ 1968 }} }
 };
 
 class instance_ahnkahet : public InstanceMapScript
@@ -68,7 +64,6 @@ class instance_ahnkahet : public InstanceMapScript
                 LoadDoorData(doorData);
                 LoadObjectData(creatureData, gameObjectData);
                 LoadBossBoundaries(boundaries);
-                LoadDungeonEncounterData(encounters);
 
                 SpheresState[0]             = 0;
                 SpheresState[1]             = 0;
@@ -133,13 +128,15 @@ class instance_ahnkahet : public InstanceMapScript
                 return 0;
             }
 
-            void AfterDataLoad() override
+            void WriteSaveDataMore(std::ostringstream& data) override
             {
-                if (GetBossState(DATA_PRINCE_TALDARAM) == DONE)
-                {
-                    SpheresState[0] = IN_PROGRESS;
-                    SpheresState[1] = IN_PROGRESS;
-                }
+                data << SpheresState[0] << ' ' << SpheresState[1];
+            }
+
+            void ReadSaveDataMore(std::istringstream& data) override
+            {
+                data >> SpheresState[0];
+                data >> SpheresState[1];
             }
 
         protected:

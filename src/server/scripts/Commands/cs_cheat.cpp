@@ -24,7 +24,6 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Language.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -37,7 +36,7 @@ class cheat_commandscript : public CommandScript
 public:
     cheat_commandscript() : CommandScript("cheat_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable cheatCommandTable =
         {
@@ -127,11 +126,7 @@ public:
 
         if (enable)
         {
-            Player* player = handler->GetSession()->GetPlayer();
-            // Set max power to all powers
-            for (uint32 i = 0; i < MAX_POWERS; ++i)
-                player->SetFullPower(Powers(i));
-            player->SetCommandStatusOn(CHEAT_POWER);
+            handler->GetSession()->GetPlayer()->SetCommandStatusOn(CHEAT_POWER);
             handler->SendSysMessage("Power Cheat is ON. You don't need mana/rage/energy to use spells.");
         }
         else
@@ -157,6 +152,7 @@ public:
         handler->PSendSysMessage(LANG_COMMAND_CHEAT_POWER, player->GetCommandStatus(CHEAT_POWER) ? enabled : disabled);
         handler->PSendSysMessage(LANG_COMMAND_CHEAT_WW, player->GetCommandStatus(CHEAT_WATERWALK) ? enabled : disabled);
         handler->PSendSysMessage(LANG_COMMAND_CHEAT_TAXINODES, player->isTaxiCheater() ? enabled : disabled);
+
         return true;
     }
 
@@ -236,12 +232,12 @@ public:
                 ChatHandler(chr->GetSession()).PSendSysMessage(LANG_YOURS_EXPLORE_SET_NOTHING, handler->GetNameLink().c_str());
         }
 
-        for (uint16 i = 0; i < PLAYER_EXPLORED_ZONES_SIZE; ++i)
+        for (uint8 i = 0; i < PLAYER_EXPLORED_ZONES_SIZE; ++i)
         {
             if (reveal)
-                handler->GetSession()->GetPlayer()->AddExploredZones(i, 0xFFFFFFFFFFFFFFFF);
+                handler->GetSession()->GetPlayer()->SetFlag(PLAYER_EXPLORED_ZONES_1+i, 0xFFFFFFFF);
             else
-                handler->GetSession()->GetPlayer()->RemoveExploredZones(i, 0xFFFFFFFFFFFFFFFF);
+                handler->GetSession()->GetPlayer()->SetFlag(PLAYER_EXPLORED_ZONES_1+i, 0);
         }
 
         return true;

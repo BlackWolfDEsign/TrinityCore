@@ -25,6 +25,7 @@ EndScriptData */
 /* ContentData
 npc_lady_sylvanas_windrunner
 npc_highborne_lamenter
+npc_parqual_fintallas
 EndContentData */
 
 #include "ScriptMgr.h"
@@ -32,6 +33,7 @@ EndContentData */
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "ScriptedGossip.h"
 #include "SpellScript.h"
 
 /*######
@@ -233,9 +235,11 @@ public:
                         break;
                 }
             }
+
+            DoMeleeAttackIfReady();
         }
 
-        void OnQuestReward(Player* player, Quest const* quest, LootItemType /*type*/, uint32 /*opt*/) override
+        void OnQuestReward(Player* player, Quest const* quest, uint32 /*opt*/) override
         {
             if (quest->GetQuestId() == QUEST_JOURNEY_TO_UNDERCITY)
                 SetGUID(player->GetGUID(), GUID_EVENT_INVOKER);
@@ -332,6 +336,8 @@ enum DragonmawShinbones
 // 8856 - Bending Shinbone
 class spell_undercity_bending_shinbone : public SpellScript
 {
+    PrepareSpellScript(spell_undercity_bending_shinbone);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_BENDING_SHINBONE1, SPELL_BENDING_SHINBONE2 });
@@ -339,7 +345,7 @@ class spell_undercity_bending_shinbone : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetCaster(), roll_chance(20) ? SPELL_BENDING_SHINBONE1 : SPELL_BENDING_SHINBONE2, GetSpell());
+        GetCaster()->CastSpell(GetCaster(), roll_chance_i(20) ? SPELL_BENDING_SHINBONE1 : SPELL_BENDING_SHINBONE2);
     }
 
     void Register() override

@@ -22,6 +22,7 @@
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 #include "trial_of_the_crusader.h"
 
@@ -114,6 +115,7 @@ struct boss_jaraxxus : public BossAI
 
     void Reset() override
     {
+        me->SetCombatPulseDelay(0);
         me->ResetLootMode();
         events.Reset();
         summons.DespawnAll();
@@ -280,6 +282,8 @@ struct boss_jaraxxus : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 
@@ -321,7 +325,7 @@ struct npc_infernal_volcano : public ScriptedAI
         me->SetReactState(REACT_PASSIVE);
         DoCastSelf(SPELL_INFERNAL_ERUPTION_EFFECT, true);
         if (IsHeroic())
-            me->SetUninteractible(false);
+            me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
     }
 };
 
@@ -345,7 +349,7 @@ struct npc_fel_infernal : public ScriptedAI
             return !me->HasUnitState(UNIT_STATE_CASTING);
         });
 
-        _scheduler.Schedule(Seconds(2), [this](TaskContext& context)
+        _scheduler.Schedule(Seconds(2), [this](TaskContext context)
         {
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
                 DoCast(target, SPELL_FEL_STREAK_VISUAL);
@@ -360,7 +364,10 @@ struct npc_fel_infernal : public ScriptedAI
         if (!UpdateVictim())
             return;
 
-        _scheduler.Update(diff);
+        _scheduler.Update(diff, [this]
+        {
+            DoMeleeAttackIfReady();
+        });
     }
 
 private:
@@ -380,7 +387,7 @@ struct npc_nether_portal : public ScriptedAI
         me->SetReactState(REACT_PASSIVE);
         DoCastSelf(SPELL_NETHER_PORTAL_EFFECT, true);
         if (IsHeroic())
-            me->SetUninteractible(false);
+            me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
     }
 };
 
@@ -450,6 +457,8 @@ struct npc_mistress_of_pain : public ScriptedAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -460,6 +469,8 @@ private:
 // 66334, 67905, 67906, 67907 - Mistress' Kiss
 class spell_mistress_kiss : public AuraScript
 {
+    PrepareAuraScript(spell_mistress_kiss);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_MISTRESS_KISS_DAMAGE_SILENCE });
@@ -485,9 +496,11 @@ class spell_mistress_kiss : public AuraScript
 // 66336, 67076, 67077, 67078 - Mistress' Kiss
 class spell_mistress_kiss_area : public SpellScript
 {
+    PrepareSpellScript(spell_mistress_kiss_area);
+
     bool Validate(SpellInfo const* spellInfo) override
     {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } }) && ValidateSpellInfo({ static_cast<uint32>(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()) });
+        return ValidateSpellInfo({ static_cast<uint32>(spellInfo->GetEffect(EFFECT_0).CalcValue()) });
     }
 
     void FilterTargets(std::list<WorldObject*>& targets)
@@ -495,7 +508,7 @@ class spell_mistress_kiss_area : public SpellScript
         // get a list of players with mana
         targets.remove_if([](WorldObject* target)
         {
-            return target->GetTypeId() == TYPEID_PLAYER && target->ToUnit()->GetPowerIndex(POWER_MANA) == MAX_POWERS;
+            return target->GetTypeId() == TYPEID_PLAYER && target->ToPlayer()->GetPowerType() == POWER_MANA;
         });
 
         if (targets.empty())
@@ -508,7 +521,7 @@ class spell_mistress_kiss_area : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()), true);
+        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true);
     }
 
     void Register() override
@@ -521,14 +534,16 @@ class spell_mistress_kiss_area : public SpellScript
 // 66493 - Fel Streak
 class spell_fel_streak_visual : public SpellScript
 {
+    PrepareSpellScript(spell_fel_streak_visual);
+
     bool Validate(SpellInfo const* spellInfo) override
     {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } }) && ValidateSpellInfo({ static_cast<uint32>(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()) });
+        return ValidateSpellInfo({ static_cast<uint32>(spellInfo->GetEffect(EFFECT_0).CalcValue()) });
     }
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetHitUnit(), static_cast<uint32>(GetEffectValueAsInt()), true);
+        GetCaster()->CastSpell(GetHitUnit(), static_cast<uint32>(GetEffectValue()), true);
     }
 
     void Register() override

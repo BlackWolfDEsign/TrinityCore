@@ -16,16 +16,19 @@
  */
 
 #include "LogOperation.h"
-#include "LogMessage.h"
 #include "Logger.h"
+#include "LogMessage.h"
 
-LogOperation::LogOperation(Logger const* _logger, LogMessage* _msg) : logger(_logger), msg(_msg)
+LogOperation::LogOperation(Logger const* _logger, std::unique_ptr<LogMessage>&& _msg) : logger(_logger), msg(std::forward<std::unique_ptr<LogMessage>>(_msg))
 {
 }
 
-LogOperation::~LogOperation() = default;
+LogOperation::~LogOperation()
+{
+}
 
-void LogOperation::operator()() const
+int LogOperation::call()
 {
     logger->write(msg.get());
+    return 0;
 }

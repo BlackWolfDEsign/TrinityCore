@@ -25,7 +25,7 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
-#include "SpellInfo.h"
+#include "SpellAuraEffects.h"
 #include "SpellScript.h"
 
 enum Horseman
@@ -46,25 +46,24 @@ enum Spells
 
     /* baron */
     SPELL_BARON_MARK       = 28834,
+    SPELL_UNHOLY_SHADOW    = 28882,
 
     /* thane */
     SPELL_THANE_MARK       = 28832,
+    SPELL_METEOR           = 28884,
 
     /* lady */
+    SPELL_SHADOW_BOLT      = 57374,
     SPELL_LADY_MARK        = 28833,
+    SPELL_VOID_ZONE        = 28863,
     SPELL_UNYIELDING_PAIN  = 57381,
 
     /* sir */
+    SPELL_HOLY_BOLT        = 57376,
     SPELL_SIR_MARK         = 28835,
+    SPELL_HOLY_WRATH       = 28883,
     SPELL_CONDEMNATION     = 57377
 };
-
-#define SPELL_UNHOLY_SHADOW RAID_MODE<uint32>(28882, 57369) // Rivendare: Unholy Shadow
-#define SPELL_METEOR RAID_MODE<uint32>(28884, 57467) // Korth'azz: Meteor
-#define SPELL_SHADOW_BOLT RAID_MODE<uint32>(57374, 57464) // Blaumeux : Shadow Bolt
-#define SPELL_VOID_ZONE RAID_MODE<uint32>(28863, 57463) // Blaumeux : Void Zone
-#define SPELL_HOLY_BOLT RAID_MODE<uint32>(57376, 57465) // Zeliek : Holy Bolt
-#define SPELL_HOLY_WRATH RAID_MODE<uint32>(28883, 57466) // Zeliek: Holy Wrath
 
 enum Actions
 {
@@ -177,6 +176,7 @@ struct boss_four_horsemen_baseAI : public BossAI
                 case ACTION_BEGIN_FIGHTING:
                     if (_ourMovementFinished)
                         break;
+                    me->SetCombatPulseDelay(5);
                     BeginFighting();
                     _ourMovementFinished = true;
                     break;
@@ -216,7 +216,7 @@ struct boss_four_horsemen_baseAI : public BossAI
             }
             instance->SetBossState(BOSS_HORSEMEN, IN_PROGRESS);
             Map::PlayerList const& players = me->GetMap()->GetPlayers();
-            if (players.empty()) // sanity check
+            if (players.isEmpty()) // sanity check
                 ResetEncounter();
 
             for (Horseman boss : horsemen)
@@ -277,7 +277,7 @@ struct boss_four_horsemen_baseAI : public BossAI
             if (instance->GetBossState(BOSS_HORSEMEN) == DONE)
                 return;
             instance->SetBossState(BOSS_HORSEMEN, DONE);
-            //instance->DoUpdateCriteria(CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_ENCOUNTER_CREDIT);
+            //instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_ENCOUNTER_CREDIT);
             DoCastAOE(SPELL_ENCOUNTER_CREDIT, true);
         }
 
@@ -304,6 +304,7 @@ struct boss_four_horsemen_baseAI : public BossAI
             _ourMovementFinished = false;
             me->SetReactState(REACT_AGGRESSIVE);
             SetCombatMovement(false);
+            me->SetCombatPulseDelay(0);
             me->ResetLootMode();
             events.Reset();
             summons.DespawnAll();
@@ -431,6 +432,10 @@ struct boss_four_horsemen_baron : public boss_four_horsemen_baseAI
                     break;
             }
         }
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+        DoMeleeAttackIfReady();
     }
 
     void SpellHitTarget(WorldObject* /*target*/, SpellInfo const* spellInfo) override
@@ -492,6 +497,10 @@ struct boss_four_horsemen_thane : public boss_four_horsemen_baseAI
                     break;
             }
         }
+
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+        DoMeleeAttackIfReady();
     }
 
     void SpellHitTarget(WorldObject* /*target*/, SpellInfo const* spellInfo) override
@@ -509,11 +518,7 @@ struct boss_four_horsemen_thane : public boss_four_horsemen_baseAI
 
 struct boss_four_horsemen_lady : public boss_four_horsemen_baseAI
 {
-    boss_four_horsemen_lady(Creature* creature) : boss_four_horsemen_baseAI(creature, LADY, ladyPath)
-    {
-        me->SetCanMelee(false);
-    }
-
+    boss_four_horsemen_lady(Creature* creature) : boss_four_horsemen_baseAI(creature, LADY, ladyPath) { }
     void BeginFighting() override
     {
         events.ScheduleEvent(EVENT_BERSERK, 10min);
@@ -529,7 +534,7 @@ struct boss_four_horsemen_lady : public boss_four_horsemen_baseAI
             return;
         if (me->GetThreatManager().IsThreatListEmpty())
         {
-            EnterEvadeMode(EvadeReason::NoHostiles);
+            EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
             return;
         }
 
@@ -572,11 +577,7 @@ struct boss_four_horsemen_lady : public boss_four_horsemen_baseAI
 
 struct boss_four_horsemen_sir : public boss_four_horsemen_baseAI
 {
-    boss_four_horsemen_sir(Creature* creature) : boss_four_horsemen_baseAI(creature, SIR, sirPath), _shouldSay(true)
-    {
-        me->SetCanMelee(false);
-    }
-
+    boss_four_horsemen_sir(Creature* creature) : boss_four_horsemen_baseAI(creature, SIR, sirPath), _shouldSay(true) { }
     void BeginFighting() override
     {
         events.ScheduleEvent(EVENT_BERSERK, 10min);
@@ -592,7 +593,7 @@ struct boss_four_horsemen_sir : public boss_four_horsemen_baseAI
             return;
         if (me->GetThreatManager().IsThreatListEmpty())
         {
-            EnterEvadeMode(EvadeReason::NoHostiles);
+            EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
             return;
         }
 
@@ -651,6 +652,8 @@ struct boss_four_horsemen_sir : public boss_four_horsemen_baseAI
 // 28835 - Mark of Zeliek
 class spell_four_horsemen_mark : public AuraScript
 {
+    PrepareAuraScript(spell_four_horsemen_mark);
+
     void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (Unit* caster = GetCaster())

@@ -18,10 +18,6 @@
 #include "EventMap.h"
 #include "Random.h"
 
-EventMap::EventMap(EventMap const& other) = default;
-EventMap& EventMap::operator=(EventMap const& other) = default;
-EventMap::~EventMap() = default;
-
 void EventMap::Reset()
 {
     _eventMap.clear();
@@ -45,7 +41,7 @@ void EventMap::ScheduleEvent(EventId eventId, Milliseconds time, GroupIndex grou
     if (phase > sizeof(PhaseMask) * 8)
         return;
 
-    _eventMap.emplace(_time + time, Event(eventId, group, phase));
+    _eventMap.insert(EventStore::value_type(_time + time, Event(eventId, group, phase)));
 }
 
 void EventMap::ScheduleEvent(EventId eventId, Milliseconds minTime, Milliseconds maxTime, GroupIndex group /*= 0*/, PhaseIndex phase /*= 0*/)
@@ -89,7 +85,6 @@ EventMap::EventId EventMap::ExecuteEvent()
             auto eventId = itr->second._id;
             _lastEvent = itr->second;
             _eventMap.erase(itr);
-            ScheduleNextFromSeries(_lastEvent);
             return eventId;
         }
     }
@@ -106,7 +101,7 @@ void EventMap::DelayEvents(Milliseconds delay)
     for (auto itr = delayed.begin(); itr != delayed.end();)
     {
         EventStore::node_type node = delayed.extract(itr++);
-        node.key() += delay;
+        node.key() = node.key() + delay;
         _eventMap.insert(_eventMap.end(), std::move(node));
     }
 }
@@ -117,19 +112,19 @@ void EventMap::DelayEvents(Milliseconds delay, GroupIndex group)
         return;
 
     EventStore delayed;
+
     for (auto itr = _eventMap.begin(); itr != _eventMap.end();)
     {
         if (itr->second._groupMask & GroupMask(1u << (group - 1u)))
         {
-            EventStore::node_type node = _eventMap.extract(itr++);
-            node.key() += delay;
-            delayed.insert(delayed.end(), std::move(node));
+            delayed.insert(EventStore::value_type(itr->first + delay, itr->second));
+            _eventMap.erase(itr++);
         }
         else
             ++itr;
     }
 
-    _eventMap.merge(delayed);
+    _eventMap.insert(delayed.begin(), delayed.end());
 }
 
 void EventMap::SetMinimalDelay(EventId eventId, Milliseconds delay)
@@ -165,14 +160,6 @@ void EventMap::CancelEvent(EventId eventId)
         else
             ++itr;
     }
-
-    for (auto itr = _timerSeries.begin(); itr != _timerSeries.end();)
-    {
-        if (eventId == itr->first._id)
-            _timerSeries.erase(itr++);
-        else
-            ++itr;
-    }
 }
 
 void EventMap::CancelEventGroup(GroupIndex group)
@@ -184,14 +171,6 @@ void EventMap::CancelEventGroup(GroupIndex group)
     {
         if (itr->second._groupMask & GroupMask(1u << (group - 1u)))
             _eventMap.erase(itr++);
-        else
-            ++itr;
-    }
-
-    for (auto itr = _timerSeries.begin(); itr != _timerSeries.end();)
-    {
-        if (itr->first._groupMask & GroupMask(1 << (group - 1u)))
-            _timerSeries.erase(itr++);
         else
             ++itr;
     }
@@ -209,42 +188,4 @@ Milliseconds EventMap::GetTimeUntilEvent(EventId eventId) const
 bool EventMap::HasEventScheduled(EventId eventId) const
 {
     return GetTimeUntilEvent(eventId) != Milliseconds::max();
-}
-
-void EventMap::ScheduleNextFromSeries(Event eventData)
-{
-    EventSeriesStore::iterator itr = _timerSeries.find(eventData);
-    if (itr == _timerSeries.end())
-        return;
-
-    _eventMap.emplace(_time + itr->second.front(), eventData);
-
-    if (itr->second.size() > 1)
-        itr->second.erase(itr->second.begin());
-    else
-        _timerSeries.erase(itr);
-}
-
-void EventMap::ScheduleEventSeries(EventId eventId, GroupIndex group, PhaseIndex phase, std::initializer_list<Milliseconds> timeSeries)
-{
-    if (group > sizeof(GroupMask) * 8)
-        return;
-
-    if (phase > sizeof(PhaseMask) * 8)
-        return;
-
-    if (!timeSeries.size())
-        return;
-
-    Event event(eventId, group, phase);
-
-    std::vector<Milliseconds>& series = _timerSeries[event];
-    series.insert(series.end(), timeSeries.begin(), timeSeries.end());
-
-    ScheduleNextFromSeries(event);
-}
-
-void EventMap::ScheduleEventSeries(EventId eventId, std::initializer_list<Milliseconds> timeSeries)
-{
-    ScheduleEventSeries(eventId, 0, 0, timeSeries);
 }

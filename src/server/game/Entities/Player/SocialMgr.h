@@ -47,7 +47,6 @@ enum SocialFlag
 
 struct FriendInfo
 {
-    ObjectGuid WowAccountGuid;
     FriendStatus Status;
     uint8 Flags;
     uint32 Area;
@@ -58,8 +57,7 @@ struct FriendInfo
     FriendInfo() : Status(FRIEND_STATUS_OFFLINE), Flags(0), Area(0), Level(0), Class(0), Note()
     { }
 
-    FriendInfo(ObjectGuid const& accountGuid, uint8 flags, std::string const& note) : WowAccountGuid(accountGuid), Status(FRIEND_STATUS_OFFLINE),
-        Flags(flags), Area(0), Level(0), Class(0), Note(note)
+    FriendInfo(uint8 flags, std::string const& note) : Status(FRIEND_STATUS_OFFLINE), Flags(flags), Area(0), Level(0), Class(0), Note(note)
     { }
 };
 
@@ -106,14 +104,8 @@ class TC_GAME_API PlayerSocial
 
     public:
         PlayerSocial();
-        PlayerSocial(PlayerSocial const&);
-        PlayerSocial(PlayerSocial&&) noexcept;
-        PlayerSocial& operator=(PlayerSocial const&);
-        PlayerSocial& operator=(PlayerSocial&&) noexcept;
-        ~PlayerSocial();
-
         // adding/removing
-        bool AddToSocialList(ObjectGuid const& guid, ObjectGuid const& accountGuid, SocialFlag flag);
+        bool AddToSocialList(ObjectGuid const& guid, SocialFlag flag);
         void RemoveFromSocialList(ObjectGuid const& guid, SocialFlag flag);
         void SetFriendNote(ObjectGuid const& guid, std::string const& note);
 
@@ -122,7 +114,7 @@ class TC_GAME_API PlayerSocial
 
         // Misc
         bool HasFriend(ObjectGuid const& friendGuid);
-        bool HasIgnore(ObjectGuid const& ignoreGuid, ObjectGuid const& ignoreAccountGuid);
+        bool HasIgnore(ObjectGuid const& ignoreGuid);
 
         ObjectGuid const& GetPlayerGUID() const { return _playerGUID; }
         void SetPlayerGUID(ObjectGuid const& guid) { _playerGUID = guid; }
@@ -134,7 +126,6 @@ class TC_GAME_API PlayerSocial
 
         typedef std::map<ObjectGuid, FriendInfo> PlayerSocialMap;
         PlayerSocialMap _playerSocialMap;
-        GuidUnorderedSet _ignoredAccounts;
 
         ObjectGuid _playerGUID;
 };
@@ -142,15 +133,10 @@ class TC_GAME_API PlayerSocial
 class SocialMgr
 {
     private:
-        SocialMgr();
-        ~SocialMgr();
+        SocialMgr() { }
+        ~SocialMgr() { }
 
     public:
-        SocialMgr(SocialMgr const&) = delete;
-        SocialMgr(SocialMgr&&) = delete;
-        SocialMgr& operator=(SocialMgr const&) = delete;
-        SocialMgr& operator=(SocialMgr&&) = delete;
-
         static SocialMgr* instance();
 
         // Misc

@@ -61,26 +61,20 @@ enum BlackStalkerEvents
     EVENT_SUMMON_SPORE_STRIDER
 };
 
-enum BlackStalkerPaths
-{
-    PATH_BLACK_STALKER_IDLE             = 4346960,
-};
-
+// 17882 - The Black Stalker
 struct boss_the_black_stalker : public BossAI
 {
-    boss_the_black_stalker(Creature* creature) : BossAI(creature, DATA_THE_BLACK_STALKER), _summons(creature) { }
+    boss_the_black_stalker(Creature* creature) : BossAI(creature, DATA_THE_BLACK_STALKER) { }
 
     void JustEngagedWith(Unit* who) override
     {
         BossAI::JustEngagedWith(who);
-        scheduler.CancelAll();
-
-        _events.ScheduleEvent(EVENT_LEASH_CHECK, 5s);
-        _events.ScheduleEvent(EVENT_LEVITATE, 8s, 18s);
-        _events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 0s, 3s);
-        _events.ScheduleEvent(EVENT_STATIC_CHARGE, 10s);
+        events.ScheduleEvent(EVENT_LEASH_CHECK, 5s);
+        events.ScheduleEvent(EVENT_LEVITATE, 8s, 18s);
+        events.ScheduleEvent(EVENT_CHAIN_LIGHTNING, 0s, 3s);
+        events.ScheduleEvent(EVENT_STATIC_CHARGE, 10s);
         if (IsHeroic())
-            _events.ScheduleEvent(EVENT_SUMMON_SPORE_STRIDER, 20s, 30s);
+            events.ScheduleEvent(EVENT_SUMMON_SPORE_STRIDER, 20s, 30s);
     }
 
     void UpdateAI(uint32 diff) override
@@ -88,12 +82,12 @@ struct boss_the_black_stalker : public BossAI
         if (!UpdateVictim())
             return;
 
-        _events.Update(diff);
+        events.Update(diff);
 
         if (me->HasUnitState(UNIT_STATE_CASTING))
             return;
 
-        while (uint32 eventId = _events.ExecuteEvent())
+        while (uint32 eventId = events.ExecuteEvent())
         {
             switch (eventId)
             {
@@ -106,25 +100,25 @@ struct boss_the_black_stalker : public BossAI
                         EnterEvadeMode();
                         return;
                     }
-                    _events.Repeat(1s);
+                    events.Repeat(1s);
                     break;
                 }
                 case EVENT_LEVITATE:
                     DoCastSelf(SPELL_LEVITATE);
-                    _events.Repeat(18s, 24s);
+                    events.Repeat(18s, 24s);
                     break;
                 case EVENT_CHAIN_LIGHTNING:
                     DoCastVictim(SPELL_CHAIN_LIGHTNING);
-                    _events.Repeat(6s, 12s);
+                    events.Repeat(6s, 12s);
                     break;
                 case EVENT_STATIC_CHARGE:
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 30, true))
                         DoCast(target, SPELL_STATIC_CHARGE);
-                    _events.Repeat(10s);
+                    events.Repeat(10s);
                     break;
                 case EVENT_SUMMON_SPORE_STRIDER:
                     DoCastSelf(SPELL_SUMMON_SPORE_STRIDER_SCRIPT);
-                    _events.Repeat(15s, 25s);
+                    events.Repeat(15s, 25s);
                     break;
                 default:
                     break;
@@ -133,30 +127,16 @@ struct boss_the_black_stalker : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
-
-    void WaypointReached(uint32 waypointId, uint32 pathId) override
-    {
-        if (pathId != PATH_BLACK_STALKER_IDLE)
-            return;
-
-        if (waypointId == 2 || waypointId == 4 || waypointId == 6)
-        {
-            scheduler.Schedule(2s, [this](TaskContext const& /*task*/)
-            {
-                me->HandleEmoteCommand(EMOTE_ONESHOT_EAT);
-            });
-        }
-    }
-
-private:
-    EventMap _events;
-    SummonList _summons;
 };
 
 // 31704 - Levitate
 class spell_the_black_stalker_levitate : public SpellScript
 {
+    PrepareSpellScript(spell_the_black_stalker_levitate);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_LEVITATION_PULSE });
@@ -176,6 +156,8 @@ class spell_the_black_stalker_levitate : public SpellScript
 // 31701 - Levitation Pulse
 class spell_the_black_stalker_levitation_pulse : public SpellScript
 {
+    PrepareSpellScript(spell_the_black_stalker_levitation_pulse);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_SOMEONE_GRAB_ME });
@@ -195,6 +177,8 @@ class spell_the_black_stalker_levitation_pulse : public SpellScript
 // 31702 - Someone Grab Me
 class spell_the_black_stalker_someone_grab_me : public SpellScript
 {
+    PrepareSpellScript(spell_the_black_stalker_someone_grab_me);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_MAGNETIC_PULL, SPELL_SUSPENSION });
@@ -215,6 +199,8 @@ class spell_the_black_stalker_someone_grab_me : public SpellScript
 // 31703 - Magnetic Pull
 class spell_the_black_stalker_magnetic_pull : public SpellScript
 {
+    PrepareSpellScript(spell_the_black_stalker_magnetic_pull);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_SUSPENSION_PRIMER });
@@ -234,6 +220,8 @@ class spell_the_black_stalker_magnetic_pull : public SpellScript
 // 38756 - Summon Spore Strider
 class spell_the_black_stalker_summon_spore_strider : public SpellScript
 {
+    PrepareSpellScript(spell_the_black_stalker_summon_spore_strider);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_SUMMON_SPORE_STRIDER });

@@ -31,6 +31,7 @@ Script Data End */
 #include "Player.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
+#include "SpellScript.h"
 #include "TemporarySummon.h"
 
 enum BlastmasterEmi
@@ -360,9 +361,9 @@ public:
                     me->SummonCreature(NPC_CHOMPER, SpawnPosition[16], TEMPSUMMON_CORPSE_TIMED_DESPAWN, 30min);
                     break;
                 case 9:
-                    me->SummonGameObject(GO_RED_ROCKET, SpawnPosition[17], QuaternionData::fromEulerAnglesZYX(SpawnPosition[17].GetOrientation(), 0.0f, 0.0f), 2h);
-                    me->SummonGameObject(GO_RED_ROCKET, SpawnPosition[18], QuaternionData::fromEulerAnglesZYX(SpawnPosition[18].GetOrientation(), 0.0f, 0.0f), 2h);
-                    me->SummonGameObject(GO_RED_ROCKET, SpawnPosition[19], QuaternionData::fromEulerAnglesZYX(SpawnPosition[19].GetOrientation(), 0.0f, 0.0f), 2h);
+                    me->SummonGameObject(GO_RED_ROCKET, SpawnPosition[17], QuaternionData(), 2h);
+                    me->SummonGameObject(GO_RED_ROCKET, SpawnPosition[18], QuaternionData(), 2h);
+                    me->SummonGameObject(GO_RED_ROCKET, SpawnPosition[19], QuaternionData(), 2h);
                     break;
             }
         }
@@ -488,7 +489,10 @@ public:
                 } else uiTimer -= uiDiff;
             }
 
-            UpdateVictim();
+            if (!UpdateVictim())
+                return;
+
+            DoMeleeAttackIfReady();
         }
 
         void JustSummoned(Creature* summon) override
@@ -527,6 +531,14 @@ public:
                     creature->AI()->SetData(2, 1);
         }
 
+        void UpdateAI(uint32 /*diff*/) override
+        {
+            if (!UpdateVictim())
+                return;
+
+            DoMeleeAttackIfReady();
+        }
+
         void JustDied(Unit* /*killer*/) override
         {
             if (!me->IsSummon())
@@ -540,8 +552,50 @@ public:
 
 };
 
+// 12709 - Collecting Fallout
+class spell_collecting_fallout : public SpellScriptLoader
+{
+    public:
+        spell_collecting_fallout() : SpellScriptLoader("spell_collecting_fallout") { }
+
+        class spell_collecting_fallout_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_collecting_fallout_SpellScript);
+
+            void OnLaunch(SpellEffIndex effIndex)
+            {
+                // estimated 25% chance of success
+                if (roll_chance_i(25))
+                    _spellFail = false;
+                else
+                    PreventHitDefaultEffect(effIndex);
+            }
+
+            void HandleFail(SpellEffIndex effIndex)
+            {
+                if (!_spellFail)
+                    PreventHitDefaultEffect(effIndex);
+            }
+
+            void Register() override
+            {
+                OnEffectLaunch += SpellEffectFn(spell_collecting_fallout_SpellScript::OnLaunch, EFFECT_0, SPELL_EFFECT_TRIGGER_SPELL);
+                OnEffectLaunch += SpellEffectFn(spell_collecting_fallout_SpellScript::HandleFail, EFFECT_1, SPELL_EFFECT_TRIGGER_SPELL);
+            }
+
+            bool _spellFail = true;
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_collecting_fallout_SpellScript();
+        }
+};
+
 void AddSC_gnomeregan()
 {
     new npc_blastmaster_emi_shortfuse();
     new boss_grubbis();
+
+    new spell_collecting_fallout();
 }

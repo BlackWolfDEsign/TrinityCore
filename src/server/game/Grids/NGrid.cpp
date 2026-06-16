@@ -20,17 +20,17 @@
 #include "Random.h"
 
 GridInfo::GridInfo() : i_timer(0), vis_Update(0, irand(0, DEFAULT_VISIBILITY_NOTIFY_PERIOD)),
-    i_unloadActiveLockCount(0), i_unloadExplicitLock(false)
+    i_unloadActiveLockCount(0), i_unloadExplicitLock(false), i_unloadReferenceLock(false)
 {
 }
 
 GridInfo::GridInfo(time_t expiry, bool unload /*= true */) : i_timer(expiry), vis_Update(0, irand(0, DEFAULT_VISIBILITY_NOTIFY_PERIOD)),
-    i_unloadActiveLockCount(0), i_unloadExplicitLock(!unload)
+    i_unloadActiveLockCount(0), i_unloadExplicitLock(!unload), i_unloadReferenceLock(false)
 {
 }
 
-template class TC_GAME_API Grid<WorldTypeMapContainer, GridTypeMapContainer>;
-template class TC_GAME_API NGrid<MAX_NUMBER_OF_CELLS, WorldTypeMapContainer, GridTypeMapContainer>;
+template class Grid<Player, AllWorldObjectTypes, AllGridObjectTypes>;
+template class NGrid<MAX_NUMBER_OF_CELLS, Player, AllWorldObjectTypes, AllGridObjectTypes>;
 
-template struct TC_GAME_API TypeListContainer<GridRefManagerContainer, GameObject, Creature/*except pets*/, DynamicObject, Corpse/*Bones*/, AreaTrigger, SceneObject, Conversation>;
-template struct TC_GAME_API TypeListContainer<GridRefManagerContainer, Player, Creature/*pets*/, Corpse/*resurrectable*/, DynamicObject/*farsight target*/>;
+template class TC_GAME_API TypeMapContainer<AllGridObjectTypes>;
+template class TC_GAME_API TypeMapContainer<AllWorldObjectTypes>;

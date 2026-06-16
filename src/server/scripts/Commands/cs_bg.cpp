@@ -17,7 +17,6 @@
 
 #include "Battleground.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Language.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -30,7 +29,7 @@ class bg_commandscript : public CommandScript
 public:
     bg_commandscript() : CommandScript("bg_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable commandTable =
         {
@@ -65,7 +64,7 @@ public:
             return false;
         }
 
-        bg->EndBattleground(TEAM_OTHER);
+        bg->EndBattleground(0);
 
         return true;
     }

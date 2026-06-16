@@ -22,14 +22,12 @@
 
 #include "ScriptMgr.h"
 #include "MotionMaster.h"
-#include "ObjectAccessor.h"
 #include "PassiveAI.h"
-#include "PetDefines.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
-#include "TemporarySummon.h"
+#include "ObjectAccessor.h"
 
 enum PandarenMonkMisc
 {
@@ -152,6 +150,8 @@ enum LichPet
 // 69735 - Lich Pet OnSummon
 class spell_pet_gen_lich_pet_onsummon : public SpellScript
 {
+    PrepareSpellScript(spell_pet_gen_lich_pet_onsummon);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_LICH_PET_AURA });
@@ -172,6 +172,8 @@ class spell_pet_gen_lich_pet_onsummon : public SpellScript
 // 69736 - Lich Pet Aura Remove
 class spell_pet_gen_lich_pet_aura_remove : public SpellScript
 {
+    PrepareSpellScript(spell_pet_gen_lich_pet_aura_remove);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_LICH_PET_AURA });
@@ -191,6 +193,8 @@ class spell_pet_gen_lich_pet_aura_remove : public SpellScript
 // 69732 - Lich Pet Aura
 class spell_pet_gen_lich_pet_aura : public AuraScript
 {
+    PrepareAuraScript(spell_pet_gen_lich_pet_aura);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_LICH_PET_AURA_ONKILL });
@@ -201,15 +205,15 @@ class spell_pet_gen_lich_pet_aura : public AuraScript
         return eventInfo.GetActionTarget()->IsPlayer();
     }
 
-    void HandleProc(AuraEffect* /*aurEff*/, ProcEventInfo& /*eventInfo*/)
+    void HandleProc(AuraEffect const* /*aurEff*/, ProcEventInfo& /*eventInfo*/)
     {
         PreventDefaultAction();
 
         Unit* owner = GetUnitOwner();
 
-        std::list<TempSummon*> minionList;
+        std::list<Creature*> minionList;
         owner->GetAllMinionsByEntry(minionList, NPC_LICH_PET);
-        for (TempSummon* minion : minionList)
+        for (Creature* minion : minionList)
             owner->CastSpell(minion, SPELL_LICH_PET_AURA_ONKILL, true);
     }
 
@@ -223,6 +227,8 @@ class spell_pet_gen_lich_pet_aura : public AuraScript
 // 70050 - [DND] Lich Pet
 class spell_pet_gen_lich_pet_periodic_emote : public AuraScript
 {
+    PrepareAuraScript(spell_pet_gen_lich_pet_periodic_emote);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_LICH_PET_EMOTE });
@@ -237,7 +243,7 @@ class spell_pet_gen_lich_pet_periodic_emote : public AuraScript
         // Effect of 70050 is overlapped by effect of 69683 but not instantly (69683 is a series of spell casts, takes longer to execute).
         // However, for some reason emote is not played if creature is idle and only if creature is moving or is already rooted.
         // For now it's scripted manually in script below to play emote always.
-        if (roll_chance(50))
+        if (roll_chance_i(50))
             GetTarget()->CastSpell(GetTarget(), SPELL_LICH_PET_EMOTE, true);
     }
 
@@ -250,6 +256,8 @@ class spell_pet_gen_lich_pet_periodic_emote : public AuraScript
 // 70049 - [DND] Lich Pet
 class spell_pet_gen_lich_pet_emote : public AuraScript
 {
+    PrepareAuraScript(spell_pet_gen_lich_pet_emote);
+
     void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         GetTarget()->HandleEmoteCommand(EMOTE_ONESHOT_CUSTOM_SPELL_01);
@@ -264,19 +272,59 @@ class spell_pet_gen_lich_pet_emote : public AuraScript
 // 69682 - Lil' K.T. Focus
 class spell_pet_gen_lich_pet_focus : public SpellScript
 {
+    PrepareSpellScript(spell_pet_gen_lich_pet_focus);
+
     bool Validate(SpellInfo const* spellInfo) override
     {
-        return ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()) });
+        return ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_0).CalcValue()) });
     }
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()));
+        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()));
     }
 
     void Register() override
     {
         OnEffectHitTarget += SpellEffectFn(spell_pet_gen_lich_pet_focus::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+// 71848 - Toxic Wasteling Find Target
+class spell_pet_gen_toxic_wasteling_find_target : public SpellScript
+{
+    PrepareSpellScript(spell_pet_gen_toxic_wasteling_find_target);
+
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        return ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_0).CalcValue()) });
+    }
+
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_pet_gen_toxic_wasteling_find_target::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+// 71874 - Toxic Wasteling Devour
+class spell_pet_gen_toxic_wasteling_devour : public SpellScript
+{
+    PrepareSpellScript(spell_pet_gen_toxic_wasteling_devour);
+
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        if (Creature* target = GetHitCreature())
+            target->DespawnOrUnsummon();
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_pet_gen_toxic_wasteling_devour::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
     }
 };
 
@@ -321,12 +369,12 @@ struct npc_elwynn_forest_wolf : public NullCreatureAI
 private:
     void _ScheduleBeforeChasingEvents()
     {
-        _scheduler.Schedule(1s, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(1s, [this](TaskContext /*context*/)
         {
             me->PlayDistanceSound(SOUND_WOLF_HOWL);
             me->HandleEmoteCommand(EMOTE_ONESHOT_BATTLE_ROAR);
         })
-        .Schedule(4s, [this](TaskContext const& /*context*/)
+        .Schedule(4s, [this](TaskContext /*context*/)
         {
             if (Creature* summoner = ObjectAccessor::GetCreature(*me, _summonerGUID))
                 if (me->Attack(summoner, false))
@@ -360,6 +408,8 @@ private:
 // 62701 - Elwynn Forest Wolf
 class spell_gen_elwynn_forest_wolf : public SpellScript
 {
+    PrepareSpellScript(spell_gen_elwynn_forest_wolf);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_SUICIDE });
@@ -384,10 +434,12 @@ class spell_gen_elwynn_forest_wolf : public SpellScript
 // 62703 - Elwynn Lamb
 class spell_gen_elwynn_lamb : public AuraScript
 {
+    PrepareAuraScript(spell_gen_elwynn_lamb);
+
     void HandlePeriodic(AuraEffect const* /*aurEff*/)
     {
         // Based on WotLK Classic sniffs (3.4.3 52237).
-        if (!GetTarget()->IsOutdoors() || !roll_chance(5))
+        if (!GetTarget()->IsOutdoors() || !roll_chance_i(5))
             PreventDefaultAction();
     }
 
@@ -407,6 +459,8 @@ void AddSC_generic_pet_scripts()
     RegisterSpellScript(spell_pet_gen_lich_pet_periodic_emote);
     RegisterSpellScript(spell_pet_gen_lich_pet_emote);
     RegisterSpellScript(spell_pet_gen_lich_pet_focus);
+    RegisterSpellScript(spell_pet_gen_toxic_wasteling_find_target);
+    RegisterSpellScript(spell_pet_gen_toxic_wasteling_devour);
     RegisterCreatureAI(npc_elwynn_forest_wolf);
     RegisterSpellScript(spell_gen_elwynn_forest_wolf);
     RegisterSpellScript(spell_gen_elwynn_lamb);

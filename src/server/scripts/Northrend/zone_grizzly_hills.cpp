@@ -17,6 +17,7 @@
 
 #include "ScriptMgr.h"
 #include "CombatAI.h"
+#include "CreatureTextMgr.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -336,12 +337,13 @@ struct npc_tallhorn_stag : public ScriptedAI
             {
                 me->SetStandState(UNIT_STAND_STATE_DEAD);
                 me->SetImmuneToPC(true);
-                me->SetUnitFlag3(UNIT_FLAG3_FAKE_DEAD);
+                me->SetDynamicFlag(UNIT_DYNFLAG_DEAD);
             }
             _phase = 0;
         }
         if (!UpdateVictim())
             return;
+        DoMeleeAttackIfReady();
     }
     private:
         uint8 _phase;
@@ -458,6 +460,14 @@ struct npc_wounded_skirmisher : public ScriptedAI
             }
         }
     }
+
+    void UpdateAI(uint32 /*diff*/) override
+    {
+        if (!UpdateVictim())
+            return;
+
+        DoMeleeAttackIfReady();
+    }
     private:
         Milliseconds _despawnTimer;
 };
@@ -541,6 +551,7 @@ struct npc_venture_co_straggler : public ScriptedAI
 
         if (!UpdateVictim())
             return;
+        DoMeleeAttackIfReady();
     }
 
     void SpellHit(WorldObject* caster, SpellInfo const* spellInfo) override
@@ -702,6 +713,8 @@ enum ShredderDelivery
 
 class spell_shredder_delivery : public SpellScript
 {
+    PrepareSpellScript(spell_shredder_delivery);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -728,6 +741,8 @@ enum InfectedWorgenBite
 // 53094 - Infected Worgen Bite
 class spell_infected_worgen_bite : public AuraScript
 {
+    PrepareAuraScript(spell_infected_worgen_bite);
+
     void HandleAfterEffectApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
@@ -824,6 +839,8 @@ enum WarheadSpells
 // 49107 - Vehicle: Warhead Fuse
 class spell_vehicle_warhead_fuse : public SpellScript
 {
+    PrepareSpellScript(spell_vehicle_warhead_fuse);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_WARHEAD_Z_CHECK, SPELL_WARHEAD_SEEKING_LUMBERSHIP, SPELL_WARHEAD_FUSE });
@@ -853,6 +870,8 @@ enum WarheadDenonate
 // 49250 - Detonate
 class spell_warhead_detonate : public SpellScript
 {
+    PrepareSpellScript(spell_warhead_detonate);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_PARACHUTE, SPELL_TORPEDO_EXPLOSION });
@@ -868,7 +887,7 @@ class spell_warhead_detonate : public SpellScript
         player->ExitVehicle();
         float horizontalSpeed = 3.0f;
         float verticalSpeed = 40.0f;
-        player->KnockbackFrom(caster->GetPosition(), horizontalSpeed, verticalSpeed);
+        player->KnockbackFrom(caster->GetPositionX(), caster->GetPositionY(), horizontalSpeed, verticalSpeed);
         caster->CastSpell(player, SPELL_PARACHUTE, true);
 
         std::list<Creature*> explosionBunnys;
@@ -886,6 +905,8 @@ class spell_warhead_detonate : public SpellScript
 // 61678 - Z Check
 class spell_z_check : public AuraScript
 {
+    PrepareAuraScript(spell_z_check);
+
 public:
     spell_z_check()
     {
@@ -919,6 +940,8 @@ private:
 // 49181 - Warhead Fuse
 class spell_warhead_fuse : public AuraScript
 {
+    PrepareAuraScript(spell_warhead_fuse);
+
     void HandleOnEffectRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (Unit* rocketUnit = GetTarget()->GetVehicleBase())
@@ -929,6 +952,233 @@ class spell_warhead_fuse : public AuraScript
     void Register() override
     {
         OnEffectRemove += AuraEffectRemoveFn(spell_warhead_fuse::HandleOnEffectRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+enum
+{
+    SPELL_ENVISION_DRAKURU_01     = 47118,
+    SPELL_ENVISION_DRAKURU_02     = 47150,
+    SPELL_ENVISION_DRAKURU_03     = 47317,
+    SPELL_ENVISION_DRAKURU_04     = 47406,
+    SPELL_ENVISION_DRAKURU_05     = 50440
+};
+
+// 47117 - Script Cast Summon Image of Drakuru
+// 47149 - Script Cast Summon Image of Drakuru 02
+// 47316 - Script Cast Summon Image of Drakuru 03
+// 47405 - Script Cast Summon Image of Drakuru 04
+// 50439 - Script Cast Summon Image of Drakuru 05
+class spell_grizzly_hills_script_cast_summon_image_of_drakuru : public SpellScript
+{
+    PrepareSpellScript(spell_grizzly_hills_script_cast_summon_image_of_drakuru);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ _triggeredSpellId });
+    }
+
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        GetHitUnit()->CastSpell(GetHitUnit(), _triggeredSpellId);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_grizzly_hills_script_cast_summon_image_of_drakuru::HandleScript, EFFECT_0, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+
+    uint32 _triggeredSpellId;
+
+public:
+    explicit spell_grizzly_hills_script_cast_summon_image_of_drakuru(uint32 triggeredSpellId) : _triggeredSpellId(triggeredSpellId) { }
+};
+
+/*######
+## Quest 12308: Escape from Silverbrook
+######*/
+
+enum EscapeFromSilverbrook
+{
+    SPELL_SUMMON_WORGEN = 48681
+};
+
+// 48682 - Escape from Silverbrook - Periodic Dummy
+class spell_grizzly_hills_escape_from_silverbrook : public SpellScript
+{
+    PrepareSpellScript(spell_grizzly_hills_escape_from_silverbrook);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_SUMMON_WORGEN });
+    }
+
+    void HandleDummy(SpellEffIndex /*effIndex*/)
+    {
+        GetCaster()->CastSpell(GetCaster(), SPELL_SUMMON_WORGEN, true);
+    }
+
+    void Register() override
+    {
+        OnEffectHit += SpellEffectFn(spell_grizzly_hills_escape_from_silverbrook::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+// 48681 - Summon Silverbrook Worgen
+class spell_grizzly_hills_escape_from_silverbrook_summon_worgen : public SpellScript
+{
+    PrepareSpellScript(spell_grizzly_hills_escape_from_silverbrook_summon_worgen);
+
+    void ModDest(SpellDestination& dest)
+    {
+        float dist = GetEffectInfo(EFFECT_0).CalcRadius(GetCaster());
+        float angle = frand(0.75f, 1.25f) * float(M_PI);
+
+        Position pos = GetCaster()->GetNearPosition(dist, angle);
+        dest.Relocate(pos);
+    }
+
+    void Register() override
+    {
+        OnDestinationTargetSelect += SpellDestinationTargetSelectFn(spell_grizzly_hills_escape_from_silverbrook_summon_worgen::ModDest, EFFECT_0, TARGET_DEST_CASTER_SUMMON);
+    }
+};
+
+/*######
+## Quest 12414: Mounting Up
+######*/
+
+// 49285 - Hand Over Reins
+class spell_grizzly_hills_hand_over_reins : public SpellScript
+{
+    PrepareSpellScript(spell_grizzly_hills_hand_over_reins);
+
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        Creature* caster = GetCaster()->ToCreature();
+        GetHitUnit()->ExitVehicle();
+
+        if (caster)
+            caster->DespawnOrUnsummon();
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_grizzly_hills_hand_over_reins::HandleScript, EFFECT_1, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+/*######
+## Quest 12121: See You on the Other Side
+######*/
+
+enum SeeYouOnTheOtherSide
+{
+    SPELL_SUMMON_YOUR_CORPSE    = 61612,
+    SPELL_ON_THE_OTHER_SIDE     = 61611
+};
+
+// 47744 - Rage of Jin'arrak
+class spell_grizzly_hills_rage_of_jinarrak : public AuraScript
+{
+    PrepareAuraScript(spell_grizzly_hills_rage_of_jinarrak);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_SUMMON_YOUR_CORPSE, SPELL_ON_THE_OTHER_SIDE });
+    }
+
+    void AfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        Unit* target = GetTarget();
+        target->CastSpell(target, SPELL_SUMMON_YOUR_CORPSE, true);
+        target->CastSpell(target, SPELL_ON_THE_OTHER_SIDE, true);
+    }
+
+    void Register() override
+    {
+        AfterEffectRemove += AuraEffectRemoveFn(spell_grizzly_hills_rage_of_jinarrak::AfterRemove, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// 61613 - Gan'jo Ressurection
+class spell_grizzly_hills_ganjo_ressurection : public SpellScript
+{
+    PrepareSpellScript(spell_grizzly_hills_ganjo_ressurection);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_ON_THE_OTHER_SIDE });
+    }
+
+    void HandleScript(SpellEffIndex /*effIndex*/)
+    {
+        GetHitUnit()->RemoveAurasDueToSpell(SPELL_ON_THE_OTHER_SIDE);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_grizzly_hills_ganjo_ressurection::HandleScript, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+    }
+};
+
+/*######
+## Creature 26853 (Makki Wintergale) (if quest 'Shifting Priorities' (12763) is completed)
+######*/
+
+enum MakkiWintergale
+{
+    SPELL_FLIGHT_ONEQUAH_TO_LIGHTS_BREACH     = 53289
+};
+
+// 53288 - Flight - Onequah to Light's Breach
+class spell_grizzly_hills_flight_onequah_to_lights_breach : public AuraScript
+{
+    PrepareAuraScript(spell_grizzly_hills_flight_onequah_to_lights_breach);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_FLIGHT_ONEQUAH_TO_LIGHTS_BREACH });
+    }
+
+    void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->CastSpell(GetTarget(), SPELL_FLIGHT_ONEQUAH_TO_LIGHTS_BREACH);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_grizzly_hills_flight_onequah_to_lights_breach::AfterApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+/*######
+## Creature 26876 (Samuel Clearbook) (if quest 'Reallocating Resources' (12770) is completed)
+######*/
+
+enum SamuelClearbook
+{
+    SPELL_FLIGHT_WESTFALL_TO_LIGHTS_BREACH     = 53310
+};
+
+// 53311 - Flight - Westfall to Light's Breach
+class spell_grizzly_hills_flight_westfall_to_lights_breach : public AuraScript
+{
+    PrepareAuraScript(spell_grizzly_hills_flight_westfall_to_lights_breach);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_FLIGHT_WESTFALL_TO_LIGHTS_BREACH });
+    }
+
+    void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->CastSpell(GetTarget(), SPELL_FLIGHT_WESTFALL_TO_LIGHTS_BREACH);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_grizzly_hills_flight_westfall_to_lights_breach::AfterApply, EFFECT_0, SPELL_AURA_DUMMY, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -949,4 +1199,16 @@ void AddSC_grizzly_hills()
     RegisterSpellScript(spell_warhead_detonate);
     RegisterSpellScript(spell_vehicle_warhead_fuse);
     RegisterSpellScript(spell_warhead_fuse);
+    RegisterSpellScriptWithArgs(spell_grizzly_hills_script_cast_summon_image_of_drakuru, "spell_grizzly_hills_script_cast_summon_image_of_drakuru_01", SPELL_ENVISION_DRAKURU_01);
+    RegisterSpellScriptWithArgs(spell_grizzly_hills_script_cast_summon_image_of_drakuru, "spell_grizzly_hills_script_cast_summon_image_of_drakuru_02", SPELL_ENVISION_DRAKURU_02);
+    RegisterSpellScriptWithArgs(spell_grizzly_hills_script_cast_summon_image_of_drakuru, "spell_grizzly_hills_script_cast_summon_image_of_drakuru_03", SPELL_ENVISION_DRAKURU_03);
+    RegisterSpellScriptWithArgs(spell_grizzly_hills_script_cast_summon_image_of_drakuru, "spell_grizzly_hills_script_cast_summon_image_of_drakuru_04", SPELL_ENVISION_DRAKURU_04);
+    RegisterSpellScriptWithArgs(spell_grizzly_hills_script_cast_summon_image_of_drakuru, "spell_grizzly_hills_script_cast_summon_image_of_drakuru_05", SPELL_ENVISION_DRAKURU_05);
+    RegisterSpellScript(spell_grizzly_hills_escape_from_silverbrook);
+    RegisterSpellScript(spell_grizzly_hills_escape_from_silverbrook_summon_worgen);
+    RegisterSpellScript(spell_grizzly_hills_hand_over_reins);
+    RegisterSpellScript(spell_grizzly_hills_rage_of_jinarrak);
+    RegisterSpellScript(spell_grizzly_hills_ganjo_ressurection);
+    RegisterSpellScript(spell_grizzly_hills_flight_onequah_to_lights_breach);
+    RegisterSpellScript(spell_grizzly_hills_flight_westfall_to_lights_breach);
 }

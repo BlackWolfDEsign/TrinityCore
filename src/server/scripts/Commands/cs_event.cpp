@@ -24,10 +24,10 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "GameEventMgr.h"
 #include "GameTime.h"
 #include "Language.h"
+#include "Player.h"
 #include "RBAC.h"
 
 using namespace Trinity::ChatCommands;
@@ -37,7 +37,7 @@ class event_commandscript : public CommandScript
 public:
     event_commandscript() : CommandScript("event_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable eventCommandTable =
         {

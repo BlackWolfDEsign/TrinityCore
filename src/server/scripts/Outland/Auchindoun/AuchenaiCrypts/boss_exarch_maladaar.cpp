@@ -23,7 +23,7 @@
 #include "SpellInfo.h"
 #include "SpellScript.h"
 
-enum Texts
+enum MaladaarTexts
 {
     SAY_ROAR                    = 0,
     SAY_SOUL_CLEAVE             = 1,
@@ -33,7 +33,7 @@ enum Texts
     SAY_DEATH                   = 5
 };
 
-enum Spells
+enum MaladaarSpells
 {
     SPELL_SOUL_SCREAM           = 32421,
     SPELL_RIBBON_OF_SOULS       = 32422,
@@ -57,7 +57,7 @@ enum Spells
     SPELL_PLAGUE_STRIKE         = 58839
 };
 
-enum Events
+enum MaladaarEvents
 {
     EVENT_SOUL_SCREAM           = 1,
     EVENT_RIBBON_OF_SOULS,
@@ -65,7 +65,7 @@ enum Events
     EVENT_SUMMON_AVATAR
 };
 
-enum Misc
+enum MaladaarMisc
 {
     NPC_DORE                    = 19412,
 
@@ -93,6 +93,7 @@ enum Misc
 
 Position const DoreSpawnPos = { -4.40722f, -387.277f, 40.6294f, 6.26573f };
 
+// 18373 - Exarch Maladaar
 struct boss_exarch_maladaar : public BossAI
 {
     boss_exarch_maladaar(Creature* creature) : BossAI(creature, DATA_EXARCH_MALADAAR), _avatarSummoned(false) { }
@@ -123,9 +124,19 @@ struct boss_exarch_maladaar : public BossAI
 
     void OnSpellCast(SpellInfo const* spell) override
     {
-        if (spell->Id == SPELL_STOLEN_SOUL)
-            if (roll_chance(25))
-                Talk(SAY_SOUL_CLEAVE);
+        switch (spell->Id)
+        {
+            case SPELL_STOLEN_SOUL:
+                if (roll_chance_i(25))
+                    Talk(SAY_SOUL_CLEAVE);
+                break;
+            case SPELL_SOUL_SCREAM:
+                if (roll_chance_i(25))
+                    Talk(SAY_ROAR);
+                break;
+            default:
+                break;
+        }
     }
 
     void SpellHitTarget(WorldObject* target, SpellInfo const* spellInfo) override
@@ -164,8 +175,6 @@ struct boss_exarch_maladaar : public BossAI
             switch (eventId)
             {
                 case EVENT_SOUL_SCREAM:
-                    if (roll_chance(25))
-                        Talk(SAY_ROAR);
                     DoCastSelf(SPELL_SOUL_SCREAM);
                     events.Repeat(RAND(15s, 20s));
                     break;
@@ -189,12 +198,15 @@ struct boss_exarch_maladaar : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
     bool _avatarSummoned;
 };
 
+// 18441 - Stolen Soul
 struct npc_stolen_soul : public ScriptedAI
 {
     npc_stolen_soul(Creature* creature) : ScriptedAI(creature), _summonerClass(CLASS_NONE) { }
@@ -246,42 +258,42 @@ struct npc_stolen_soul : public ScriptedAI
         switch (_summonerClass)
         {
             case CLASS_WARRIOR:            //
-                _scheduler.Schedule(5s, 10s, [this](TaskContext& task)
+                _scheduler.Schedule(5s, 10s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_MORTAL_STRIKE);
                     task.Repeat(5s, 10s);
                 });
                 break;
             case CLASS_PALADIN:            // video & sniff
-                _scheduler.Schedule(2s, 7s, [this](TaskContext& task)
+                _scheduler.Schedule(2s, 7s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_HAMMER_OF_JUSTICE);
                     task.Repeat(8s, 15s);
                 });
                 break;
             case CLASS_HUNTER:             // video
-                _scheduler.Schedule(5s, [this](TaskContext& task)
+                _scheduler.Schedule(5s, [this](TaskContext task)
                 {
                     DoCastSelf(SPELL_FREEZING_TRAP);
                     task.Repeat(20s);
                 });
                 break;
             case CLASS_ROGUE:              //
-                _scheduler.Schedule(5s, [this](TaskContext& task)
+                _scheduler.Schedule(5s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_HEMORRHAGE);
                     task.Repeat(10s);
                 });
                 break;
             case CLASS_PRIEST:             //
-                _scheduler.Schedule(2s, [this](TaskContext& task)
+                _scheduler.Schedule(2s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_MIND_FLAY);
                     task.Repeat(3s, 5s);
                 });
                 break;
             case CLASS_SHAMAN:             // video
-                _scheduler.Schedule(0s, [this](TaskContext& task)
+                _scheduler.Schedule(0s, [this](TaskContext task)
                 {
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 20.0f, true, true, -SPELL_FROST_SHOCK))
                         DoCast(target, SPELL_FROST_SHOCK);
@@ -289,14 +301,14 @@ struct npc_stolen_soul : public ScriptedAI
                 });
                 break;
             case CLASS_MAGE:               // video
-                _scheduler.Schedule(0s, [this](TaskContext& task)
+                _scheduler.Schedule(0s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_FIREBALL);
                     task.Repeat(3s);
                 });
                 break;
             case CLASS_WARLOCK:            // video
-                _scheduler.Schedule(10s, [this](TaskContext& task)
+                _scheduler.Schedule(10s, [this](TaskContext task)
                 {
                     if (Unit* victim = me->GetVictim())
                         if (!victim->HasAura(SPELL_CURSE_OF_AGONY))
@@ -306,14 +318,14 @@ struct npc_stolen_soul : public ScriptedAI
                 });
                 break;
             case CLASS_DRUID:              //
-                _scheduler.Schedule(5s, [this](TaskContext& task)
+                _scheduler.Schedule(5s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_MOONFIRE);
                     task.Repeat(10s);
                 });
                 break;
             case CLASS_DEATH_KNIGHT:       //
-                _scheduler.Schedule(3s, 6s, [this](TaskContext& task)
+                _scheduler.Schedule(3s, 6s, [this](TaskContext task)
                 {
                     DoCastVictim(SPELL_PLAGUE_STRIKE);
                     task.Repeat(6s, 12s);
@@ -335,7 +347,10 @@ struct npc_stolen_soul : public ScriptedAI
         if (!UpdateVictim())
             return;
 
-        _scheduler.Update(diff);
+        _scheduler.Update(diff, [this]
+        {
+            DoMeleeAttackIfReady();
+        });
     }
 
 private:
@@ -347,6 +362,8 @@ private:
 // 33326 - Stolen Soul Dispel
 class spell_exarch_maladaar_stolen_soul_dispel : public AuraScript
 {
+    PrepareAuraScript(spell_exarch_maladaar_stolen_soul_dispel);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo({ SPELL_STOLEN_SOUL });

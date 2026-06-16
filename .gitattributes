@@ -29,6 +29,3 @@
 
 # Ignore sql/* files
 sql/*    linguist-documentation
-
-# Always LF endings
-*.sh     eol=lf

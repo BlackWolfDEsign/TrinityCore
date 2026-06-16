@@ -22,31 +22,27 @@
 #include "Map.h"
 #include "ScriptedCreature.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_PRISON_DOOR_01, DATA_KELIDAN_THE_BREAKER, EncounterDoorBehavior::OpenWhenDone },
-    { GO_PRISON_DOOR_02, DATA_THE_MAKER,           EncounterDoorBehavior::OpenWhenNotInProgress },
-    { GO_PRISON_DOOR_03, DATA_THE_MAKER,           EncounterDoorBehavior::OpenWhenDone },
-    { GO_PRISON_DOOR_04, DATA_BROGGOK,             EncounterDoorBehavior::OpenWhenDone },
-    { GO_PRISON_DOOR_05, DATA_BROGGOK,             EncounterDoorBehavior::OpenWhenNotInProgress },
-    { GO_SUMMON_DOOR,    DATA_KELIDAN_THE_BREAKER, EncounterDoorBehavior::OpenWhenDone },
+    { GO_PRISON_DOOR_01, DATA_KELIDAN_THE_BREAKER, DOOR_TYPE_PASSAGE },
+    { GO_PRISON_DOOR_02, DATA_THE_MAKER,           DOOR_TYPE_ROOM },
+    { GO_PRISON_DOOR_03, DATA_THE_MAKER,           DOOR_TYPE_PASSAGE },
+    { GO_PRISON_DOOR_04, DATA_BROGGOK,             DOOR_TYPE_PASSAGE },
+    { GO_PRISON_DOOR_05, DATA_BROGGOK,             DOOR_TYPE_ROOM },
+    { GO_SUMMON_DOOR,    DATA_KELIDAN_THE_BREAKER, DOOR_TYPE_PASSAGE },
+    { 0,                 0,                        DOOR_TYPE_ROOM } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_BROGGOK,             DATA_BROGGOK             },
+    { 0,                       0                        } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_BROGGOK_LEVER,      DATA_BROGGOK_LEVER },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_THE_MAKER, {{ 1922 }} },
-    { DATA_BROGGOK, {{ 1924 }} },
-    { DATA_KELIDAN_THE_BREAKER, {{ 1923 }} }
+    { 0,                     0                  } //END
 };
 
 class instance_blood_furnace : public InstanceMapScript
@@ -62,7 +58,6 @@ class instance_blood_furnace : public InstanceMapScript
                 SetBossNumber(EncounterCount);
                 LoadDoorData(doorData);
                 LoadObjectData(creatureData, gameObjectData);
-                LoadDungeonEncounterData(encounters);
 
                 PrisonerCounter5        = 0;
                 PrisonerCounter6        = 0;
@@ -108,13 +103,6 @@ class instance_blood_furnace : public InstanceMapScript
                 {
                     case GO_PRISON_DOOR_04:
                         PrisonDoor4GUID = go->GetGUID();
-                        [[fallthrough]];
-                    case GO_PRISON_DOOR_01:
-                    case GO_PRISON_DOOR_02:
-                    case GO_PRISON_DOOR_03:
-                    case GO_PRISON_DOOR_05:
-                    case GO_SUMMON_DOOR:
-                        AddDoor(go, true);
                         break;
                     case GO_BROGGOK_LEVER:
                         BroggokLeverGUID = go->GetGUID();
@@ -233,7 +221,6 @@ class instance_blood_furnace : public InstanceMapScript
             {
                 if (!prisoner->IsAlive())
                     prisoner->Respawn(true);
-                prisoner->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                 prisoner->SetImmuneToAll(true);
                 if (prisoner->IsAIEnabled())
                     prisoner->AI()->EnterEvadeMode();
@@ -325,7 +312,6 @@ class instance_blood_furnace : public InstanceMapScript
                 for (GuidSet::const_iterator i = prisoners.begin(); i != prisoners.end(); ++i)
                     if (Creature* prisoner = instance->GetCreature(*i))
                     {
-                        prisoner->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
                         prisoner->SetImmuneToAll(false);
                         prisoner->AI()->DoZoneInCombat();
                     }

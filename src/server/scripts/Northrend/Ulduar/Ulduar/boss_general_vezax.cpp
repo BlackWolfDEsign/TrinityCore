@@ -216,6 +216,8 @@ class boss_general_vezax : public CreatureScript
                     if (me->HasUnitState(UNIT_STATE_CASTING))
                         return;
                 }
+
+                DoMeleeAttackIfReady();
             }
 
             void SpellHitTarget(WorldObject* target, SpellInfo const* spellInfo) override
@@ -362,6 +364,8 @@ class boss_saronite_animus : public CreatureScript
                     if (me->HasUnitState(UNIT_STATE_CASTING))
                         return;
                 }
+
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -421,8 +425,7 @@ class npc_saronite_vapors : public CreatureScript
                 if (damage >= me->GetHealth())
                 {
                     damage = 0;
-                    me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                     me->SetControlled(true, UNIT_STATE_ROOT);
                     me->SetStandState(UNIT_STAND_STATE_DEAD);
                     me->SetHealth(me->GetMaxHealth());
@@ -454,6 +457,8 @@ class spell_general_vezax_mark_of_the_faceless : public SpellScriptLoader
 
         class spell_general_vezax_mark_of_the_faceless_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_general_vezax_mark_of_the_faceless_AuraScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo({ SPELL_MARK_OF_THE_FACELESS_DAMAGE });
@@ -489,6 +494,8 @@ class spell_general_vezax_mark_of_the_faceless_leech : public SpellScriptLoader
 
         class spell_general_vezax_mark_of_the_faceless_leech_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_general_vezax_mark_of_the_faceless_leech_SpellScript);
+
             void FilterTargets(std::list<WorldObject*>& targets)
             {
                 targets.remove(GetExplTargetWorldObject());
@@ -517,6 +524,8 @@ class spell_general_vezax_saronite_vapors : public SpellScriptLoader
 
         class spell_general_vezax_saronite_vapors_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_general_vezax_saronite_vapors_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SARONITE_VAPORS_ENERGIZE, SPELL_SARONITE_VAPORS_DAMAGE });
@@ -526,7 +535,7 @@ class spell_general_vezax_saronite_vapors : public SpellScriptLoader
             {
                 if (Unit* caster = GetCaster())
                 {
-                    SpellEffectValue mana = aurEff->GetAmount() * std::pow(2.0f, GetStackAmount()); // mana restore - bp * 2^stackamount
+                    int32 mana = int32(aurEff->GetAmount() * std::pow(2.0f, GetStackAmount())); // mana restore - bp * 2^stackamount
                     CastSpellExtraArgs args1(TRIGGERED_FULL_MASK), args2(TRIGGERED_FULL_MASK);
                     args1.AddSpellBP0(mana);
                     args2.AddSpellBP0(mana * 2);

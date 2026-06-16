@@ -25,6 +25,7 @@ gets instead the deserter debuff.
 #include "GameObject.h"
 #include "InstanceScript.h"
 #include "Map.h"
+#include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "ScriptMgr.h"
 #include "diremaul.h"
@@ -57,7 +58,8 @@ gets instead the deserter debuff.
 // 14 - Guard Slip'kik
 // 15 - Captain Kromcrush
 // 16 - King Gordok
-// 23 - Cho'Rush the Observer
+
+uint8 const EncounterCount = 23;
 
 uint32 const CrystalMobs[2] = { NPC_ARCANE_ABERRATION, NPC_MANA_REMNANT };
 
@@ -65,26 +67,6 @@ enum Events
 {
     EVENT_CRYSTAL_CREATURE_STORE                = 1,
     EVENT_CRYSTAL_CREATURE_CHECK                = 2
-};
-
-DungeonEncounterData const encounters[] =
-{
-    { DATA_LETHTENDRIS, {{ 345 }} },
-    { DATA_HYDROSPAWN, {{ 344 }} },
-    { DATA_ZEVRIM_THORNHOOF, {{ 343 }} },
-    { DATA_ALZZIN_THE_WILDSHAPER, {{ 346 }} },
-    { DATA_TENDRIS_WARPWOOD, {{ 350 }} },
-    { DATA_MAGISTER_KALENDRIS, {{ 348 }} },
-    { DATA_ILLYANNA_RAVENOAK, {{ 347 }} },
-    { DATA_IMMOLTHAR, {{ 349 }} },
-    { DATA_PRINCE_TORTHELDRIN, {{ 361 }} },
-    { DATA_GUARD_MOLDAR, {{ 362 }} },
-    { DATA_STOMPER_KREEG, {{ 363 }} },
-    { DATA_GUARD_FENGUS, {{ 364 }} },
-    { DATA_GUARD_SLIPKIK, {{ 365 }} },
-    { DATA_CAPTAIN_KROMCRUSH, {{ 366 }} },
-    { DATA_CHO_RUSH_THE_OBSERVER, {{ 367 }} },
-    { DATA_KING_GORDOK, {{ 368 }} }
 };
 
 class instance_dire_maul : public InstanceMapScript
@@ -97,8 +79,7 @@ public:
         instance_dire_maul_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
         {
             SetHeaders(DataHeader);
-            SetBossNumber(MAX_ENCOUNTER);
-            LoadDungeonEncounterData(encounters);
+            SetBossNumber(EncounterCount);
         }
 
         void OnCreatureCreate(Creature* creature) override
@@ -127,8 +108,11 @@ public:
                 if (Creature* tortheldrin = instance->GetCreature(_tortheldrinGUID))
                     tortheldrin->SetFaction(FACTION_ENEMY);
             }
-            else if (unit->GetEntry() == NPC_CHO_RUSH)
-                SetBossState(DATA_CHO_RUSH_THE_OBSERVER, DONE);
+            else if (unit->GetGUID() == _tortheldrinGUID)
+            {
+                if (GameObject* chest = instance->GetGameObject(_princechestGUID))
+                    chest->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
+            }
         }
 
         void OnGameObjectCreate(GameObject* go) override
@@ -157,6 +141,9 @@ public:
                     if (GetBossState(DATA_FORCEFIELD) != DONE)
                         _events.ScheduleEvent(EVENT_CRYSTAL_CREATURE_STORE, 1s);
                     break;
+                case GO_PRINCE_CHEST:
+                    _princechestGUID = go->GetGUID();
+                    break;
                 default:
                     break;
             }
@@ -178,6 +165,8 @@ public:
                     return _crystalGUIDs[4];
                 case GO_FORCEFIELD:
                     return _forcefieldGUID;
+                case GO_PRINCE_CHEST:
+                    return _princechestGUID;
                 case NPC_IMMOLTHAR:
                     return _immoGUID;
                 case NPC_TORTHELDRIN:
@@ -306,6 +295,7 @@ protected:
         std::array<ObjectGuid, 5> _crystalGUIDs;
         std::array<std::array<ObjectGuid, 4>, 5> _crystalCreatureGUIDs; // 5 different Crystals, maximum of 4 Creatures
         ObjectGuid _forcefieldGUID;
+        ObjectGuid _princechestGUID;
         ObjectGuid _immoGUID;
         ObjectGuid _tortheldrinGUID;
     };

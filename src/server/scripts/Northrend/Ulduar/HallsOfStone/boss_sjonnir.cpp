@@ -22,9 +22,10 @@
 #include "ObjectAccessor.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
 
-enum Texts
+enum SjonnirTexts
 {
     SAY_AGGRO                            = 0,
     SAY_SLAY                             = 1,
@@ -32,15 +33,22 @@ enum Texts
     EMOTE_FRENZY                         = 3
 };
 
-enum Spells
+enum SjonnirSpells
 {
+    SPELL_LIGHTNING_RING_1               = 50840,
+    SPELL_LIGHTNING_RING_2               = 51849,
+    SPELL_STATIC_CHARGE                  = 50834,
+    SPELL_CHAIN_LIGHTNING                = 50830,
+    SPELL_LIGHTNING_SHIELD               = 50831,
     SPELL_FRENZY                         = 28747,
 
     SPELL_SUMMON_IRON_DWARF_PERIODIC     = 50789,   // 59860 not used
     SPELL_SUMMON_IRON_DWARF_1            = 50790,
     SPELL_SUMMON_IRON_DWARF_2            = 50791,
+    SPELL_SUMMON_IRON_TROGG_PERIODIC     = 50792,
     SPELL_SUMMON_IRON_TROGG_1            = 50793,
     SPELL_SUMMON_IRON_TROGG_2            = 50794,
+    SPELL_SUMMON_MALFORMED_OOZE_PERIODIC = 50801,
     SPELL_SUMMON_MALFORMED_OOZE_1        = 50802,
     SPELL_SUMMON_MALFORMED_OOZE_2        = 50803,
     SPELL_SUMMON_EARTHEN_DWARF_PERIODIC  = 50824,
@@ -54,34 +62,10 @@ enum Spells
 
     // Iron Sludge
     SPELL_IRON_SLUDGE_SPAWN_VISUAL       = 50777,
+    SPELL_TOXIC_VOLLEY                   = 50838
 };
 
-#define SPELL_LIGHTNING_RING_1 DUNGEON_MODE<uint32>(50840,59848)
-#define SPELL_LIGHTNING_RING_2 DUNGEON_MODE<uint32>(51849,59861)
-#define SPELL_STATIC_CHARGE DUNGEON_MODE<uint32>(50834,59861)
-#define SPELL_CHAIN_LIGHTNING DUNGEON_MODE<uint32>(50830,59844)
-#define SPELL_LIGHTNING_SHIELD DUNGEON_MODE<uint32>(50831,59845)
-#define SPELL_SUMMON_IRON_TROGG_PERIODIC DUNGEON_MODE<uint32>(50792,59859)
-#define SPELL_SUMMON_MALFORMED_OOZE_PERIODIC DUNGEON_MODE<uint32>(50801,59858)
-#define SPELL_TOXIC_VOLLEY DUNGEON_MODE<uint32>(50838,59853)
-
-enum Creatures
-{
-    NPC_FORGED_IRON_TROGG                = 27979,
-    NPC_FORGED_IRON_DWARF                = 27982,
-    NPC_EARTHEN_DWARF                    = 27980
-};
-
-enum Misc
-{
-    POINT_CENTER                         = 0,
-    POINT_COMBINE                        = 1,
-
-    ACTION_SLUDGE_DEAD                   = 1,
-    DATA_ABUSE_THE_OOZE                  = 2
-};
-
-enum Events
+enum SjonnirEvents
 {
     EVENT_CHAIN_LIGHTNING                = 1,
     EVENT_LIGHTNING_SHIELD,
@@ -91,8 +75,25 @@ enum Events
     EVENT_FRENZY
 };
 
+enum SjonnirCreatures
+{
+    NPC_FORGED_IRON_TROGG                = 27979,
+    NPC_FORGED_IRON_DWARF                = 27982,
+    NPC_EARTHEN_DWARF                    = 27980
+};
+
+enum SjonnirMisc
+{
+    POINT_CENTER                         = 0,
+    POINT_COMBINE                        = 1,
+
+    ACTION_SLUDGE_DEAD                   = 1,
+    DATA_ABUSE_THE_OOZE                  = 2
+};
+
 Position const CenterPoint = { 1293.8799f, 666.942f, 189.60754f, 0.0f };
 
+// 27978 - Sjonnir The Ironshaper
 struct boss_sjonnir : public BossAI
 {
     boss_sjonnir(Creature* creature) : BossAI(creature, DATA_SJONNIR_THE_IRONSHAPER),
@@ -102,7 +103,7 @@ struct boss_sjonnir : public BossAI
     {
         if (!instance->CheckRequiredBosses(DATA_SJONNIR_THE_IRONSHAPER, who->ToPlayer()))
         {
-            EnterEvadeMode(EvadeReason::SequenceBreak);
+            EnterEvadeMode(EVADE_REASON_SEQUENCE_BREAK);
             return;
         }
 
@@ -146,14 +147,14 @@ struct boss_sjonnir : public BossAI
         if (me->HealthBelowPctDamaged(50, damage) && !_summonsOozes)
         {
             _summonsOozes = true;
-            me->RemoveAurasDueToSpell(SPELL_SUMMON_IRON_TROGG_PERIODIC);
+            me->RemoveAurasDueToSpell(sSpellMgr->GetSpellIdForDifficulty(SPELL_SUMMON_IRON_TROGG_PERIODIC, me));
             DoCastSelf(SPELL_SUMMON_MALFORMED_OOZE_PERIODIC, true);
         }
 
         if (me->HealthBelowPctDamaged(25, damage) && !_summonsDwarfs)
         {
             _summonsDwarfs = true;
-            me->RemoveAurasDueToSpell(SPELL_SUMMON_MALFORMED_OOZE_PERIODIC);
+            me->RemoveAurasDueToSpell(sSpellMgr->GetSpellIdForDifficulty(SPELL_SUMMON_MALFORMED_OOZE_PERIODIC, me));
             DoCastSelf(SPELL_SUMMON_EARTHEN_DWARF_PERIODIC, true);
         }
 
@@ -219,7 +220,7 @@ struct boss_sjonnir : public BossAI
                     events.Repeat(10s, 15s);
                     break;
                 case EVENT_LIGHTNING_SHIELD:
-                    if (!me->HasAura(SPELL_LIGHTNING_SHIELD))
+                    if (!me->HasAura(sSpellMgr->GetSpellIdForDifficulty(SPELL_LIGHTNING_SHIELD, me)))
                         DoCastSelf(SPELL_LIGHTNING_SHIELD);
                     events.Repeat(5s, 15s);
                     break;
@@ -247,6 +248,8 @@ struct boss_sjonnir : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -257,6 +260,7 @@ private:
     bool _frenzied;
 };
 
+// 27981 - Malformed Ooze
 struct npc_malformed_ooze : public ScriptedAI
 {
     npc_malformed_ooze(Creature* creature) : ScriptedAI(creature) { }
@@ -312,7 +316,7 @@ struct npc_malformed_ooze : public ScriptedAI
                 me->GetMotionMaster()->MoveIdle();
                 me->GetMotionMaster()->MovePoint(POINT_COMBINE, creatureTarget->GetPosition());
 
-                _scheduler.Schedule(1s, [this](TaskContext& task)
+                _scheduler.Schedule(1s, [this](TaskContext task)
                 {
                     Creature* combineTarget = ObjectAccessor::GetCreature(*me, _combineTarget);
                     // Completely unclear what should happen in this case or in case when caster dies
@@ -348,6 +352,7 @@ private:
     ObjectGuid _combineTarget;
 };
 
+// 28165 - Iron Sludge
 struct npc_iron_sludge : public ScriptedAI
 {
     npc_iron_sludge(Creature* creature) : ScriptedAI(creature), _instance(creature->GetInstanceScript()) { }
@@ -364,7 +369,7 @@ struct npc_iron_sludge : public ScriptedAI
 
     void JustEngagedWith(Unit* /*who*/) override
     {
-        _scheduler.Schedule(3s, 6s, [this](TaskContext& task)
+        _scheduler.Schedule(3s, 6s, [this](TaskContext task)
         {
             DoCastSelf(SPELL_TOXIC_VOLLEY);
             task.Repeat(3s, 6s);
@@ -383,7 +388,10 @@ struct npc_iron_sludge : public ScriptedAI
         if (!UpdateVictim())
             return;
 
-        _scheduler.Update(diff);
+        _scheduler.Update(diff, [this]
+        {
+            DoMeleeAttackIfReady();
+        });
     }
 
 private:
@@ -399,6 +407,8 @@ private:
    50824 - Summon Earthen Dwarf */
 class spell_sjonnir_periodic_summon : public AuraScript
 {
+    PrepareAuraScript(spell_sjonnir_periodic_summon);
+
 public:
     spell_sjonnir_periodic_summon(uint32 leftPipeSpell, uint32 rightPipeSpell)
         : AuraScript(), _leftPipeSpell(leftPipeSpell), _rightPipeSpell(rightPipeSpell) { }
@@ -432,6 +442,8 @@ private:
 // 50777 - Iron Sludge Spawn Visual
 class spell_sjonnir_iron_sludge_spawn_visual : public AuraScript
 {
+    PrepareAuraScript(spell_sjonnir_iron_sludge_spawn_visual);
+
     void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         // They're indeed passive but I'm not sure enough if it's handled by this aura or directly in script

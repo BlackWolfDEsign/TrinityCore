@@ -16,13 +16,15 @@
  */
 
 #include "Appender.h"
-#include "Common.h"
 #include "LogMessage.h"
+#include "StringFormat.h"
 
-Appender::Appender(uint8 _id, std::string _name, LogLevel _level /* = LOG_LEVEL_DISABLED */, AppenderFlags _flags /* = APPENDER_FLAGS_NONE */):
-id(_id), name(std::move(_name)), level(_level), flags(_flags) { }
+#include <sstream>
 
-Appender::~Appender() = default;
+Appender::Appender(uint8 _id, std::string const& _name, LogLevel _level /* = LOG_LEVEL_DISABLED */, AppenderFlags _flags /* = APPENDER_FLAGS_NONE */):
+id(_id), name(_name), level(_level), flags(_flags) { }
+
+Appender::~Appender() { }
 
 uint8 Appender::getId() const
 {
@@ -54,53 +56,38 @@ void Appender::write(LogMessage* message)
     if (!level || level > message->level)
         return;
 
-    if (flags & (APPENDER_FLAGS_PREFIX_TIMESTAMP | APPENDER_FLAGS_PREFIX_LOGLEVEL | APPENDER_FLAGS_PREFIX_LOGFILTERTYPE))
-    {
-        message->prefix.reserve(100);
-        message->prefix.clear();
+    std::ostringstream ss;
 
-        if (flags & APPENDER_FLAGS_PREFIX_TIMESTAMP)
-        {
-            message->prefix.append(message->getTimeStr());
-            message->prefix.append(1, ' ');
-        }
+    if (flags & APPENDER_FLAGS_PREFIX_TIMESTAMP)
+        ss << message->getTimeStr() << ' ';
 
-        if (flags & APPENDER_FLAGS_PREFIX_LOGLEVEL)
-        {
-            std::string_view levelStr = getLogLevelString(message->level);
-            message->prefix.append(levelStr);
-            if (levelStr.length() < 5)
-                message->prefix.append(5 - levelStr.length(), ' ');
-        }
+    if (flags & APPENDER_FLAGS_PREFIX_LOGLEVEL)
+        ss << Trinity::StringFormat("{:<5} ", Appender::getLogLevelString(message->level));
 
-        if (flags & APPENDER_FLAGS_PREFIX_LOGFILTERTYPE)
-        {
-            message->prefix.append(1, '[');
-            message->prefix.append(message->type);
-            message->prefix.append("] ", 2);
-        }
-    }
+    if (flags & APPENDER_FLAGS_PREFIX_LOGFILTERTYPE)
+        ss << '[' << message->type << "] ";
 
+    message->prefix = ss.str();
     _write(message);
 }
 
-std::string_view Appender::getLogLevelString(LogLevel level)
+char const* Appender::getLogLevelString(LogLevel level)
 {
     switch (level)
     {
         case LOG_LEVEL_FATAL:
-            return "FATAL"sv;
+            return "FATAL";
         case LOG_LEVEL_ERROR:
-            return "ERROR"sv;
+            return "ERROR";
         case LOG_LEVEL_WARN:
-            return "WARN"sv;
+            return "WARN";
         case LOG_LEVEL_INFO:
-            return "INFO"sv;
+            return "INFO";
         case LOG_LEVEL_DEBUG:
-            return "DEBUG"sv;
+            return "DEBUG";
         case LOG_LEVEL_TRACE:
-            return "TRACE"sv;
+            return "TRACE";
         default:
-            return "DISABLED"sv;
+            return "DISABLED";
     }
 }

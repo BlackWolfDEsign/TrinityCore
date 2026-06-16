@@ -18,15 +18,13 @@
 #ifndef TRINITY_SCRIPTEDCREATURE_H
 #define TRINITY_SCRIPTEDCREATURE_H
 
-#include "CreatureAI.h"
+#include "CommonHelpers.h"
 #include "Creature.h"  // convenience include for scripts, all uses of ScriptedCreature also need Creature (except ScriptedCreature itself doesn't need Creature)
+#include "CreatureAI.h"
 #include "DBCEnums.h"
-#include "EventMap.h"
 #include "TaskScheduler.h"
 
 class InstanceScript;
-enum SelectTargetType : uint8;
-enum SelectEffect : uint8;
 
 class TC_GAME_API SummonList
 {
@@ -118,7 +116,7 @@ class TC_GAME_API EntryCheckPredicate
 {
     public:
         EntryCheckPredicate(uint32 entry) : _entry(entry) { }
-        bool operator()(ObjectGuid const& guid) const { return guid.GetEntry() == _entry; }
+        bool operator()(ObjectGuid guid) { return guid.GetEntry() == _entry; }
 
     private:
         uint32 _entry;
@@ -127,13 +125,13 @@ class TC_GAME_API EntryCheckPredicate
 class TC_GAME_API DummyEntryCheckPredicate
 {
     public:
-        bool operator()(ObjectGuid const&) const { return true; }
+        bool operator()(ObjectGuid) { return true; }
 };
 
 struct TC_GAME_API ScriptedAI : public CreatureAI
 {
     public:
-        explicit ScriptedAI(Creature* creature, uint32 scriptId = 0) noexcept;
+        explicit ScriptedAI(Creature* creature);
         virtual ~ScriptedAI() { }
 
         // *************
@@ -148,6 +146,9 @@ struct TC_GAME_API ScriptedAI : public CreatureAI
         // *************
         // Variables
         // *************
+
+        // For fleeing
+        bool IsFleeing;
 
         // *************
         // Pure virtual functions
@@ -221,7 +222,7 @@ struct TC_GAME_API ScriptedAI : public CreatureAI
         bool HealthAbovePct(uint32 pct) const;
 
         // Returns spells that meet the specified criteria from the creatures spell list
-        SpellInfo const* SelectSpell(Unit* target, uint32 school, uint32 mechanic, SelectTargetType targets, float rangeMin, float rangeMax, SelectEffect effect);
+        SpellInfo const* SelectSpell(Unit* target, uint32 school, uint32 mechanic, SelectTargetType targets, uint32 powerCostMin, uint32 powerCostMax, float rangeMin, float rangeMax, SelectEffect effect);
 
         void SetEquipmentSlots(bool loadDefault, int32 mainHand = EQUIP_NO_CHANGE, int32 offHand = EQUIP_NO_CHANGE, int32 ranged = EQUIP_NO_CHANGE);
 
@@ -233,28 +234,31 @@ struct TC_GAME_API ScriptedAI : public CreatureAI
         void SetCombatMovement(bool allowMovement);
         bool IsCombatMovementAllowed() const { return _isCombatMovementAllowed; }
 
-        bool IsLFR() const;
-        bool IsNormal() const;
-        bool IsHeroic() const;
-        bool IsMythic() const;
-        bool IsMythicPlus() const;
-        bool IsHeroicOrHigher() const;
-        bool IsTimewalking() const;
+        // return true for heroic mode. i.e.
+        //   - for dungeon in mode 10-heroic,
+        //   - for raid in mode 10-Heroic
+        //   - for raid in mode 25-heroic
+        // DO NOT USE to check raid in mode 25-normal.
+        bool IsHeroic() const { return _isHeroic; }
 
         // return the dungeon or raid difficulty
         Difficulty GetDifficulty() const { return _difficulty; }
 
         // return true for 25 man or 25 man heroic mode
-        bool Is25ManRaid() const { return _difficulty == DIFFICULTY_25_N || _difficulty == DIFFICULTY_25_HC; }
+        bool Is25ManRaid() const { return _difficulty & RAID_DIFFICULTY_MASK_25MAN; }
+
+        void SetAggressiveStateAfter(Milliseconds timer, Creature* who = nullptr, bool startCombat = true, Creature* summoner = nullptr, StartCombatArgs const& combatArgs = { });
+
+        void DoAddEvent(Milliseconds timer, BasicEvent* event, WorldObject* who = nullptr);
 
         template <class T>
         inline T const& DUNGEON_MODE(T const& normal5, T const& heroic10) const
         {
             switch (_difficulty)
             {
-                case DIFFICULTY_NORMAL:
+                case DUNGEON_DIFFICULTY_NORMAL:
                     return normal5;
-                case DIFFICULTY_HEROIC:
+                case DUNGEON_DIFFICULTY_HEROIC:
                     return heroic10;
                 default:
                     break;
@@ -268,9 +272,9 @@ struct TC_GAME_API ScriptedAI : public CreatureAI
         {
             switch (_difficulty)
             {
-                case DIFFICULTY_10_N:
+                case RAID_DIFFICULTY_10MAN_NORMAL:
                     return normal10;
-                case DIFFICULTY_25_N:
+                case RAID_DIFFICULTY_25MAN_NORMAL:
                     return normal25;
                 default:
                     break;
@@ -284,13 +288,13 @@ struct TC_GAME_API ScriptedAI : public CreatureAI
         {
             switch (_difficulty)
             {
-                case DIFFICULTY_10_N:
+                case RAID_DIFFICULTY_10MAN_NORMAL:
                     return normal10;
-                case DIFFICULTY_25_N:
+                case RAID_DIFFICULTY_25MAN_NORMAL:
                     return normal25;
-                case DIFFICULTY_10_HC:
+                case RAID_DIFFICULTY_10MAN_HEROIC:
                     return heroic10;
-                case DIFFICULTY_25_HC:
+                case RAID_DIFFICULTY_25MAN_HEROIC:
                     return heroic25;
                 default:
                     break;
@@ -302,13 +306,14 @@ struct TC_GAME_API ScriptedAI : public CreatureAI
     private:
         Difficulty _difficulty;
         bool _isCombatMovementAllowed;
+        bool _isHeroic;
 };
 
 class TC_GAME_API BossAI : public ScriptedAI
 {
     public:
-        explicit BossAI(Creature* creature, uint32 bossId) noexcept;
-        virtual ~BossAI();
+        BossAI(Creature* creature, uint32 bossId);
+        virtual ~BossAI() { }
 
         InstanceScript* const instance;
 
@@ -332,8 +337,6 @@ class TC_GAME_API BossAI : public ScriptedAI
 
         bool CanAIAttack(Unit const* target) const override;
 
-        uint32 GetBossId() const { return _bossId; }
-
     protected:
         void _Reset();
         void _JustEngagedWith(Unit* who);
@@ -354,8 +357,8 @@ class TC_GAME_API BossAI : public ScriptedAI
 class TC_GAME_API WorldBossAI : public ScriptedAI
 {
     public:
-        explicit WorldBossAI(Creature* creature) noexcept;
-        virtual ~WorldBossAI();
+        WorldBossAI(Creature* creature);
+        virtual ~WorldBossAI() { }
 
         void JustSummoned(Creature* summon) override;
         void SummonedCreatureDespawn(Creature* summon) override;

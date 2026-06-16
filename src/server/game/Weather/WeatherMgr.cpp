@@ -20,12 +20,13 @@
 */
 
 #include "WeatherMgr.h"
+#include "Containers.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
-#include "MapUtils.h"
 #include "ObjectMgr.h"
 #include "Timer.h"
 #include "Weather.h"
+#include "MiscPackets.h"
 
 namespace WeatherMgr
 {
@@ -92,7 +93,7 @@ void LoadWeatherData()
             }
         }
 
-        wzc.ScriptId = sObjectMgr->GetScriptId(fields[13].GetStringView());
+        wzc.ScriptId = sObjectMgr->GetScriptId(fields[13].GetString());
 
         ++count;
     }

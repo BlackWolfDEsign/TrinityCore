@@ -19,11 +19,12 @@
 #include "CombatPackets.h"
 #include "Common.h"
 #include "CreatureAI.h"
-#include "DB2Structure.h"
+#include "DBCStructure.h"
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "Vehicle.h"
+#include "WorldPacket.h"
 
 void WorldSession::HandleAttackSwingOpcode(WorldPackets::Combat::AttackSwing& packet)
 {
@@ -32,14 +33,14 @@ void WorldSession::HandleAttackSwingOpcode(WorldPackets::Combat::AttackSwing& pa
     if (!enemy)
     {
         // stop attack state at client
-        SendAttackStop(nullptr);
+        _player->SendMeleeAttackStop(nullptr);
         return;
     }
 
     if (!_player->IsValidAttackTarget(enemy))
     {
         // stop attack state at client
-        SendAttackStop(enemy);
+        _player->SendMeleeAttackStop(enemy);
         return;
     }
 
@@ -52,7 +53,7 @@ void WorldSession::HandleAttackSwingOpcode(WorldPackets::Combat::AttackSwing& pa
         ASSERT(seat);
         if (!(seat->Flags & VEHICLE_SEAT_FLAG_CAN_ATTACK))
         {
-            SendAttackStop(enemy);
+            _player->SendMeleeAttackStop(enemy);
             return;
         }
     }
@@ -73,18 +74,5 @@ void WorldSession::HandleSetSheathedOpcode(WorldPackets::Combat::SetSheathed& pa
         return;
     }
 
-    GetPlayer()->SetSheath(SheathState(packet.CurrentSheathState));
-}
-
-void WorldSession::SendAttackStop(Unit const* enemy)
-{
-    WorldPackets::Combat::SAttackStop attackStop;
-    attackStop.Attacker = _player->GetGUID();
-    if (enemy)
-    {
-        attackStop.Victim = enemy->GetGUID();
-        attackStop.NowDead = !enemy->IsAlive();
-    }
-
-    SendPacket(attackStop.Write());
+    _player->SetSheath(SheathState(packet.CurrentSheathState));
 }

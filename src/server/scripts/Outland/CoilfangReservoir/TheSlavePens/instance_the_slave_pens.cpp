@@ -15,12 +15,19 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+/*
+This placeholder for the instance is needed for dungeon finding to be able
+to give credit after the boss defined in lastEncounterDungeon is killed.
+Without it, the party doing random dungeon won't get satchel of spoils and
+gets instead the deserter debuff.
+*/
+
 #include "ScriptMgr.h"
 #include "Creature.h"
 #include "InstanceScript.h"
 #include "the_slave_pens.h"
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_AHUNE,                    DATA_AHUNE             },
     { NPC_FROZEN_CORE,              DATA_FROZEN_CORE       },
@@ -32,13 +39,7 @@ static constexpr ObjectData creatureData[] =
     { NPC_SHAMAN_BEAM_BUNNY_001,    DATA_BEAM_BUNNY_001    },
     { NPC_SHAMAN_BEAM_BUNNY_002,    DATA_BEAM_BUNNY_002    },
     { NPC_LUMA_SKYMOTHER,           DATA_LUMA_SKYMOTHER    },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_MENNU_THE_BETRAYER, {{ 1939 }} },
-    { DATA_ROKMAR_THE_CRACKLER, {{ 1941 }} },
-    { DATA_QUAGMIRRAN, {{ 1940 }} }
+    { 0,                            0,                     }
 };
 
 class instance_the_slave_pens : public InstanceMapScript
@@ -51,9 +52,8 @@ public:
         instance_the_slave_pens_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
         {
             counter = DATA_FLAMECALLER_000;
+            LoadObjectData(creatureData, nullptr);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
-            LoadDungeonEncounterData(encounters);
         }
 
         void OnCreatureCreate(Creature* creature) override

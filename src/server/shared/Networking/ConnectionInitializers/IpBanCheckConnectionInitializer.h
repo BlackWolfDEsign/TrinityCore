@@ -18,8 +18,8 @@
 #ifndef TRINITYCORE_IP_BAN_CHECK_CONNECTION_INITIALIZER_H
 #define TRINITYCORE_IP_BAN_CHECK_CONNECTION_INITIALIZER_H
 
-#include "AsioHacksFwd.h"
 #include "DatabaseEnvFwd.h"
+#include "Log.h"
 #include "QueryCallback.h"
 #include "SocketConnectionInitializer.h"
 
@@ -27,9 +27,8 @@ namespace Trinity::Net
 {
 namespace IpBanCheckHelpers
 {
-TC_SHARED_API QueryCallback AsyncQuery(boost::asio::ip::address const& ipAddress);
+TC_SHARED_API QueryCallback AsyncQuery(std::string_view ipAddress);
 TC_SHARED_API bool IsBanned(PreparedQueryResult const& result);
-TC_SHARED_API void LogFailure(boost::asio::ip::address const& ipAddress);
 }
 
 template <typename SocketImpl>
@@ -39,7 +38,7 @@ struct IpBanCheckConnectionInitializer final : SocketConnectionInitializer
 
     void Start() override
     {
-        _socket->QueueQuery(IpBanCheckHelpers::AsyncQuery(_socket->GetRemoteIpAddress()).WithPreparedCallback([socketRef = _socket->weak_from_this(), self = this->shared_from_this()](PreparedQueryResult const& result)
+        _socket->QueueQuery(IpBanCheckHelpers::AsyncQuery(_socket->GetRemoteIpAddress().to_string()).WithPreparedCallback([socketRef = _socket->weak_from_this(), self = this->shared_from_this()](PreparedQueryResult const& result)
         {
             std::shared_ptr<SocketImpl> socket = static_pointer_cast<SocketImpl>(socketRef.lock());
             if (!socket)
@@ -47,12 +46,13 @@ struct IpBanCheckConnectionInitializer final : SocketConnectionInitializer
 
             if (IpBanCheckHelpers::IsBanned(result))
             {
-                IpBanCheckHelpers::LogFailure(socket->GetRemoteIpAddress());
-                socket->CloseSocket();
+                TC_LOG_ERROR("network", "IpBanCheckConnectionInitializer: IP {} is banned.", socket->GetRemoteIpAddress().to_string());
+                socket->DelayedCloseSocket();
                 return;
             }
 
-            self->InvokeNext();
+            if (self->next)
+                self->next->Start();
         }));
     }
 

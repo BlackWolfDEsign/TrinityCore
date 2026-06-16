@@ -18,12 +18,14 @@
 #include "PreparedStatement.h"
 #include "Errors.h"
 #include "MySQLConnection.h"
+#include "MySQLPreparedStatement.h"
 #include "QueryResult.h"
-#include "StringFormat.h"
+#include "Log.h"
+#include "MySQLWorkaround.h"
 #include <fmt/chrono.h>
 
 PreparedStatementBase::PreparedStatementBase(uint32 index, uint8 capacity) :
-    m_index(index), statement_data(capacity) { }
+m_index(index), statement_data(capacity) { }
 
 PreparedStatementBase::~PreparedStatementBase() { }
 
@@ -100,28 +102,22 @@ void PreparedStatementBase::setDate(uint8 index, SystemTimePoint value)
     statement_data[index].data = value;
 }
 
-void PreparedStatementBase::setString(uint8 index, std::string&& value)
+void PreparedStatementBase::setString(uint8 index, std::string const& value)
 {
     ASSERT(index < statement_data.size());
-    statement_data[index].data = std::move(value);
+    statement_data[index].data = value;
 }
 
-void PreparedStatementBase::setString(uint8 index, std::string_view value)
+void PreparedStatementBase::setStringView(uint8 index, std::string_view value)
 {
     ASSERT(index < statement_data.size());
     statement_data[index].data.emplace<std::string>(value);
 }
 
-void PreparedStatementBase::setBinary(uint8 index, std::vector<uint8>&& value)
+void PreparedStatementBase::setBinary(uint8 index, std::vector<uint8> const& value)
 {
     ASSERT(index < statement_data.size());
-    statement_data[index].data = std::move(value);
-}
-
-void PreparedStatementBase::setBinary(uint8 index, std::span<uint8 const> value)
-{
-    ASSERT(index < statement_data.size());
-    statement_data[index].data.emplace<std::vector<uint8>>(value.begin(), value.end());
+    statement_data[index].data = value;
 }
 
 void PreparedStatementBase::setNull(uint8 index)
@@ -131,27 +127,43 @@ void PreparedStatementBase::setNull(uint8 index)
 }
 
 //- Execution
-PreparedQueryResult PreparedStatementTask::Query(MySQLConnection* conn, PreparedStatementBase* stmt)
+PreparedStatementTask::PreparedStatementTask(PreparedStatementBase* stmt, bool async) :
+m_stmt(stmt), m_result(nullptr)
 {
-    PreparedResultSet* result = conn->Query(stmt);
-    if (!result || !result->GetRowCount())
-    {
-        delete result;
-        result = nullptr;
-    }
-
-    return PreparedQueryResult(result);
+    m_has_result = async; // If it's async, then there's a result
+    if (async)
+        m_result = new PreparedQueryResultPromise();
 }
 
-bool PreparedStatementTask::Execute(MySQLConnection* conn, PreparedStatementBase* stmt)
+PreparedStatementTask::~PreparedStatementTask()
 {
-    return conn->Execute(stmt);
+    delete m_stmt;
+    if (m_has_result && m_result != nullptr)
+        delete m_result;
+}
+
+bool PreparedStatementTask::Execute()
+{
+    if (m_has_result)
+    {
+        PreparedResultSet* result = m_conn->Query(m_stmt);
+        if (!result || !result->GetRowCount())
+        {
+            delete result;
+            m_result->set_value(PreparedQueryResult(nullptr));
+            return false;
+        }
+        m_result->set_value(PreparedQueryResult(result));
+        return true;
+    }
+
+    return m_conn->Execute(m_stmt);
 }
 
 template<typename T>
 std::string PreparedStatementData::ToString(T value)
 {
-    return Trinity::StringFormat("{}", value);
+    return fmt::format("{}", value);
 }
 
 std::string PreparedStatementData::ToString(bool value)

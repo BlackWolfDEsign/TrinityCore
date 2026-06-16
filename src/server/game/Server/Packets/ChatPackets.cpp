@@ -16,134 +16,62 @@
  */
 
 #include "ChatPackets.h"
-#include "Creature.h"
-#include "PacketOperators.h"
 #include "Player.h"
-#include "World.h"
+#include "RBAC.h"
+#include "WorldSession.h"
 
-namespace WorldPackets::Chat
+void WorldPackets::Chat::ChatMessage::Read()
 {
-void ChatMessage::Read()
-{
-    _worldPacket >> Language;
-    _worldPacket >> SizedString::BitsSize<11>(Text);
-    switch (GetOpcode())
+    SlashCmd = static_cast<ChatMsg>(_worldPacket.read<int32>());
+    Language = static_cast<::Language>(_worldPacket.read<int32>());
+
+    switch (SlashCmd)
     {
-        case CMSG_CHAT_MESSAGE_SAY:
-        case CMSG_CHAT_MESSAGE_PARTY:
-        case CMSG_CHAT_MESSAGE_RAID:
-        case CMSG_CHAT_MESSAGE_RAID_WARNING:
-        case CMSG_CHAT_MESSAGE_INSTANCE_CHAT:
-            _worldPacket >> Bits<1>(IsSecure);
+        case CHAT_MSG_SAY:
+        case CHAT_MSG_EMOTE:
+        case CHAT_MSG_YELL:
+        case CHAT_MSG_PARTY:
+        case CHAT_MSG_PARTY_LEADER:
+        case CHAT_MSG_GUILD:
+        case CHAT_MSG_OFFICER:
+        case CHAT_MSG_RAID:
+        case CHAT_MSG_RAID_LEADER:
+        case CHAT_MSG_RAID_WARNING:
+        case CHAT_MSG_BATTLEGROUND:
+        case CHAT_MSG_BATTLEGROUND_LEADER:
+        case CHAT_MSG_AFK:
+        case CHAT_MSG_DND:
+            Text = _worldPacket.ReadCString(Language != LANG_ADDON);
+            break;
+        case CHAT_MSG_WHISPER:
+        case CHAT_MSG_CHANNEL:
+            _worldPacket >> Target;
+            Text = _worldPacket.ReadCString(Language != LANG_ADDON);
             break;
         default:
             break;
     }
-    _worldPacket >> SizedString::Data(Text);
 }
 
-void ChatMessageWhisper::Read()
-{
-    _worldPacket >> Language;
-    _worldPacket >> TargetGUID;
-    _worldPacket >> TargetVirtualRealmAddress;
-
-    _worldPacket >> SizedCString::BitsSize<9>(Target);
-    _worldPacket >> SizedCString::BitsSize<11>(Text);
-
-    _worldPacket >> SizedCString::Data(Target);
-    _worldPacket >> SizedCString::Data(Text);
-}
-
-void ChatMessageChannel::Read()
-{
-    _worldPacket >> Language;
-    _worldPacket >> ChannelGUID;
-    _worldPacket >> SizedString::BitsSize<9>(Target);
-    _worldPacket >> SizedString::BitsSize<11>(Text);
-    _worldPacket >> OptionalInit(IsSecure);
-    if (IsSecure)
-        _worldPacket >> Bits<1>(*IsSecure);
-
-    _worldPacket >> SizedString::Data(Target);
-    _worldPacket >> SizedString::Data(Text);
-}
-
-ByteBuffer& operator>>(ByteBuffer& data, ChatAddonMessageParams& params)
-{
-    data >> SizedString::BitsSize<5>(params.Prefix);
-    data >> SizedString::BitsSize<8>(params.Text);
-    data >> Bits<1>(params.IsLogged);
-    data >> As<int32>(params.Type);
-    data >> SizedString::Data(params.Prefix);
-    data >> SizedString::Data<Strings::DontValidateUtf8>(params.Text);
-
-    return data;
-}
-
-void ChatAddonMessage::Read()
-{
-    _worldPacket >> Params;
-}
-
-void ChatAddonMessageTargeted::Read()
-{
-    _worldPacket >> Params;
-    _worldPacket >> ChannelGUID;
-    _worldPacket >> PlayerGUID;
-    _worldPacket >> PlayerVirtualRealmAddress;
-
-    _worldPacket >> SizedCString::BitsSize<9>(PlayerName);
-    _worldPacket >> SizedCString::BitsSize<8>(ChannelName);
-
-    _worldPacket >> SizedCString::Data(PlayerName);
-    _worldPacket >> SizedCString::Data(ChannelName);
-}
-
-void ChatMessageDND::Read()
-{
-    _worldPacket >> SizedString::BitsSize<11>(Text);
-
-    _worldPacket >> SizedString::Data(Text);
-}
-
-void ChatMessageAFK::Read()
-{
-    _worldPacket >> SizedString::BitsSize<11>(Text);
-
-    _worldPacket >> SizedString::Data(Text);
-}
-
-void ChatMessageEmote::Read()
-{
-    _worldPacket >> SizedString::BitsSize<11>(Text);
-
-    _worldPacket >> SizedString::Data(Text);
-}
-
-Chat::Chat(Chat const& chat) : ServerPacket(SMSG_CHAT, chat._worldPacket.size()),
-    SlashCmd(chat.SlashCmd), _Language(chat._Language), SenderGUID(chat.SenderGUID),
-    SenderGuildGUID(chat.SenderGuildGUID), SenderWowAccount(chat.SenderWowAccount), TargetGUID(chat.TargetGUID),
-    SenderVirtualAddress(chat.SenderVirtualAddress), TargetVirtualAddress(chat.TargetVirtualAddress), SenderName(chat.SenderName), TargetName(chat.TargetName),
-    Prefix(chat.Prefix), _Channel(chat._Channel), ChatText(chat.ChatText), AchievementID(chat.AchievementID), _ChatFlags(chat._ChatFlags),
-    DisplayTime(chat.DisplayTime), SpellID(chat.SpellID), BroadcastTextID(chat.BroadcastTextID), HideChatLog(chat.HideChatLog), FakeSenderName(chat.FakeSenderName),
-    ChannelGUID(chat.ChannelGUID)
+WorldPackets::Chat::Chat::Chat(Chat const& chat) : ServerPacket(chat.GetOpcode(), chat._worldPacket.size()),
+    SlashCmd(chat.SlashCmd), _Language(chat._Language), SenderGUID(chat.SenderGUID), TargetGUID(chat.TargetGUID),
+    SenderName(chat.SenderName), TargetName(chat.TargetName),
+    _Channel(chat._Channel), ChatText(chat.ChatText), AchievementID(chat.AchievementID), ChatTag(chat.ChatTag)
 {
 }
 
-void Chat::Initialize(ChatMsg chatType, Language language, WorldObject const* sender, WorldObject const* receiver, std::string_view message,
+void WorldPackets::Chat::Chat::Initialize(ChatMsg chatType, Language language, WorldObject const* sender, WorldObject const* receiver, std::string_view message,
     uint32 achievementId /*= 0*/, std::string_view channelName /*= ""*/, LocaleConstant locale /*= DEFAULT_LOCALE*/, std::string_view addonPrefix /*= ""*/)
 {
     // Clear everything because same packet can be used multiple times
     Clear();
+    _worldPacket.SetOpcode(SMSG_MESSAGECHAT);
 
     SenderGUID.Clear();
-    SenderWowAccount.Clear();
-    SenderGuildGUID.Clear();
     TargetGUID.Clear();
     SenderName.clear();
     TargetName.clear();
-    _ChatFlags = CHAT_FLAG_NONE;
+    ChatTag = CHAT_TAG_NONE;
 
     SlashCmd = chatType;
     _Language = language;
@@ -154,213 +82,148 @@ void Chat::Initialize(ChatMsg chatType, Language language, WorldObject const* se
     if (receiver)
         SetReceiver(receiver, locale);
 
-    SenderVirtualAddress = GetVirtualRealmAddress();
-    TargetVirtualAddress = GetVirtualRealmAddress();
     AchievementID = achievementId;
     _Channel = channelName;
-    Prefix = addonPrefix;
     ChatText = message;
+    if (!addonPrefix.empty())
+    {
+        // addon prefix is not really a separate thing in 3.3.5
+        // it can be either passed as part of the message directly (from client packet)
+        // or separately in addonPrefix argument (server initiated send) to minimize API difference between 3.3.5 and master branch
+        ChatText.insert(0, 1, '\t').insert(0, addonPrefix);
+    }
 }
 
-void Chat::SetSender(WorldObject const* sender, LocaleConstant locale)
+void WorldPackets::Chat::Chat::SetSender(WorldObject const* sender, LocaleConstant locale)
 {
     SenderGUID = sender->GetGUID();
-
-    if (Creature const* creatureSender = sender->ToCreature())
-        SenderName = creatureSender->GetNameForLocaleIdx(locale);
+    SenderName = sender->GetNameForLocaleIdx(locale);
 
     if (Player const* playerSender = sender->ToPlayer())
     {
-        SenderGuildGUID = playerSender->m_unitData->GuildGUID;
-        SenderWowAccount = playerSender->m_playerData->WowAccount;
-        _ChatFlags = playerSender->GetChatFlags();
+        ChatTag = playerSender->GetChatTag();
+        if (playerSender->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_GM_CHAT))
+            _worldPacket.SetOpcode(SMSG_GM_MESSAGECHAT);
     }
 }
 
-void Chat::SetReceiver(WorldObject const* receiver, LocaleConstant locale)
+void WorldPackets::Chat::Chat::SetReceiver(WorldObject const* receiver, LocaleConstant locale)
 {
     TargetGUID = receiver->GetGUID();
-    if (Creature const* creatureReceiver = receiver->ToCreature())
-        TargetName = creatureReceiver->GetNameForLocaleIdx(locale);
+    TargetName = receiver->GetNameForLocaleIdx(locale);
 }
 
-WorldPacket const* Chat::Write()
+WorldPacket const* WorldPackets::Chat::Chat::Write()
 {
     _worldPacket << uint8(SlashCmd);
-    _worldPacket << uint32(_Language);
+    _worldPacket << int32(_Language);
     _worldPacket << SenderGUID;
-    _worldPacket << SenderGuildGUID;
-    _worldPacket << SenderWowAccount;
-    _worldPacket << TargetGUID;
-    _worldPacket << uint32(TargetVirtualAddress);
-    _worldPacket << uint32(SenderVirtualAddress);
-    _worldPacket << int32(AchievementID);
-    _worldPacket << uint16(_ChatFlags);
-    _worldPacket << float(DisplayTime);
-    _worldPacket << int32(SpellID);
-    _worldPacket << SizedString::BitsSize<11>(SenderName);
-    _worldPacket << SizedString::BitsSize<11>(TargetName);
-    _worldPacket << SizedString::BitsSize<5>(Prefix);
-    _worldPacket << SizedString::BitsSize<7>(_Channel);
-    _worldPacket << SizedString::BitsSize<12>(ChatText);
-    _worldPacket << Bits<1>(HideChatLog);
-    _worldPacket << Bits<1>(FakeSenderName);
-    _worldPacket << OptionalInit(BroadcastTextID);
-    _worldPacket << OptionalInit(ChannelGUID);
-    _worldPacket << OptionalInit(EncounterEventID);
-    _worldPacket.FlushBits();
+    _worldPacket << uint32(0);  // some flags
+    switch (SlashCmd)
+    {
+        case CHAT_MSG_MONSTER_SAY:
+        case CHAT_MSG_MONSTER_PARTY:
+        case CHAT_MSG_MONSTER_YELL:
+        case CHAT_MSG_MONSTER_WHISPER:
+        case CHAT_MSG_MONSTER_EMOTE:
+        case CHAT_MSG_RAID_BOSS_EMOTE:
+        case CHAT_MSG_RAID_BOSS_WHISPER:
+        case CHAT_MSG_BATTLENET:
+            _worldPacket << uint32(SenderName.length() + 1);
+            _worldPacket << SenderName;
+            TargetGUIDPos = _worldPacket.wpos();
+            _worldPacket << TargetGUID;
+            if (!TargetGUID.IsEmpty() && !TargetGUID.IsPlayer() && !TargetGUID.IsPet())
+            {
+                _worldPacket << uint32(TargetName.length() + 1);
+                _worldPacket << TargetName;
+            }
+            break;
+        case CHAT_MSG_WHISPER_FOREIGN:
+            _worldPacket << uint32(SenderName.length() + 1);
+            _worldPacket << SenderName;
+            TargetGUIDPos = _worldPacket.wpos();
+            _worldPacket << TargetGUID;
+            break;
+        case CHAT_MSG_BG_SYSTEM_NEUTRAL:
+        case CHAT_MSG_BG_SYSTEM_ALLIANCE:
+        case CHAT_MSG_BG_SYSTEM_HORDE:
+            TargetGUIDPos = _worldPacket.wpos();
+            _worldPacket << TargetGUID;
+            if (!TargetGUID.IsEmpty() && !TargetGUID.IsPlayer())
+            {
+                _worldPacket << uint32(TargetName.length() + 1);
+                _worldPacket << TargetName;
+            }
+            break;
+        case CHAT_MSG_ACHIEVEMENT:
+        case CHAT_MSG_GUILD_ACHIEVEMENT:
+            TargetGUIDPos = _worldPacket.wpos();
+            _worldPacket << TargetGUID;
+            break;
+        default:
+            if (GetOpcode() == SMSG_GM_MESSAGECHAT)
+            {
+                _worldPacket << uint32(SenderName.length() + 1);
+                _worldPacket << SenderName;
+            }
 
-    _worldPacket << SizedString::Data(SenderName);
-    _worldPacket << SizedString::Data(TargetName);
-    _worldPacket << SizedString::Data(Prefix);
-    _worldPacket << SizedString::Data(_Channel);
-    _worldPacket << SizedString::Data(ChatText);
+            if (SlashCmd == CHAT_MSG_CHANNEL)
+            {
+                ASSERT(!_Channel.empty());
+                _worldPacket << _Channel;
+            }
 
-    if (BroadcastTextID)
-        _worldPacket << uint32(*BroadcastTextID);
+            TargetGUIDPos = _worldPacket.wpos();
+            _worldPacket << TargetGUID;
+            break;
+    }
 
-    if (ChannelGUID)
-        _worldPacket << *ChannelGUID;
+    _worldPacket << uint32(ChatText.length() + 1);
+    _worldPacket << ChatText;
+    _worldPacket << uint8(ChatTag);
 
-    if (EncounterEventID)
-        _worldPacket << uint32(*EncounterEventID);
+    if (SlashCmd == CHAT_MSG_ACHIEVEMENT || SlashCmd == CHAT_MSG_GUILD_ACHIEVEMENT)
+        _worldPacket << uint32(AchievementID);
 
     return &_worldPacket;
 }
 
-WorldPacket const* Emote::Write()
+WorldPacket const* WorldPackets::Chat::Emote::Write()
 {
-    _worldPacket << Guid;
-    _worldPacket << uint32(EmoteID);
-    _worldPacket << Size<uint32>(SpellVisualKitIDs);
-    _worldPacket << int32(SequenceVariation);
-    if (!SpellVisualKitIDs.empty())
-        _worldPacket.append(SpellVisualKitIDs.data(), SpellVisualKitIDs.size());
-
-    return &_worldPacket;
-}
-
-void CTextEmote::Read()
-{
-    _worldPacket >> Target;
-    _worldPacket >> EmoteID;
-    _worldPacket >> SoundIndex;
-    _worldPacket >> Size<uint32>(SpellVisualKitIDs);
-    _worldPacket >> SequenceVariation;
-    for (int32& spellVisualKitId : SpellVisualKitIDs)
-        _worldPacket >> spellVisualKitId;
-}
-
-WorldPacket const* STextEmote::Write()
-{
-    _worldPacket << SourceGUID;
-    _worldPacket << SourceAccountGUID;
     _worldPacket << EmoteID;
-    _worldPacket << SoundIndex;
-    _worldPacket << TargetGUID;
+    _worldPacket << Guid;
 
     return &_worldPacket;
 }
 
-WorldPacket const* PrintNotification::Write()
+void WorldPackets::Chat::EmoteClient::Read()
 {
-    _worldPacket << SizedString::BitsSize<12>(NotifyText);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(NotifyText);
-
-    return &_worldPacket;
+    _worldPacket >> EmoteID;
 }
 
-WorldPacket const* ChatPlayerNotfound::Write()
-{
-    _worldPacket << SizedString::BitsSize<9>(Name);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(Name);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* ChatServerMessage::Write()
+WorldPacket const* WorldPackets::Chat::ChatServerMessage::Write()
 {
     _worldPacket << int32(MessageID);
-
-    _worldPacket << SizedString::BitsSize<11>(StringParam);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(StringParam);
+    _worldPacket << StringParam;
 
     return &_worldPacket;
 }
 
-void ChatRegisterAddonPrefixes::Read()
+void WorldPackets::Chat::CTextEmote::Read()
 {
-    _worldPacket >> Size<uint32>(Prefixes);
-    for (std::string& prefix : Prefixes)
-    {
-        _worldPacket >> SizedString::BitsSize<5>(prefix);
-        _worldPacket >> SizedString::Data(prefix);
-    }
+    _worldPacket >> EmoteID;
+    _worldPacket >> SoundIndex;
+    _worldPacket >> Target;
 }
 
-WorldPacket const* DefenseMessage::Write()
+WorldPacket const* WorldPackets::Chat::STextEmote::Write()
 {
-    _worldPacket << int32(ZoneID);
-    _worldPacket << SizedString::BitsSize<12>(MessageText);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(MessageText);
+    _worldPacket << SourceGUID;
+    _worldPacket << int32(EmoteID);
+    _worldPacket << int32(SoundIndex);
+    _worldPacket << uint32(TargetName.size() + 1 /*size in bytes, not string length*/);
+    _worldPacket << TargetName;
 
     return &_worldPacket;
-}
-
-void ChatReportIgnored::Read()
-{
-    _worldPacket >> IgnoredGUID;
-    _worldPacket >> Reason;
-}
-
-WorldPacket const* ChatPlayerAmbiguous::Write()
-{
-    _worldPacket << SizedString::BitsSize<9>(Name);
-
-    _worldPacket << SizedString::Data(Name);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* ChatRestricted::Write()
-{
-    _worldPacket << int32(Reason);
-
-    return &_worldPacket;
-}
-
-void CanLocalWhisperTargetRequest::Read()
-{
-    _worldPacket >> WhisperTarget;
-}
-
-WorldPacket const* CanLocalWhisperTargetResponse::Write()
-{
-    _worldPacket << WhisperTarget;
-    _worldPacket << int32(Status);
-
-    return &_worldPacket;
-}
-
-void UpdateAADCStatus::Read()
-{
-    _worldPacket >> Bits<1>(ChatDisabled);
-}
-
-WorldPacket const* UpdateAADCStatusResponse::Write()
-{
-    _worldPacket << Bits<1>(Success);
-    _worldPacket << Bits<1>(ChatDisabled);
-    _worldPacket.FlushBits();
-
-    return &_worldPacket;
-}
 }

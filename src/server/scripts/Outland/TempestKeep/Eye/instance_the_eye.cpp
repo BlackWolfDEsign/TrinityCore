@@ -16,6 +16,7 @@
  */
 
 #include "ScriptMgr.h"
+#include "Creature.h"
 #include "InstanceScript.h"
 #include "the_eye.h"
 
@@ -26,13 +27,14 @@
 3 - Kael'thas
 */
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_ARCANE_DOOR_LEFT,  DATA_KAELTHAS, EncounterDoorBehavior::OpenWhenNotInProgress/*, BOUNDARY_SW  */ },
-    { GO_ARCANE_DOOR_RIGHT, DATA_KAELTHAS, EncounterDoorBehavior::OpenWhenNotInProgress/*, BOUNDARY_SE  */ },
+    { GO_ARCANE_DOOR_LEFT,  DATA_KAELTHAS, DOOR_TYPE_ROOM/*, BOUNDARY_SW  */ },
+    { GO_ARCANE_DOOR_RIGHT, DATA_KAELTHAS, DOOR_TYPE_ROOM/*, BOUNDARY_SE  */ },
+    {                    0,             0, DOOR_TYPE_ROOM } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_ALAR,        DATA_ALAR        },
     { NPC_VOID_REAVER, DATA_VOID_REAVER },
@@ -42,21 +44,15 @@ static constexpr ObjectData creatureData[] =
     { NPC_SANGUINAR,   DATA_SANGUINAR   },
     { NPC_TELONICUS,   DATA_TELONICUS   },
     { NPC_THALADRED,   DATA_THALADRED   },
+    { 0,               0                } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_KAEL_STATUE_RIGHT,      DATA_KAEL_STATUE_RIGHT     },
     { GO_KAEL_STATUE_LEFT,       DATA_KAEL_STATUE_LEFT      },
     { GO_TEMPEST_BRIDDGE_WINDOW, DATA_TEMPEST_BRIDGE_WINDOW },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_KAELTHAS, {{ 733 }} },
-    { DATA_ALAR, {{ 730 }} },
-    { DATA_SOLARIAN, {{ 732 }} },
-    { DATA_VOID_REAVER, {{ 731 }} }
+    {                         0, 0                          } // END
 };
 
 class instance_the_eye : public InstanceMapScript
@@ -72,7 +68,6 @@ class instance_the_eye : public InstanceMapScript
                 SetBossNumber(EncounterCount);
                 LoadDoorData(doorData);
                 LoadObjectData(creatureData, gameObjectData);
-                LoadDungeonEncounterData(encounters);
             }
         };
 

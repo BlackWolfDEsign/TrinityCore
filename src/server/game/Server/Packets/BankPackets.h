@@ -15,15 +15,11 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_BANK_PACKETS_H
-#define TRINITYCORE_BANK_PACKETS_H
+#ifndef BankPackets_h__
+#define BankPackets_h__
 
 #include "Packet.h"
-#include "ItemPacketsCommon.h"
 #include "ObjectGuid.h"
-
-enum class BagSlotFlags : uint32;
-enum class PlayerInteractionType : int32;
 
 namespace WorldPackets
 {
@@ -32,12 +28,10 @@ namespace WorldPackets
         class AutoBankItem final : public ClientPacket
         {
         public:
-            explicit AutoBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTOBANK_ITEM, std::move(packet)) { }
+            AutoBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTOBANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
-            WorldPackets::Item::InvUpdate Inv;
-            ::BankType BankType = ::BankType::Character;
             uint8 Bag = 0;
             uint8 Slot = 0;
         };
@@ -45,68 +39,43 @@ namespace WorldPackets
         class AutoStoreBankItem final : public ClientPacket
         {
         public:
-            explicit AutoStoreBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTOSTORE_BANK_ITEM, std::move(packet)) { }
+            AutoStoreBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTOSTORE_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
-            WorldPackets::Item::InvUpdate Inv;
             uint8 Bag = 0;
             uint8 Slot = 0;
         };
 
-        class BuyBankTab final : public ClientPacket
+        class BuyBankSlot final : public ClientPacket
         {
         public:
-            explicit BuyBankTab(WorldPacket&& packet) : ClientPacket(CMSG_BUY_ACCOUNT_BANK_TAB, std::move(packet)) { }
-
-            void Read() override;
-
-            ObjectGuid Banker;
-            ::BankType BankType = ::BankType::Character;
-        };
-
-        class AutoDepositCharacterBank final : public ClientPacket
-        {
-        public:
-            explicit AutoDepositCharacterBank(WorldPacket&& packet) : ClientPacket(CMSG_AUTO_DEPOSIT_CHARACTER_BANK, std::move(packet)) { }
+            BuyBankSlot(WorldPacket&& packet) : ClientPacket(CMSG_BUY_BANK_SLOT, std::move(packet)) { }
 
             void Read() override;
 
             ObjectGuid Banker;
         };
 
-        class BankerActivate final : public ClientPacket
+        class BuyBankSlotResult final : public ServerPacket
         {
         public:
-            explicit BankerActivate(WorldPacket&& packet) : ClientPacket(CMSG_BANKER_ACTIVATE, std::move(packet)) { }
+            BuyBankSlotResult() : ServerPacket(SMSG_BUY_BANK_SLOT_RESULT, 4) { }
 
-            void Read() override;
+            WorldPacket const* Write() override;
 
-            ObjectGuid Banker;
-            PlayerInteractionType InteractionType = { };
+            uint32 Result = 0;
         };
 
-        struct BankTabSettings
-        {
-            std::string Name;
-            std::string Icon;
-            std::string Description;
-            BagSlotFlags DepositFlags = { };
-        };
-
-        class UpdateBankTabSettings final : public ClientPacket
+        class ShowBank final : public ServerPacket
         {
         public:
-            explicit UpdateBankTabSettings(WorldPacket&& packet) : ClientPacket(CMSG_UPDATE_ACCOUNT_BANK_TAB_SETTINGS, std::move(packet)) { }
+            ShowBank() : ServerPacket(SMSG_SHOW_BANK, 8) { }
 
-            void Read() override;
+            WorldPacket const* Write() override;
 
             ObjectGuid Banker;
-            ::BankType BankType = ::BankType::Character;
-            uint8 Tab = 0;
-            BankTabSettings Settings;
         };
     }
 }
-
-#endif // TRINITYCORE_BANK_PACKETS_H
+#endif // BankPackets_h__

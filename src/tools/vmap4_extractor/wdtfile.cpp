@@ -15,39 +15,42 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "vmapexport.h"
 #include "wdtfile.h"
 #include "adtfile.h"
-#include "Errors.h"
-#include "Memory.h"
-#include "model.h"
+
 #include "StringFormat.h"
-#include "Util.h"
-#include "vmapexport.h"
-#include "wmo.h"
-#include <algorithm>
 #include <cstdio>
 
-extern std::shared_ptr<CASC::Storage> CascStorage;
-
-WDTFile::WDTFile(uint32 fileDataId, std::string const& description, std::string mapName, bool cache)
-    : _file(CascStorage, fileDataId, description), _header(), _adtInfo(), _mapName(std::move(mapName)),
-    _adtCache(cache ? std::make_unique<ADTCache>() : nullptr)
+char * wdtGetPlainName(char * FileName)
 {
+    char * szTemp;
+
+    if((szTemp = strrchr(FileName, '\\')) != nullptr)
+        FileName = szTemp + 1;
+    return FileName;
 }
 
-WDTFile::~WDTFile() = default;
+WDTFile::WDTFile(char const* file_name, char const* file_name1) : _file(file_name)
+{
+    filename.append(file_name1, strlen(file_name1));
+}
 
 bool WDTFile::init(uint32 mapId)
 {
     if (_file.isEof())
+    {
+        //printf("Can't find WDT file.\n");
         return false;
+    }
 
-    char fourcc[4];
+    char fourcc[5];
     uint32 size;
 
-    std::string dirname = Trinity::StringFormat("{}/dir_bin/{:04}", szWorkDirWmo, mapId);
-    auto dirfile = Trinity::make_unique_ptr_with_deleter<&::fclose>(fopen(dirname.c_str(), "ab"));
-    if (!dirfile)
+    std::string dirname = std::string(szWorkDirWmo) + "/dir_bin";
+    FILE *dirfile;
+    dirfile = fopen(dirname.c_str(), "ab");
+    if(!dirfile)
     {
         printf("Can't open dirfile!'%s'\n", dirname.c_str());
         return false;
@@ -58,44 +61,38 @@ bool WDTFile::init(uint32 mapId)
         _file.read(fourcc,4);
         _file.read(&size, 4);
 
-        std::ranges::reverse(fourcc);
+        flipcc(fourcc);
+        fourcc[4] = 0;
 
         size_t nextpos = _file.getPos() + size;
 
-        if (!memcmp(fourcc, "MPHD", 4))
+        if (!strcmp(fourcc,"MAIN"))
         {
-            ASSERT(size == sizeof(WDT::MPHD));
-            _file.read(&_header, sizeof(WDT::MPHD));
         }
-        else if (!memcmp(fourcc, "MAIN", 4))
-        {
-            ASSERT(size == sizeof(WDT::MAIN));
-            _file.read(&_adtInfo, sizeof(WDT::MAIN));
-        }
-        else if (!memcmp(fourcc, "MAID", 4))
-        {
-            ASSERT(size == sizeof(WDT::MAID));
-            _adtFileDataIds = std::make_unique<WDT::MAID>();
-            _file.read(_adtFileDataIds.get(), sizeof(WDT::MAID));
-        }
-        else if (!memcmp(fourcc, "MWMO", 4))
+        if (!strcmp(fourcc,"MWMO"))
         {
             // global map objects
             if (size)
             {
-                char* p = _file.getPointer();
-                _file.seekRelative(size);
-                char* end = _file.getPointer();
-                while (p < end)
+                char *buf = new char[size];
+                _file.read(buf, size);
+                char *p = buf;
+                while (p < buf + size)
                 {
-                    std::size_t length = std::ranges::distance(p, CStringSentinel.Checked(end));
-                    _wmoNames.emplace_back(p, length);
+                    std::string path(p);
 
-                    p += length + 1;
+                    char* s = wdtGetPlainName(p);
+                    FixNameCase(s, strlen(s));
+                    FixNameSpaces(s, strlen(s));
+                    p = p + strlen(p) + 1;
+                    _wmoNames.push_back(s);
+
+                    ExtractSingleWmo(path);
                 }
+                delete[] buf;
             }
         }
-        else if (!memcmp(fourcc, "MODF", 4))
+        else if (!strcmp(fourcc, "MODF"))
         {
             // global wmo instance data
             if (size)
@@ -105,21 +102,8 @@ bool WDTFile::init(uint32 mapId)
                 {
                     ADT::MODF mapObjDef;
                     _file.read(&mapObjDef, sizeof(ADT::MODF));
-
-                    std::string fileName;
-                    if (mapObjDef.Flags & 0x8)
-                        fileName = Trinity::StringFormat("FILE{:08X}.xxx", mapObjDef.Id);
-                    else
-                        fileName = _wmoNames[mapObjDef.Id];
-
-                    if (ExtractedModelData const* extracted = ExtractSingleWmo(fileName))
-                    {
-                        if (extracted->HasCollision())
-                            MapObject::Extract(mapObjDef, fileName.c_str(), true, mapId, mapId, dirfile.get(), nullptr);
-
-                        if (extracted->Doodads)
-                            Doodad::ExtractSet(*extracted->Doodads, mapObjDef, true, mapId, mapId, dirfile.get(), nullptr);
-                    }
+                    MapObject::Extract(mapObjDef, _wmoNames[mapObjDef.Id].c_str(), mapId, 65, 65, dirfile);
+                    Doodad::ExtractSet(WmoDoodads[_wmoNames[mapObjDef.Id]], mapObjDef, mapId, 65, 65, dirfile);
                 }
             }
         }
@@ -127,40 +111,19 @@ bool WDTFile::init(uint32 mapId)
     }
 
     _file.close();
+    fclose(dirfile);
     return true;
 }
 
-ADTFile* WDTFile::GetMap(int32 x, int32 y, bool createIfMissing)
+WDTFile::~WDTFile(void)
 {
-    if (!(x >= 0 && y >= 0 && x < 64 && y < 64))
-        return nullptr;
-
-    if (_adtCache && _adtCache->file[x][y])
-        return _adtCache->file[x][y].get();
-
-    if (!(_adtInfo.Data[y][x].Flag & 1))
-        return nullptr;
-
-    if (!createIfMissing)
-        return nullptr;
-
-    ADTFile* adt;
-    std::string name = Trinity::StringFormat(R"(World\Maps\{}\{}_{}_{}_obj0.adt)", _mapName, _mapName, x, y);
-    if (_header.Flags & 0x200)
-        adt = new ADTFile(_adtFileDataIds->Data[y][x].Obj0ADT, name, _adtCache != nullptr);
-    else
-        adt = new ADTFile(name, _adtCache != nullptr);
-
-    if (_adtCache)
-        _adtCache->file[x][y].reset(adt);
-
-    return adt;
+    _file.close();
 }
 
-void WDTFile::FreeADT(ADTFile* adt)
+ADTFile* WDTFile::GetMap(int x, int z)
 {
-    if (_adtCache)
-        return;
+    if(!(x>=0 && z >= 0 && x<64 && z<64))
+        return nullptr;
 
-    delete adt;
+    return new ADTFile(Trinity::StringFormat("World\\Maps\\{}\\{}_{}_{}.adt", filename, filename, x, z).c_str());
 }

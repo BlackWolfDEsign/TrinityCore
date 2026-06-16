@@ -1,5 +1,3 @@
-include(CheckCXXSourceCompiles)
-
 set(CLANG_EXPECTED_VERSION 11.0.0)
 if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
   # apple doesnt like to do the sane thing which would be to use the same version numbering as regular clang
@@ -127,14 +125,6 @@ if(TSAN)
       -fsanitize=thread)
 
   message(STATUS "Clang: Enabled Thread Sanitizer TSan")
-endif()
-
-if(BUILD_TIME_ANALYSIS)
-  target_compile_options(trinity-compile-option-interface
-    INTERFACE
-      -ftime-trace)
-
-  message(STATUS "Clang: Enabled build time analysis (-ftime-trace)")
 endif()
 
 # -Wno-narrowing needed to suppress a warning in g3d

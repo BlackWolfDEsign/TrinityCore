@@ -30,6 +30,7 @@ EndContentData */
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "Player.h"
+#include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
@@ -323,6 +324,7 @@ public:
                     }
                     return;
                 }
+                DoMeleeAttackIfReady();
             }
 
     private:
@@ -384,6 +386,8 @@ class spell_destroy_karangs_banner : public SpellScriptLoader
 
         class spell_destroy_karangs_banner_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_destroy_karangs_banner_SpellScript);
+
             void HandleAfterCast()
             {
                 if (GameObject* banner = GetCaster()->FindNearestGameObject(GO_BANNER, GetSpellInfo()->GetMaxRange(true)))

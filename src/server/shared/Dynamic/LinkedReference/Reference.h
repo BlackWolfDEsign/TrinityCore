@@ -23,25 +23,24 @@
 
 //=====================================================
 
-template <class TO, class FROM, class Derived> class Reference : public LinkedListElement
+template <class TO, class FROM> class Reference : public LinkedListElement
 {
     private:
         TO* iRefTo;
         FROM* iRefFrom;
 
     protected:
-        // Notification functions are found by CRTP
         // Tell our refTo (target) object that we have a link
-        //virtual void targetObjectBuildLink() = 0;
+        virtual void targetObjectBuildLink() = 0;
 
         // Tell our refTo (taget) object, that the link is cut
-        //virtual void targetObjectDestroyLink() = 0;
+        virtual void targetObjectDestroyLink() = 0;
 
         // Tell our refFrom (source) object, that the link is cut (Target destroyed)
-        //virtual void sourceObjectDestroyLink() = 0;
+        virtual void sourceObjectDestroyLink() = 0;
     public:
         Reference() { iRefTo = nullptr; iRefFrom = nullptr; }
-        ~Reference() { }
+        virtual ~Reference() { }
 
         // Create new link
         void link(TO* toObj, FROM* fromObj)
@@ -53,7 +52,7 @@ template <class TO, class FROM, class Derived> class Reference : public LinkedLi
             {
                 iRefTo = toObj;
                 iRefFrom = fromObj;
-                static_cast<Derived*>(this)->targetObjectBuildLink();
+                targetObjectBuildLink();
             }
         }
 
@@ -61,7 +60,7 @@ template <class TO, class FROM, class Derived> class Reference : public LinkedLi
         // Tell our refTo object, that the link is cut
         void unlink()
         {
-            static_cast<Derived*>(this)->targetObjectDestroyLink();
+            targetObjectDestroyLink();
             delink();
             iRefTo = nullptr;
             iRefFrom = nullptr;
@@ -71,7 +70,7 @@ template <class TO, class FROM, class Derived> class Reference : public LinkedLi
         // Tell our refFrom object, that the link is cut
         void invalidate()                                   // the iRefFrom MUST remain!!
         {
-            static_cast<Derived*>(this)->sourceObjectDestroyLink();
+            sourceObjectDestroyLink();
             delink();
             iRefTo = nullptr;
         }
@@ -80,6 +79,16 @@ template <class TO, class FROM, class Derived> class Reference : public LinkedLi
         {
             return iRefTo != nullptr;
         }
+
+        Reference<TO, FROM>       * next()       { return((Reference<TO, FROM>       *) LinkedListElement::next()); }
+        Reference<TO, FROM> const* next() const { return((Reference<TO, FROM> const*) LinkedListElement::next()); }
+        Reference<TO, FROM>       * prev()       { return((Reference<TO, FROM>       *) LinkedListElement::prev()); }
+        Reference<TO, FROM> const* prev() const { return((Reference<TO, FROM> const*) LinkedListElement::prev()); }
+
+        Reference<TO, FROM>       * nocheck_next()       { return((Reference<TO, FROM>       *) LinkedListElement::nocheck_next()); }
+        Reference<TO, FROM> const* nocheck_next() const { return((Reference<TO, FROM> const*) LinkedListElement::nocheck_next()); }
+        Reference<TO, FROM>       * nocheck_prev()       { return((Reference<TO, FROM>       *) LinkedListElement::nocheck_prev()); }
+        Reference<TO, FROM> const* nocheck_prev() const { return((Reference<TO, FROM> const*) LinkedListElement::nocheck_prev()); }
 
         TO* operator->() const { return iRefTo; }
         TO* getTarget() const { return iRefTo; }

@@ -20,33 +20,25 @@
 #include "Creature.h"
 #include "CreatureAIImpl.h"
 #include "CreatureTextMgr.h"
-#include "DB2Structure.h"
-#include "Errors.h"
+#include "DBCStructure.h"
 #include "Language.h"
 #include "Log.h"
 #include "Map.h"
 #include "MapReference.h"
-#include "MapUtils.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
-#include "SmartEnum.h"
+#include "SpellMgr.h"
 #include "SpellHistory.h"
 #include "TemporarySummon.h"
 #include "Vehicle.h"
-#include <queue>
+#include "World.h"
 
-std::unordered_map<std::pair<uint32, Difficulty>, AISpellInfoType> UnitAI::AISpellInfo;
-AISpellInfoType* GetAISpellInfo(uint32 spellId, Difficulty difficulty)
-{
-    return Trinity::Containers::MapGetValuePtr(UnitAI::AISpellInfo, { spellId, difficulty });
-}
+AISpellInfoType* UnitAI::AISpellInfo;
+AISpellInfoType* GetAISpellInfo(uint32 i) { return &UnitAI::AISpellInfo[i]; }
 
-CreatureAI::CreatureAI(Creature* creature, uint32 scriptId) noexcept
-    : UnitAI(creature), me(creature), _boundary(nullptr),
-      _negateBoundary(false), _scriptId(scriptId ? scriptId : creature->GetScriptId()), _isEngaged(false), _moveInLOSLocked(false)
+CreatureAI::CreatureAI(Creature* creature) : UnitAI(creature), me(creature), _boundary(nullptr), _negateBoundary(false), _isEngaged(false), _moveInLOSLocked(false)
 {
-    ASSERT(_scriptId, "A CreatureAI was initialized with an invalid scriptId!");
 }
 
 CreatureAI::~CreatureAI()
@@ -72,14 +64,17 @@ void CreatureAI::OnCharmed(bool isNew)
         me->LastCharmerGUID.Clear();
 
         if (!me->IsInCombat())
-            EnterEvadeMode(EvadeReason::NoHostiles);
+            EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
     }
 
     UnitAI::OnCharmed(isNew);
 }
 
-void CreatureAI::DoZoneInCombat(Creature* creature)
+void CreatureAI::DoZoneInCombat(Creature* creature /*= nullptr*/)
 {
+    if (!creature)
+        creature = me;
+
     Map* map = creature->GetMap();
     if (!map->IsDungeon()) // use IsDungeon instead of Instanceable, in case battlegrounds will be instantiated
     {
@@ -124,7 +119,7 @@ void CreatureAI::MoveInLineOfSight(Unit* who)
     if (me->IsEngaged())
         return;
 
-    if (me->HasReactState(REACT_AGGRESSIVE) && me->CanStartAttack(who, false) && (me->IsAggroGracePeriodExpired() || me->GetMap()->Instanceable()))
+    if (me->HasReactState(REACT_AGGRESSIVE) && me->CanStartAttack(who, false))
         me->EngageWithTarget(who);
 }
 
@@ -148,8 +143,8 @@ void CreatureAI::TriggerAlert(Unit const* who) const
     if (me->GetTypeId() != TYPEID_UNIT || me->IsEngaged() || me->HasUnitState(UNIT_STATE_CONFUSED | UNIT_STATE_STUNNED | UNIT_STATE_FLEEING | UNIT_STATE_DISTRACTED))
         return;
 
-    // Only alert for hostiles!
-    if (me->IsCivilian() || me->HasReactState(REACT_PASSIVE) || !me->IsHostileTo(who) || !me->_IsTargetAcceptable(who))
+    // Only alert for hostiles that can actually engage the target.
+    if (me->IsCivilian() || me->HasReactState(REACT_PASSIVE) || me->IsImmuneToPC() || !me->IsHostileTo(who) || !me->_IsTargetAcceptable(who))
         return;
 
     // Send alert sound (if any) for this creature
@@ -172,15 +167,16 @@ static bool ShouldFollowOnSpawn(SummonPropertiesEntry const* properties)
             return true;
         case SUMMON_CATEGORY_WILD:
         case SUMMON_CATEGORY_ALLY:
-            if (properties->GetFlags().HasFlag(SummonPropertiesFlags::JoinSummonerSpawnGroup))
+        case SUMMON_CATEGORY_UNK:
+            if (properties->Flags & 512)
                 return true;
-            switch (SummonTitle(properties->Title))
+            switch (properties->Title)
             {
-                case SummonTitle::Pet:
-                case SummonTitle::Guardian:
-                case SummonTitle::Runeblade:
-                case SummonTitle::Minion:
-                case SummonTitle::Companion:
+                case SUMMON_TYPE_PET:
+                case SUMMON_TYPE_GUARDIAN:
+                case SUMMON_TYPE_GUARDIAN2:
+                case SUMMON_TYPE_MINION:
+                case SUMMON_TYPE_MINIPET:
                     return true;
                 default:
                     return false;
@@ -220,7 +216,7 @@ void CreatureAI::EnterEvadeMode(EvadeReason why)
     if (!_EnterEvadeMode(why))
         return;
 
-    TC_LOG_DEBUG("scripts.ai", "CreatureAI::EnterEvadeMode: entering evade mode (why: {}) ({})", EnumUtils::ToConstant(why), me->GetGUID().ToString());
+    TC_LOG_DEBUG("scripts.ai", "CreatureAI::EnterEvadeMode: entering evade mode (why: {}) ({})", why, me->GetGUID().ToString());
 
     if (!me->GetVehicle()) // otherwise me will be in evade mode forever
     {
@@ -262,7 +258,7 @@ bool CreatureAI::UpdateVictim()
     }
     else if (!me->IsInCombat())
     {
-        EnterEvadeMode(EvadeReason::NoHostiles);
+        EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
         return false;
     }
     else if (me->GetVictim())
@@ -306,13 +302,11 @@ bool CreatureAI::_EnterEvadeMode(EvadeReason /*why*/)
         return false;
     }
 
-    if (me->IsStateRestoredOnEvade())
-        me->RemoveAurasOnEvade();
-
+    me->RemoveAurasOnEvade();
+    me->ClearComboPointHolders(); // Remove all combo points targeting this unit
     me->CombatStop(true);
-    if (!me->IsTapListNotClearedOnEvade())
-        me->SetTappedBy(nullptr);
-
+    me->LoadCreaturesAddon();
+    me->SetLootRecipient(nullptr);
     me->ResetPlayerDamageReq();
     me->SetLastDamagedTime(0);
     me->SetCannotReachTarget(false);
@@ -324,31 +318,11 @@ bool CreatureAI::_EnterEvadeMode(EvadeReason /*why*/)
     return true;
 }
 
-void CreatureAI::AttackStart(Unit* victim)
-{
-    if (victim && me->Attack(victim, true))
-    {
-        // Clear distracted state on attacking
-        if (me->HasUnitState(UNIT_STATE_DISTRACTED))
-        {
-            me->ClearUnitState(UNIT_STATE_DISTRACTED);
-            me->GetMotionMaster()->Clear();
-        }
-
-        me->StartDefaultCombatMovement(victim);
-    }
-}
-
-Optional<QuestGiverStatus> CreatureAI::GetDialogStatus(Player const* /*player*/)
-{
-    return {};
-}
-
-const uint32 BOUNDARY_VISUALIZE_CREATURE = 15425;
-const float BOUNDARY_VISUALIZE_CREATURE_SCALE = 0.25f;
-const int8 BOUNDARY_VISUALIZE_STEP_SIZE = 1;
-const int32 BOUNDARY_VISUALIZE_FAILSAFE_LIMIT = 750;
-const float BOUNDARY_VISUALIZE_SPAWN_HEIGHT = 5.0f;
+static const uint32 BOUNDARY_VISUALIZE_CREATURE = 15425;
+static const float BOUNDARY_VISUALIZE_CREATURE_SCALE = 0.25f;
+static const int8 BOUNDARY_VISUALIZE_STEP_SIZE = 1;
+static const int32 BOUNDARY_VISUALIZE_FAILSAFE_LIMIT = 750;
+static const float BOUNDARY_VISUALIZE_SPAWN_HEIGHT = 5.0f;
 int32 CreatureAI::VisualizeBoundary(Seconds duration, Unit* owner, bool fill) const
 {
     typedef std::pair<int32, int32> coordinate;
@@ -413,7 +387,7 @@ int32 CreatureAI::VisualizeBoundary(Seconds duration, Unit* owner, bool fill) co
                 point->SetUnitFlag(UNIT_FLAG_STUNNED);
                 point->SetImmuneToAll(true);
                 if (!hasOutOfBoundsNeighbor)
-                    point->SetUninteractible(true);
+                    point->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             }
         }
 
@@ -442,22 +416,22 @@ bool CreatureAI::IsInBounds(CreatureBoundary const& boundary, Position const* po
     return true;
 }
 
-void CreatureAI::SetBoundary(CreatureBoundary const* boundary, bool negateBoundaries /*= false*/)
-{
-    _boundary = boundary;
-    _negateBoundary = negateBoundaries;
-    me->DoImmediateBoundaryCheck();
-}
-
 bool CreatureAI::CheckInRoom()
 {
     if (IsInBoundary())
         return true;
     else
     {
-        EnterEvadeMode(EvadeReason::Boundary);
+        EnterEvadeMode(EVADE_REASON_BOUNDARY);
         return false;
     }
+}
+
+void CreatureAI::SetBoundary(CreatureBoundary const* boundary, bool negateBoundaries /*= false*/)
+{
+    _boundary = boundary;
+    _negateBoundary = negateBoundaries;
+    me->DoImmediateBoundaryCheck();
 }
 
 Creature* CreatureAI::DoSummon(uint32 entry, Position const& pos, Milliseconds despawnTime, TempSummonType summonType)

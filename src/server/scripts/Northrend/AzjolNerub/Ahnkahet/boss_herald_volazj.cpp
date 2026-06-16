@@ -16,11 +16,10 @@
  */
 
 #include "ahnkahet.h"
-#include "DB2Stores.h"
+#include "CommonHelpers.h"
 #include "InstanceScript.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
-#include "PhasingHandler.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "ScriptMgr.h"
@@ -145,15 +144,15 @@ struct boss_volazj : public BossAI
 
         Initialize();
 
+        instance->DoStopTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_QUICK_DEMISE_START_EVENT);
+
         // Visible for all players in insanity
-        for (uint32 i = 173; i <= 177; ++i)
-            PhasingHandler::AddPhase(me, i, false);
-        PhasingHandler::AddPhase(me, 169, true);
+        me->SetPhaseMask((1|16|32|64|128|256), true);
 
         ResetPlayersPhaseMask();
 
         // Cleanup
-        me->SetUninteractible(false);
+        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
         me->SetControlled(false, UNIT_STATE_STUNNED);
     }
 
@@ -165,17 +164,17 @@ struct boss_volazj : public BossAI
 
     void ScheduleTasks() override
     {
-        scheduler.Schedule(8s, [this](TaskContext& task)
+        scheduler.Schedule(8s, [this](TaskContext task)
         {
             DoCastVictim(SPELL_MIND_FLAY);
             task.Repeat(20s);
         })
-        .Schedule(5s, [this](TaskContext& task)
+        .Schedule(5s, [this](TaskContext task)
         {
             DoCastVictim(SPELL_SHADOW_BOLT_VOLLEY);
             task.Repeat();
         })
-        .Schedule(15s, [this](TaskContext& task)
+        .Schedule(15s, [this](TaskContext task)
         {
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0))
                 DoCast(target, SPELL_SHIVER);
@@ -193,7 +192,7 @@ struct boss_volazj : public BossAI
 
     void DamageTaken(Unit* /*pAttacker*/, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
     {
-        if (me->IsUninteractible())
+        if (me->HasUnitFlag(UNIT_FLAG_UNINTERACTIBLE))
             damage = 0;
 
         if ((GetHealthPct(0) >= 66 && GetHealthPct(damage) < 66) || (GetHealthPct(0) >= 33 && GetHealthPct(damage) < 33))
@@ -224,7 +223,7 @@ struct boss_volazj : public BossAI
                 Talk(SAY_INSANITY);
                 DoCastSelf(SPELL_WHISPER_INSANITY, true);
                 // Unattackable
-                me->SetUninteractible(true);
+                me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 me->SetControlled(true, UNIT_STATE_STUNNED);
             }
             // phase mask
@@ -242,11 +241,11 @@ struct boss_volazj : public BossAI
                     // clone
                     player->CastSpell(summon, SPELL_CLONE_PLAYER, true);
                     summon->GetAI()->SetData(DATA_TWISTED_VISAGE_PLAYER_CLASS, player->GetClass());
-                    summon->GetAI()->SetData(DATA_TWISTED_VISAGE_PLAYER_SPEC, AsUnderlyingType(player->GetPrimarySpecialization()));
+                    summon->GetAI()->SetData(DATA_TWISTED_VISAGE_PLAYER_SPEC, Trinity::Helpers::Entity::GetPlayerSpecialization(player));
                     summon->SetReactState(REACT_AGGRESSIVE);
                     DoZoneInCombat(summon);
                     // set phase
-                    PhasingHandler::AddPhase(summon, 173 + _insanityHandled, true);
+                    summon->SetPhaseMask((1 << (4 + _insanityHandled)), true);
                 }
             }
             ++_insanityHandled;
@@ -259,8 +258,7 @@ struct boss_volazj : public BossAI
         for (auto i = players.begin(); i != players.end(); ++i)
         {
             Player* player = i->GetSource();
-            for (uint32 index = 0; index <= 4; ++index)
-                player->RemoveAurasDueToSpell(SPELL_INSANITY_TARGET + index);
+            player->RemoveAurasDueToSpell(GetSpellForPhaseMask(player->GetPhaseMask()));
         }
     }
 
@@ -270,7 +268,7 @@ struct boss_volazj : public BossAI
         Talk(SAY_AGGRO);
         DoCastSelf(SPELL_WHISPER_AGGRO);
 
-        instance->TriggerGameEvent(ACHIEV_QUICK_DEMISE_START_EVENT);
+        instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_QUICK_DEMISE_START_EVENT);
     }
 
     uint32 GetSpellForPhaseMask(uint32 phase)
@@ -278,19 +276,19 @@ struct boss_volazj : public BossAI
         uint32 spell = 0;
         switch (phase)
         {
-            case 173:
+            case 16:
                 spell = SPELL_INSANITY_PHASING_1;
                 break;
-            case 174:
+            case 32:
                 spell = SPELL_INSANITY_PHASING_2;
                 break;
-            case 175:
+            case 64:
                 spell = SPELL_INSANITY_PHASING_3;
                 break;
-            case 176:
+            case 128:
                 spell = SPELL_INSANITY_PHASING_4;
                 break;
-            case 177:
+            case 256:
                 spell = SPELL_INSANITY_PHASING_5;
                 break;
         }
@@ -301,7 +299,7 @@ struct boss_volazj : public BossAI
     {
         BossAI::SummonedCreatureDespawn(summon);
 
-        uint32 phase = !summon->GetPhaseShift().GetPhases().empty() ? summon->GetPhaseShift().GetPhases().begin()->Id : 0;
+        uint32 phase = summon->GetPhaseMask();
         uint32 nextPhase = 0;
 
         // Check if all summons in this phase killed
@@ -310,13 +308,10 @@ struct boss_volazj : public BossAI
             if (Creature* visage = ObjectAccessor::GetCreature(*me, *iter))
             {
                 // Not all are dead
-                if (visage->InSamePhase(summon))
+                if (phase == visage->GetPhaseMask())
                     return;
-                else if (!visage->GetPhaseShift().GetPhases().empty())
-                {
-                    nextPhase = visage->GetPhaseShift().GetPhases().begin()->Id;
-                    break;
-                }
+                else
+                    nextPhase = visage->GetPhaseMask();
             }
         }
 
@@ -349,12 +344,15 @@ struct boss_volazj : public BossAI
                 return;
 
             _insanityHandled = 0;
-            me->SetUninteractible(false);
+            me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             me->SetControlled(false, UNIT_STATE_STUNNED);
             me->RemoveAurasDueToSpell(INSANITY_VISUAL);
         }
 
-        scheduler.Update(diff);
+        scheduler.Update(diff, [this]
+        {
+            DoMeleeAttackIfReady();
+        });
     }
 
     void JustDied(Unit* killer) override
@@ -417,18 +415,49 @@ struct npc_twisted_visage : public ScriptedAI
 
     void AttackStart(Unit* who) override
     {
-        ChrSpecializationEntry const* chrSpecialization = sChrSpecializationStore.LookupEntry(_playerSpec);
-        if (chrSpecialization && chrSpecialization->GetFlags().HasFlag(ChrSpecializationFlag::Ranged))
-            ScriptedAI::AttackStartCaster(who, 25.0f);
-        else
-            ScriptedAI::AttackStart(who);
+        switch (_playerClass)
+        {
+            case CLASS_SHAMAN:
+                switch (_playerSpec)
+                {
+                    case SPEC_SHAMAN_ELEMENTAL:
+                    case SPEC_SHAMAN_RESTORATION:
+                        ScriptedAI::AttackStartCaster(who, 25.0f);
+                        break;
+                    default:
+                        ScriptedAI::AttackStart(who);
+                        break;
+                }
+                break;
+            case CLASS_DRUID:
+                switch (_playerSpec)
+                {
+                    case SPEC_DRUID_BALANCE:
+                    case SPEC_DRUID_RESTORATION:
+                        ScriptedAI::AttackStartCaster(who, 25.0f);
+                        break;
+                    default:
+                        ScriptedAI::AttackStart(who);
+                        break;
+                }
+                break;
+            case CLASS_PRIEST:
+            case CLASS_HUNTER:
+            case CLASS_MAGE:
+            case CLASS_WARLOCK:
+                ScriptedAI::AttackStartCaster(who, 25.0f);
+                break;
+            default:
+                ScriptedAI::AttackStart(who);
+                break;
+        }
     }
 
     void SetData(uint32 type, uint32 data) override
     {
         if (type == DATA_TWISTED_VISAGE_PLAYER_CLASS)
         {
-            if (data > CLASS_NONE && data < MAX_CLASSES)
+            if (data > CLASS_NONE && data <= CLASS_DRUID)
                 _playerClass = data;
         }
         else if (type == DATA_TWISTED_VISAGE_PLAYER_SPEC && _playerClass != CLASS_NONE)
@@ -439,22 +468,22 @@ struct npc_twisted_visage : public ScriptedAI
             switch (_playerClass)
             {
                 case CLASS_WARRIOR:
-                    switch (ChrSpecialization(data))
+                    switch (data)
                     {
-                        case ChrSpecialization::WarriorArms:
-                            _scheduler.Schedule(3s, [this](TaskContext& mortalStrike)
+                        case SPEC_WARRIOR_ARMS:
+                            _scheduler.Schedule(3s, [this](TaskContext mortalStrike)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_MORTAL_STRIKE);
                                 mortalStrike.Repeat(3s, 5s);
-                            }).Schedule(5s, [this](TaskContext& harmstring)
+                            }).Schedule(5s, [this](TaskContext harmstring)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_HAMSTRING);
                                 harmstring.Repeat(5s, 10s);
                             });
                             break;
                         default:
-                        case ChrSpecialization::WarriorFury:
-                            _scheduler.Schedule(2s, [this](TaskContext& intercept)
+                        case SPEC_WARRIOR_FURY:
+                            _scheduler.Schedule(2s, [this](TaskContext intercept)
                             {
                                 if (!me->IsWithinCombatRange(me->GetVictim(), 8.0f))
                                 {
@@ -463,18 +492,18 @@ struct npc_twisted_visage : public ScriptedAI
                                 }
                                 else
                                     intercept.Repeat(1s);
-                            }).Schedule(3s, [this](TaskContext& bloodthirst)
+                            }).Schedule(3s, [this](TaskContext bloodthirst)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_BLOODTHIRST);
                                 bloodthirst.Repeat(3s, 5s);
                             });
                             break;
-                        case ChrSpecialization::WarriorProtection:
-                            _scheduler.Schedule(5s, [this](TaskContext& thunderClap)
+                        case SPEC_WARRIOR_PROTECTION:
+                            _scheduler.Schedule(5s, [this](TaskContext thunderClap)
                             {
                                 DoCastSelf(SPELL_TWISTED_VISAGE_THUNDER_CLAP);
                                 thunderClap.Repeat(5s, 10s);
-                            }).Schedule(3s, [this](TaskContext& devastate)
+                            }).Schedule(3s, [this](TaskContext devastate)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_DEVASTATE);
                                 devastate.Repeat(3s, 5s);
@@ -483,29 +512,29 @@ struct npc_twisted_visage : public ScriptedAI
                     }
                     break;
                 case CLASS_PALADIN:
-                    switch (ChrSpecialization(data))
+                    switch (data)
                     {
-                        case ChrSpecialization::PaladinProtection:
-                            _scheduler.Schedule(5s, [this](TaskContext& consecration)
+                        case SPEC_PALADIN_PROTECTION:
+                            _scheduler.Schedule(5s, [this](TaskContext consecration)
                             {
                                 DoCastSelf(SPELL_TWISTED_VISAGE_CONSECRATION);
                                 consecration.Repeat(5s, 10s);
-                            }).Schedule(2s, [this](TaskContext& avengersShield)
+                            }).Schedule(2s, [this](TaskContext avengersShield)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_AVENGER__S_SHIELD);
                                 avengersShield.Repeat(5s, 10s);
                             });
                             break;
                         default:
-                        case ChrSpecialization::PaladinRetribution:
-                            _scheduler.Schedule(5s, [this](TaskContext& consecration)
+                        case SPEC_PALADIN_RETRIBUTION:
+                            _scheduler.Schedule(5s, [this](TaskContext consecration)
                             {
                                 DoCastSelf(SPELL_TWISTED_VISAGE_CONSECRATION);
                                 consecration.Repeat(5s, 10s);
-                            }).Schedule(2s, [this](TaskContext const& /*sealCommand*/)
+                            }).Schedule(2s, [this](TaskContext /*sealCommand*/)
                             {
                                 DoCastSelf(SPELL_TWISTED_VISAGE_SEAL_OF_COMMAND);
-                            }).Schedule(3s, [this](TaskContext& judgementLight)
+                            }).Schedule(3s, [this](TaskContext judgementLight)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_JUDGEMENT_OF_LIGHT);
                                 judgementLight.Repeat(3s, 5s);
@@ -514,11 +543,11 @@ struct npc_twisted_visage : public ScriptedAI
                     }
                     break;
                 case CLASS_HUNTER:
-                    _scheduler.Schedule(2s, [this](TaskContext& shoot)
+                    _scheduler.Schedule(2s, [this](TaskContext shoot)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_SHOOT);
                         shoot.Repeat(1s, 4s);
-                    }).Schedule(5s, [this](TaskContext& disengage)
+                    }).Schedule(5s, [this](TaskContext disengage)
                     {
                         if (me->IsWithinCombatRange(me->GetVictim(), 4.0f))
                         {
@@ -531,32 +560,32 @@ struct npc_twisted_visage : public ScriptedAI
                     break;
                 case CLASS_ROGUE:
                     me->SetCanDualWield(true);
-                    _scheduler.Schedule(5s, [this](TaskContext& eviscerate)
+                    _scheduler.Schedule(5s, [this](TaskContext eviscerate)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_EVISCERATE);
                         eviscerate.Repeat(5s, 10s);
-                    }).Schedule(2s, [this](TaskContext& sinisterStrike)
+                    }).Schedule(2s, [this](TaskContext sinisterStrike)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_SINISTER_STRIKE);
                         sinisterStrike.Repeat(3s, 5s);
                     });
                     break;
                 case CLASS_PRIEST:
-                    switch (ChrSpecialization(data))
+                    switch (data)
                     {
-                        case ChrSpecialization::PriestShadow:
-                            _scheduler.Schedule(5s, [this](TaskContext& shadowWordPain)
+                        case SPEC_PRIEST_SHADOW:
+                            _scheduler.Schedule(5s, [this](TaskContext shadowWordPain)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_SHADOW_WORD_PAIN);
                                 shadowWordPain.Repeat(5s, 10s);
-                            }).Schedule(2s, [this](TaskContext& mindFlay)
+                            }).Schedule(2s, [this](TaskContext mindFlay)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_MIND_FLAY);
                                 mindFlay.Repeat(3s, 5s);
                             });
                             break;
                         default:
-                            _scheduler.Schedule(2s, [this](TaskContext& renew)
+                            _scheduler.Schedule(2s, [this](TaskContext renew)
                             {
                                 if (Unit* target = DoSelectLowestHpFriendly(40.f))
                                 {
@@ -565,7 +594,7 @@ struct npc_twisted_visage : public ScriptedAI
                                 }
                                 else
                                     renew.Repeat(1s);
-                            }).Schedule(4s, [this](TaskContext& greaterHeal)
+                            }).Schedule(4s, [this](TaskContext greaterHeal)
                             {
                                 if (Unit* target = DoSelectLowestHpFriendly(40.f))
                                 {
@@ -579,7 +608,7 @@ struct npc_twisted_visage : public ScriptedAI
                     }
                     break;
                 case CLASS_DEATH_KNIGHT:
-                    _scheduler.Schedule(5s, [this](TaskContext& deathGrip)
+                    _scheduler.Schedule(5s, [this](TaskContext deathGrip)
                     {
                         if (!me->IsWithinCombatRange(me->GetVictim(), 3.0f))
                         {
@@ -588,36 +617,36 @@ struct npc_twisted_visage : public ScriptedAI
                         }
                         else
                             deathGrip.Repeat(1s);
-                    }).Schedule(2s, [this](TaskContext& plagueStrike)
+                    }).Schedule(2s, [this](TaskContext plagueStrike)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_PLAGUE_STRIKE);
                         plagueStrike.Repeat(3s, 5s);
                     });
                     break;
                 case CLASS_SHAMAN:
-                    switch (ChrSpecialization(data))
+                    switch (data)
                     {
                         default:
-                        case ChrSpecialization::ShamanElemental:
-                            _scheduler.Schedule(5s, [this](TaskContext& thunderstorm)
+                        case SPEC_SHAMAN_ELEMENTAL:
+                            _scheduler.Schedule(5s, [this](TaskContext thunderstorm)
                             {
                                 DoCastSelf(SPELL_TWISTED_VISAGE_THUNDERSTORM);
                                 thunderstorm.Repeat(5s, 10s);
-                            }).Schedule(2s, [this](TaskContext& lightningBolt)
+                            }).Schedule(2s, [this](TaskContext lightningBolt)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_LIGHTNING_BOLT);
                                 lightningBolt.Repeat(3s, 5s);
                             });
                             break;
-                        case ChrSpecialization::ShamanEnhancement:
-                            _scheduler.Schedule(2s, [this](TaskContext& earthShock)
+                        case SPEC_SHAMAN_ENHANCEMENT:
+                            _scheduler.Schedule(2s, [this](TaskContext earthShock)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_EARTH_SHOCK);
                                 earthShock.Repeat(3s, 5s);
                             });
                             break;
-                        case ChrSpecialization::ShamanRestoration:
-                            _scheduler.Schedule(2s, [this](TaskContext& earthShield)
+                        case SPEC_SHAMAN_RESTORATION:
+                            _scheduler.Schedule(2s, [this](TaskContext earthShield)
                             {
                                 if (Unit* target = DoSelectLowestHpFriendly(40.f))
                                 {
@@ -626,7 +655,7 @@ struct npc_twisted_visage : public ScriptedAI
                                 }
                                 else
                                     earthShield.Repeat(1s);
-                            }).Schedule(4s, [this](TaskContext& healingWave)
+                            }).Schedule(4s, [this](TaskContext healingWave)
                             {
                                 if (Unit* target = DoSelectLowestHpFriendly(40.f))
                                 {
@@ -640,59 +669,58 @@ struct npc_twisted_visage : public ScriptedAI
                     }
                     break;
                 case CLASS_MAGE:
-                    _scheduler.Schedule(5s, [this](TaskContext& frostNova)
+                    _scheduler.Schedule(5s, [this](TaskContext frostNova)
                     {
                         DoCastSelf(SPELL_TWISTED_VISAGE_FROST_NOVA);
                         frostNova.Repeat(5s, 10s);
-                    }).Schedule(2s, [this](TaskContext& fireball)
+                    }).Schedule(2s, [this](TaskContext fireball)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_FIREBALL);
                         fireball.Repeat(3s, 5s);
                     });
                     break;
                 case CLASS_WARLOCK:
-                    _scheduler.Schedule(2s, [this](TaskContext& corruption)
+                    _scheduler.Schedule(2s, [this](TaskContext corruption)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_CORRUPTION);
                         corruption.Repeat(6s, 10s);
-                    }).Schedule(3s, [this](TaskContext& shadowBolt)
+                    }).Schedule(3s, [this](TaskContext shadowBolt)
                     {
                         DoCastVictim(SPELL_TWISTED_VISAGE_SHADOW_BOLT);
                         shadowBolt.Repeat(3s, 5s);
                     });
                     break;
                 case CLASS_DRUID:
-                    switch (ChrSpecialization(data))
+                    switch (data)
                     {
-                        case ChrSpecialization::DruidBalance:
-                            _scheduler.Schedule(2s, [this](TaskContext& moonfire)
+                        case SPEC_DRUID_BALANCE:
+                            _scheduler.Schedule(2s, [this](TaskContext moonfire)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_MOONFIRE);
                                 moonfire.Repeat(3s, 5s);
-                            }).Schedule(3s, [this](TaskContext& wrath)
+                            }).Schedule(3s, [this](TaskContext wrath)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_WRATH);
                                 wrath.Repeat(3s, 5s);
                             });
                             break;
-                        case ChrSpecialization::DruidGuardian:
-                        case ChrSpecialization::DruidFeral:
-                            _scheduler.Schedule(1ms, [this](TaskContext const& /*catForm*/)
+                        case SPEC_DRUID_FERAL:
+                            _scheduler.Schedule(1ms, [this](TaskContext /*catForm*/)
                             {
                                 DoCastSelf(SPELL_TWISTED_VISAGE_CAT_FORM);
-                            }).Schedule(2s, [this](TaskContext& mangle)
+                            }).Schedule(2s, [this](TaskContext mangle)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_MANGLE);
                                 mangle.Repeat(3s, 5s);
-                            }).Schedule(3s, [this](TaskContext& rip)
+                            }).Schedule(3s, [this](TaskContext rip)
                             {
                                 DoCastVictim(SPELL_TWISTED_VISAGE_RIP);
                                 rip.Repeat(3s, 5s);
                             });
                             break;
                         default:
-                        case ChrSpecialization::DruidRestoration:
-                            _scheduler.Schedule(2s, [this](TaskContext& lifebloom)
+                        case SPEC_DRUID_RESTORATION:
+                            _scheduler.Schedule(2s, [this](TaskContext lifebloom)
                             {
                                 if (Unit* target = DoSelectLowestHpFriendly(40.f))
                                 {
@@ -701,7 +729,7 @@ struct npc_twisted_visage : public ScriptedAI
                                 }
                                 else
                                     lifebloom.Repeat(1s);
-                            }).Schedule(4s, [this](TaskContext& nourish)
+                            }).Schedule(4s, [this](TaskContext nourish)
                             {
                                 if (Unit* target = DoSelectLowestHpFriendly(40.f))
                                 {
@@ -730,7 +758,10 @@ struct npc_twisted_visage : public ScriptedAI
         if (!UpdateVictim())
             return;
 
-        _scheduler.Update(diff);
+        _scheduler.Update(diff, [this]
+        {
+            DoMeleeAttackIfReady();
+        });
     }
 
 private:
@@ -748,6 +779,8 @@ private:
    60297 - Volazj Whisper: Death 02 */
 class spell_volazj_whisper : public SpellScript
 {
+    PrepareSpellScript(spell_volazj_whisper);
+
     void HandleScriptEffect(SpellEffIndex /* effIndex */)
     {
         Player* target = GetHitPlayer();

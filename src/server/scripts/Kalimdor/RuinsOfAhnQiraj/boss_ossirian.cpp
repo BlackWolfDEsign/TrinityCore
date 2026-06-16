@@ -22,12 +22,14 @@
 #include "Map.h"
 #include "MiscPackets.h"
 #include "ObjectAccessor.h"
+#include "Opcodes.h"
 #include "Player.h"
 #include "ruins_of_ahnqiraj.h"
 #include "ScriptedCreature.h"
 #include "SpellInfo.h"
 #include "TemporarySummon.h"
 #include "Weather.h"
+#include "WorldPacket.h"
 
 enum Texts
 {
@@ -35,7 +37,8 @@ enum Texts
     SAY_INTRO               = 1,
     SAY_AGGRO               = 2,
     SAY_SLAY                = 3,
-    SAY_DEATH               = 4
+    SAY_DEATH               = 4,
+    SAY_KURINAXX_DEATH      = 5
 };
 
 enum Spells
@@ -65,6 +68,12 @@ enum Events
     EVENT_SILENCE           = 1,
     EVENT_CYCLONE           = 2,
     EVENT_STOMP             = 3
+};
+
+enum OssirianMisc
+{
+    NPC_SAND_VORTEX         = 15428,
+    NPC_OSSIRIAN_TRIGGER    = 15590
 };
 
 uint8 const NUM_CRYSTALS = 12;
@@ -145,6 +154,9 @@ class boss_ossirian : public CreatureScript
                     if (Creature* Trigger = ObjectAccessor::GetCreature(*me, TriggerGUID))
                         if (!Trigger->HasUnitState(UNIT_STATE_CASTING))
                             Trigger->CastSpell(Trigger, SpellWeakness[urand(0, 4)], false);
+
+                if (action == ACTION_KURINNAXX_DEFEATED && me->IsAlive())
+                    Talk(SAY_KURINAXX_DEATH);
             }
 
             void JustEngagedWith(Unit* who) override
@@ -205,7 +217,7 @@ class boss_ossirian : public CreatureScript
                 if (Creature* Trigger = me->SummonCreature(NPC_OSSIRIAN_TRIGGER, CrystalCoordinates[CrystalIterator]))
                 {
                     TriggerGUID = Trigger->GetGUID();
-                    if (GameObject* Crystal = Trigger->SummonGameObject(GO_OSSIRIAN_CRYSTAL, CrystalCoordinates[CrystalIterator], QuaternionData::fromEulerAnglesZYX(CrystalCoordinates[CrystalIterator].GetOrientation(), 0.0f, 0.0f), Seconds::max(), GO_SUMMON_TIMED_DESPAWN))
+                    if (GameObject* Crystal = Trigger->SummonGameObject(GO_OSSIRIAN_CRYSTAL, CrystalCoordinates[CrystalIterator], QuaternionData(), Seconds::max(), GO_SUMMON_TIMED_DESPAWN))
                     {
                         CrystalGUID = Crystal->GetGUID();
                         ++CrystalIterator;
@@ -277,6 +289,8 @@ class boss_ossirian : public CreatureScript
                             break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 

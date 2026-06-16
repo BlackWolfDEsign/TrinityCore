@@ -18,18 +18,22 @@
 /* ScriptData
 SDName: Tanaris
 SD%Complete: 80
-SDComment: Quest support:
+SDComment: Quest support: 1560
 SDCategory: Tanaris
 EndScriptData */
 
 /* ContentData
+npc_tooga
 EndContentData */
 
 #include "ScriptMgr.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
+#include "ScriptedEscortAI.h"
 #include "ScriptedFollowerAI.h"
+#include "ScriptedGossip.h"
+#include "WorldSession.h"
 
 /*####
 # npc_tooga
@@ -86,6 +90,7 @@ public:
         }
 
         void MoveInLineOfSight(Unit* who) override
+
         {
             FollowerAI::MoveInLineOfSight(who);
 
@@ -174,6 +179,8 @@ public:
 
                 return;
             }
+
+            DoMeleeAttackIfReady();
         }
 
         void OnQuestAccept(Player* player, Quest const* quest) override
@@ -191,4 +198,5 @@ public:
 
 void AddSC_tanaris()
 {
+    new npc_tooga();
 }

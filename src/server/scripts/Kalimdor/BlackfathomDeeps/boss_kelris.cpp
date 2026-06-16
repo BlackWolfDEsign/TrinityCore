@@ -16,8 +16,8 @@
  */
 
 #include "ScriptMgr.h"
-#include "blackfathom_deeps.h"
 #include "ScriptedCreature.h"
+#include "blackfathom_deeps.h"
 
 enum Spells
 {
@@ -103,6 +103,8 @@ struct boss_kelris : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 

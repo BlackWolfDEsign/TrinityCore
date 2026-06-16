@@ -30,13 +30,14 @@ go_bells
 EndContentData */
 
 #include "ScriptMgr.h"
-#include "DB2Structure.h"
+#include "DBCStructure.h"
 #include "GameEventMgr.h"
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "GameTime.h"
 #include "Log.h"
 #include "MotionMaster.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
@@ -392,36 +393,6 @@ public:
 };
 
 /*######
-## go_soulwell
-######*/
-
-class go_soulwell : public GameObjectScript
-{
-    public:
-        go_soulwell() : GameObjectScript("go_soulwell") { }
-
-        struct go_soulwellAI : public GameObjectAI
-        {
-            go_soulwellAI(GameObject* go) : GameObjectAI(go)
-            {
-            }
-
-            bool OnGossipHello(Player* player) override
-            {
-                Unit* owner = me->GetOwner();
-                if (!owner || owner->GetTypeId() != TYPEID_PLAYER || !player->IsInSameRaidWith(owner->ToPlayer()))
-                    return true;
-                return false;
-            }
-        };
-
-        GameObjectAI* GetAI(GameObject* go) const override
-        {
-            return new go_soulwellAI(go);
-        }
-};
-
-/*######
 ## go_amberpine_outhouse
 ######*/
 
@@ -454,7 +425,7 @@ public:
             QuestStatus status = player->GetQuestStatus(QUEST_DOING_YOUR_DUTY);
             if (status == QUEST_STATUS_INCOMPLETE || status == QUEST_STATUS_COMPLETE || status == QUEST_STATUS_REWARDED)
             {
-                AddGossipItemFor(player, GossipOptionNpc::None, GOSSIP_USE_OUTHOUSE, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                AddGossipItemFor(player, GOSSIP_ICON_CHAT, GOSSIP_USE_OUTHOUSE, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
                 SendGossipMenuFor(player, GOSSIP_OUTHOUSE_VACANT, me->GetGUID());
             }
             else
@@ -518,7 +489,7 @@ class go_massive_seaforium_charge : public GameObjectScript
         }
 };
 
-/*########
+/*######
 #### go_veil_skith_cage
 #####*/
 
@@ -858,7 +829,7 @@ public:
                 {
                     case EVENT_MM_START_MUSIC:
                     {
-                        if (!IsHolidayActive(HOLIDAY_MIDSUMMER_FIRE_FESTIVAL))
+                        if (!IsHolidayActive(HOLIDAY_FIRE_FESTIVAL))
                             break;
 
                         std::vector<Player*> playersNearby;
@@ -922,7 +893,7 @@ public:
                 switch (eventId)
                 {
                     case EVENT_DFM_START_MUSIC:
-                        if (!IsHolidayActive(HOLIDAY_DARKMOON_FAIRE))
+                        if (!IsHolidayActive(HOLIDAY_DARKMOON_FAIRE_ELWYNN) && !IsHolidayActive(HOLIDAY_DARKMOON_FAIRE_THUNDER) && !IsHolidayActive(HOLIDAY_DARKMOON_FAIRE_SHATTRATH))
                             break;
                         me->PlayDirectMusic(MUSIC_DARKMOON_FAIRE_MUSIC);
                         _events.ScheduleEvent(EVENT_DFM_START_MUSIC, 5s);  // Every 5 second's SMSG_PLAY_MUSIC packet (PlayDirectMusic) is pushed to the client (sniffed value)
@@ -1155,7 +1126,6 @@ void AddSC_go_scripts()
     new go_tele_to_dalaran_crystal();
     new go_tele_to_violet_stand();
     new go_blood_filled_orb();
-    new go_soulwell();
     new go_amberpine_outhouse();
     new go_massive_seaforium_charge();
     new go_veil_skith_cage();

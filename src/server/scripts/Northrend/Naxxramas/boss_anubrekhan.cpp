@@ -51,13 +51,12 @@ enum Events
 
 enum Spells
 {
+    SPELL_IMPALE                    = 28783,    // 25-man: 56090
+    SPELL_LOCUST_SWARM              = 28785,    // 25-man: 54021
     SPELL_SUMMON_CORPSE_SCARABS_PLR = 29105,    // This spawns 5 corpse scarabs on top of player
     SPELL_SUMMON_CORPSE_SCARABS_MOB = 28864,   // This spawns 10 corpse scarabs on top of dead guards
     SPELL_BERSERK                   = 27680
 };
-
-#define SPELL_IMPALE RAID_MODE(28783, 56090)
-#define SPELL_LOCUST_SWARM RAID_MODE(28785, 54021)
 
 enum SpawnGroups
 {
@@ -99,7 +98,6 @@ struct boss_anubrekhan : public BossAI
     {
         _Reset();
         guardCorpses.clear();
-        me->SetCanMelee(true);
     }
 
     void JustReachedHome() override
@@ -136,8 +134,7 @@ struct boss_anubrekhan : public BossAI
     void KilledUnit(Unit* victim) override
     {
         if (victim->GetTypeId() == TYPEID_PLAYER)
-            victim->CastSpell(victim, SPELL_SUMMON_CORPSE_SCARABS_PLR, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                .SetOriginalCaster(me->GetGUID()));
+            victim->CastSpell(victim, SPELL_SUMMON_CORPSE_SCARABS_PLR, me->GetGUID());
 
         Talk(SAY_SLAY);
     }
@@ -147,7 +144,7 @@ struct boss_anubrekhan : public BossAI
         _JustDied();
 
         // start achievement timer (kill Maexna within 20 min)
-        instance->TriggerGameEvent(ACHIEV_TIMED_START_EVENT);
+        instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
     }
 
     void JustEngagedWith(Unit* who) override
@@ -193,8 +190,7 @@ struct boss_anubrekhan : public BossAI
                     {
                         if (Creature* creatureTarget = ObjectAccessor::GetCreature(*me, Trinity::Containers::SelectRandomContainerElement(guardCorpses)))
                         {
-                            creatureTarget->CastSpell(creatureTarget, SPELL_SUMMON_CORPSE_SCARABS_MOB, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                                .SetOriginalCaster(me->GetGUID()));
+                            creatureTarget->CastSpell(creatureTarget, SPELL_SUMMON_CORPSE_SCARABS_MOB, me->GetGUID());
                             creatureTarget->AI()->Talk(EMOTE_SCARAB);
                             creatureTarget->DespawnOrUnsummon();
                         }
@@ -205,7 +201,6 @@ struct boss_anubrekhan : public BossAI
                     Talk(EMOTE_LOCUST);
                     events.SetPhase(PHASE_SWARM);
                     DoCast(me, SPELL_LOCUST_SWARM);
-                    me->SetCanMelee(false);
 
                     events.ScheduleEvent(EVENT_SPAWN_GUARD, 3s);
                     events.ScheduleEvent(EVENT_LOCUST_ENDS, RAID_MODE(Seconds(19), Seconds(23)));
@@ -213,7 +208,6 @@ struct boss_anubrekhan : public BossAI
                     break;
                 case EVENT_LOCUST_ENDS:
                     events.SetPhase(PHASE_NORMAL);
-                    me->SetCanMelee(true);
                     events.ScheduleEvent(EVENT_IMPALE, randtime(Seconds(10), Seconds(20)), 0, PHASE_NORMAL);
                     events.ScheduleEvent(EVENT_SCARABS, randtime(Seconds(20), Seconds(30)), 0, PHASE_NORMAL);
                     break;
@@ -226,6 +220,9 @@ struct boss_anubrekhan : public BossAI
                     break;
             }
         }
+
+        if (events.IsInPhase(PHASE_NORMAL))
+            DoMeleeAttackIfReady();
     }
     private:
         GuidSet guardCorpses;

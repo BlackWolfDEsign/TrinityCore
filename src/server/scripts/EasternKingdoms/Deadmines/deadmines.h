@@ -15,47 +15,73 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _Deadmines_h__
-#define _Deadmines_h__
+#ifndef DEF_DEADMINES_H
+#define DEF_DEADMINES_H
 
 #include "CreatureAIImpl.h"
 
-constexpr char const* DMScriptName = "instance_deadmines";
-constexpr char const* DataHeader = "DM";
+#define DMScriptName "instance_deadmines"
+#define DataHeader "DM"
 
-constexpr uint32 const EncounterCount = 6;
+uint32 constexpr EncounterCount = 7;
 
-enum DMDataTypes
+enum DMCannonState
+{
+    CANNON_NOT_USED,
+    CANNON_GUNPOWDER_USED,
+    CANNON_BLAST_INITIATED,
+    PIRATES_ATTACK,
+    SMITE_ALARMED,
+    EVENT_DONE
+};
+
+enum DMData
 {
     // Encounters
-    BOSS_GLUBTOK            = 0,
-    BOSS_HELIX_GEARBREAKER  = 1,
-    BOSS_FOE_REAPER_5000    = 2,
-    BOSS_ADMIRAL_RIPSNARL   = 3,
-    BOSS_CAPTAIN_COOKIE     = 4,
-    BOSS_VANESSA_VANCLEEF   = 5
+    BOSS_RHAHKZOR   = 0,
+    BOSS_SNEED      = 1,
+    BOSS_GILNID     = 2,
+    BOSS_MR_SMITE   = 3,
+    BOSS_GREENSKIN  = 4,
+    BOSS_VANCLEEF   = 5,
+    BOSS_COOKIE     = 6,
+
+    // Additional
+    EVENT_STATE     = 7
 };
 
-enum DMCreatureIds
+enum DMData64
 {
-    // Bosses
-    NPC_GLUBTOK             = 47162,
-    NPC_HELIX_GEARBREAKER   = 47296,
-    NPC_FOE_REAPER_5000     = 43778,
-    NPC_ADMIRAL_RIPSNARL    = 47626,
-    NPC_CAPTAIN_COOKIE      = 47739,
-    NPC_VANESSA_VAN_CLEEF   = 49541
+    DATA_SMITE_CHEST
 };
 
-enum DMGameObjectIds
+enum DMGameObjectsIds
 {
-    GO_FACTORY_DOOR     = 13965,
-    GO_IRON_CLAD_DOOR   = 16397,
-    GO_DEFIAS_CANNON    = 16398,
-    GO_DOOR_LEVER       = 101833,
-    GO_MAST_ROOM_DOOR   = 16400,
-    GO_HEAVY_DOOR       = 17153,
-    GO_FOUNDRY_DOOR     = 16399
+    GO_FACTORY_DOOR                                        = 13965,
+    GO_MAST_ROOM_DOOR                                      = 16400,
+    GO_FOUNDRY_DOOR                                        = 16399,
+    GO_IRONCLAD_DOOR                                       = 16397,
+    GO_DEFIAS_CANNON                                       = 16398,
+    GO_DOOR_LEVER                                          = 101833,
+    GO_MR_SMITE_CHEST                                      = 144111
+};
+
+enum DMCreaturesIds
+{
+    NPC_RHAHKZOR   = 644,
+    NPC_SNEED      = 643,
+    NPC_GILNID     = 1763,
+    NPC_MR_SMITE   = 646,
+    NPC_GREENSKIN  = 647,
+    NPC_VANCLEEF   = 639,
+    NPC_COOKIE     = 645,
+    NPC_BLACKGUARD = 636
+};
+
+enum DMInstanceTexts
+{
+    SAY_ALARM1 = 0,
+    SAY_ALARM2 = 1
 };
 
 template <class AI, class T>
@@ -64,4 +90,6 @@ inline AI* GetDeadminesAI(T* obj)
     return GetInstanceAI<AI>(obj, DMScriptName);
 }
 
-#endif // _Deadmines_h__
+#define RegisterDeadminesCreatureAI(ai_name) RegisterCreatureAIWithFactory(ai_name, GetDeadminesAI)
+
+#endif

@@ -16,22 +16,21 @@
  */
 
 #include "MoveSplineFlag.h"
-#include "MovementTypedefs.h"
-#include "SmartEnum.h"
 #include <cmath>
 
 namespace Movement
 {
+    float gravity = static_cast<float>(19.29110527038574);
     UInt32Counter splineIdGen;
 
     /// Velocity bounds that makes fall speed limited
-    float constexpr terminalVelocity = 60.148003f;
-    float constexpr terminalSafefallVelocity = 7.0f;
+    float terminalVelocity = 60.148003f;
+    float terminalSafefallVelocity = 7.0f;
 
-    float constexpr terminal_length = float(terminalVelocity * terminalVelocity) / (2.0f * gravity);
-    float constexpr terminal_safeFall_length = (terminalSafefallVelocity * terminalSafefallVelocity) / (2.0f * gravity);
-    float constexpr terminal_fallTime = float(terminalVelocity / gravity); // the time that needed to reach terminalVelocity
-    float constexpr terminal_safeFall_fallTime = float(terminalSafefallVelocity / gravity); // the time that needed to reach terminalVelocity with safefall
+    const float terminal_length = float(terminalVelocity * terminalVelocity) / (2.0f * gravity);
+    const float terminal_safeFall_length = (terminalSafefallVelocity * terminalSafefallVelocity) / (2.0f * gravity);
+    const float terminal_fallTime = float(terminalVelocity / gravity); // the time that needed to reach terminalVelocity
+    const float terminal_safeFall_fallTime = float(terminalSafefallVelocity / gravity); // the time that needed to reach terminalVelocity with safefall
 
     float computeFallTime(float path_length, bool isSafeFall)
     {
@@ -84,39 +83,111 @@ namespace Movement
         return result;
     }
 
-    template<class Flags>
-    void PrintFlags(Flags t, std::string& str)
+    #define STR(x) #x
+
+    char const* g_MovementFlag_names[] =
     {
-        for (Flags flag : EnumUtils::Iterate<Flags>())
-            if ((t & flag) != Flags(0))
-                str.append(" ").append(EnumUtils::ToConstant(flag));
+        STR(Forward            ), // 0x00000001,
+        STR(Backward           ), // 0x00000002,
+        STR(Strafe_Left        ), // 0x00000004,
+        STR(Strafe_Right       ), // 0x00000008,
+        STR(Turn_Left          ), // 0x00000010,
+        STR(Turn_Right         ), // 0x00000020,
+        STR(Pitch_Up           ), // 0x00000040,
+        STR(Pitch_Down         ), // 0x00000080,
+
+        STR(Walk               ), // 0x00000100,               // Walking
+        STR(Ontransport        ), // 0x00000200,
+        STR(Levitation         ), // 0x00000400,
+        STR(Root               ), // 0x00000800,
+        STR(Falling            ), // 0x00001000,
+        STR(Fallingfar         ), // 0x00002000,
+        STR(Pendingstop        ), // 0x00004000,
+        STR(PendingStrafeStop  ), // 0x00008000,
+        STR(PendingForward     ), // 0x00010000,
+        STR(PendingBackward    ), // 0x00020000,
+        STR(PendingStrafeReft  ), // 0x00040000,
+        STR(PendingStrafeRight ), // 0x00080000,
+        STR(PendingRoot        ), // 0x00100000,
+        STR(Swimming           ), // 0x00200000,               // Appears With Fly Flag Also
+        STR(Ascending          ), // 0x00400000,               // Swim Up Also
+        STR(Descending         ), // 0x00800000,               // Swim Down Also
+        STR(Can_Fly            ), // 0x01000000,               // Can Fly In 3.3?
+        STR(Flying             ), // 0x02000000,               // Actual Flying Mode
+        STR(Spline_Elevation   ), // 0x04000000,               // Used For Flight Paths
+        STR(Spline_Enabled     ), // 0x08000000,               // Used For Flight Paths
+        STR(Waterwalking       ), // 0x10000000,               // Prevent Unit From Falling Through Water
+        STR(Safe_Fall          ), // 0x20000000,               // Active Rogue Safe Fall Spell (Passive)
+        STR(Hover              ), // 0x40000000
+        STR(Unknown13          ), // 0x80000000
+        STR(NoStrafe           ),
+        STR(NoJump             ),
+        STR(Unk3               ),
+        STR(FullSpeedTurning   ),
+        STR(FullSpeedPitching  ),
+        STR(Allow_Pitching     ),
+        STR(Unk4               ),
+        STR(Unk5               ),
+        STR(Unk6               ),
+        STR(Unk7               ),
+        STR(Interp_Move        ),
+        STR(Interp_Turning     ),
+        STR(Interp_Pitching    ),
+        STR(Unk8               ),
+        STR(Unk9               ),
+        STR(Unk10              ),
+    };
+
+    char const* g_SplineFlag_names[32] =
+    {
+        STR(AnimBit1     ), // 0x00000001,
+        STR(AnimBit2     ), // 0x00000002,
+        STR(AnimBit3     ), // 0x00000004,
+        STR(AnimBit4     ), // 0x00000008,
+        STR(AnimBit5     ), // 0x00000010,
+        STR(AnimBit6     ), // 0x00000020,
+        STR(AnimBit7     ), // 0x00000040,
+        STR(AnimBit8     ), // 0x00000080,
+        STR(Done         ), // 0x00000100,
+        STR(Falling      ), // 0x00000200,           // Not Compartible With Trajectory Movement
+        STR(No_Spline    ), // 0x00000400,
+        STR(Trajectory   ), // 0x00000800,           // Not Compartible With Fall Movement
+        STR(CanSwim      ), // 0x00001000,
+        STR(Flying       ), // 0x00002000,           // Smooth Movement(Catmullrom Interpolation Mode), Flying Animation
+        STR(Knockback    ), // 0x00004000,           // Model Orientation Fixed
+        STR(Final_Point  ), // 0x00008000,
+        STR(Final_Target ), // 0x00010000,
+        STR(Final_Angle  ), // 0x00020000,
+        STR(Catmullrom   ), // 0x00040000,           // Used Catmullrom Interpolation Mode
+        STR(Cyclic       ), // 0x00080000,           // Movement By Cycled Spline
+        STR(Enter_Cycle  ), // 0x00100000,           // Everytime Appears With Cyclic Flag In Monster Move Packet
+        STR(Animation    ), // 0x00200000,           // Animationid (0...3), Uint32 Time, Not Compartible With Trajectory And Fall Movement
+        STR(Unknown4     ), // 0x00400000,           // Disables Movement By Path
+        STR(Unknown5     ), // 0x00800000,
+        STR(Unknown6     ), // 0x01000000,
+        STR(Unknown7     ), // 0x02000000,
+        STR(Unknown8     ), // 0x04000000,
+        STR(Backward     ), // 0x08000000,           // Appears With Runmode Flag, Nodes ), // 1, Handles Orientation
+        STR(Unknown10    ), // 0x10000000,
+        STR(Unknown11    ), // 0x20000000,
+        STR(Unknown12    ), // 0x40000000,
+        STR(Unknown13    ), // 0x80000000,
+    };
+
+    template<class Flags, int N>
+    void print_flags(Flags t, char const* (&names)[N], std::string& str)
+    {
+        for (int i = 0; i < N; ++i)
+        {
+            if ((t & Flags(1 << i)) && names[i] != nullptr)
+                str.append(" ").append(names[i]);
+        }
     }
 
     std::string MoveSplineFlag::ToString() const
     {
         std::string str;
-        PrintFlags<MoveSplineFlagEnum>(Raw, str);
-        return str;
-    }
-
-    std::string MovementFlags_ToString(MovementFlags flags)
-    {
-        std::string str;
-        PrintFlags(flags, str);
-        return str;
-    }
-
-    std::string MovementFlags_ToString(MovementFlags2 flags)
-    {
-        std::string str;
-        PrintFlags(flags, str);
-        return str;
-    }
-
-    std::string MovementFlags_ToString(MovementFlags3 flags)
-    {
-        std::string str;
-        PrintFlags(flags, str);
+        print_flags(raw(), g_SplineFlag_names, str);
         return str;
     }
 }

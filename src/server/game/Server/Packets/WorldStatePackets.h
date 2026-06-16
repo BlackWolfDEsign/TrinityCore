@@ -24,7 +24,7 @@ namespace WorldPackets
 {
     namespace WorldState
     {
-        class TC_GAME_API InitWorldStates final : public ServerPacket
+        class InitWorldStates final : public ServerPacket
         {
         public:
             struct WorldStateInfo
@@ -36,7 +36,7 @@ namespace WorldPackets
                 int32 Value;
             };
 
-            explicit InitWorldStates() : ServerPacket(SMSG_INIT_WORLD_STATES, 16) { }
+            explicit InitWorldStates() : ServerPacket(SMSG_INIT_WORLD_STATES, 4 + 4 + 4 + 2) { }
 
             WorldPacket const* Write() override;
 
@@ -50,13 +50,12 @@ namespace WorldPackets
         class UpdateWorldState final : public ServerPacket
         {
         public:
-            explicit UpdateWorldState() : ServerPacket(SMSG_UPDATE_WORLD_STATE, 4 + 1 + 4) { }
+            UpdateWorldState() : ServerPacket(SMSG_UPDATE_WORLD_STATE, 4 + 4) { }
 
             WorldPacket const* Write() override;
 
-            int32 Value       = 0;
-            bool Hidden   = false; ///< @todo: research
-            uint32 VariableID = 0;
+            int32 VariableID = 0;
+            int32 Value = 0;
         };
     }
 }

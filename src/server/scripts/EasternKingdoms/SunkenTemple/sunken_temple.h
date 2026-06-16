@@ -32,6 +32,8 @@ enum STBossIds
     BOSS_MORPHAZ                = 4,
     BOSS_HAZZAS                 = 5,
     BOSS_SHADE_OF_ERANIKUS      = 6,
+    BOSS_ATALALARION            = 7,
+    BOSS_EVENT_ELITE_TROLLS     = 8,
 
     MAX_ENCOUNTER
 };

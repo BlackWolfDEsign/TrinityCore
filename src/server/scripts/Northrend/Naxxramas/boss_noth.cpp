@@ -99,7 +99,7 @@ struct boss_noth : public BossAI
         _Reset();
 
         me->SetReactState(REACT_AGGRESSIVE);
-        me->SetUninteractible(false);
+        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
 
         balconyCount = 0;
         events.SetPhase(PHASE_NONE);
@@ -120,7 +120,7 @@ struct boss_noth : public BossAI
         DoZoneInCombat();
 
         if (!me->IsThreatened())
-            EnterEvadeMode(EvadeReason::NoHostiles);
+            EnterEvadeMode(EVADE_REASON_NO_HOSTILES);
         else
         {
             uint8 timeGround;
@@ -140,7 +140,7 @@ struct boss_noth : public BossAI
             events.ScheduleEvent(EVENT_BALCONY, Seconds(timeGround), 0, PHASE_GROUND);
             events.ScheduleEvent(EVENT_CURSE, randtime(Seconds(10), Seconds(25)), 0, PHASE_GROUND);
             events.ScheduleEvent(EVENT_WARRIOR, randtime(Seconds(20), Seconds(30)), 0, PHASE_GROUND);
-            if (GetDifficulty() == DIFFICULTY_25_N)
+            if (GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
                 events.ScheduleEvent(EVENT_BLINK, randtime(Seconds(20), Seconds(30)), 0, PHASE_GROUND);
         }
     }
@@ -235,7 +235,7 @@ struct boss_noth : public BossAI
                 case EVENT_BALCONY:
                     events.SetPhase(PHASE_BALCONY);
                     me->SetReactState(REACT_PASSIVE);
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     me->AttackStop();
                     me->StopMoving();
                     me->RemoveAllAuras();
@@ -291,7 +291,7 @@ struct boss_noth : public BossAI
                     EnterPhaseGround();
                     break;
                 case EVENT_GROUND_ATTACKABLE:
-                    me->SetUninteractible(false);
+                    me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     me->SetReactState(REACT_AGGRESSIVE);
                     break;
             }
@@ -310,6 +310,8 @@ struct boss_noth : public BossAI
                 me->GetMotionMaster()->MoveChase(me->EnsureVictim());
                 justBlinked = false;
             }
+            else
+                DoMeleeAttackIfReady();
         }
     }
 

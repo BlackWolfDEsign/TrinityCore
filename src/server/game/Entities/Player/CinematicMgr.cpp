@@ -16,10 +16,8 @@
  */
 
 #include "CinematicMgr.h"
-#include "Containers.h"
-#include "DB2Structure.h"
-#include "M2Stores.h"
 #include "Map.h"
+#include "M2Stores.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
@@ -30,8 +28,7 @@ CinematicMgr::CinematicMgr(Player* playerref)
     player = playerref;
     m_cinematicDiff = 0;
     m_lastCinematicCheck = 0;
-    m_activeCinematic = nullptr;
-    m_activeCinematicCameraIndex = -1;
+    m_activeCinematicCameraId = 0;
     m_cinematicLength = 0;
     m_cinematicCamera = nullptr;
     m_remoteSightPosition = Position(0.0f, 0.0f, 0.0f);
@@ -40,34 +37,30 @@ CinematicMgr::CinematicMgr(Player* playerref)
 
 CinematicMgr::~CinematicMgr()
 {
-    if (m_cinematicCamera && m_activeCinematic)
+    if (m_cinematicCamera && m_activeCinematicCameraId)
         EndCinematic();
 }
 
-void CinematicMgr::NextCinematicCamera()
+void CinematicMgr::BeginCinematic()
 {
     // Sanity check for active camera set
-    if (!m_activeCinematic || m_activeCinematicCameraIndex >= int32(std::size(m_activeCinematic->Camera)))
+    if (m_activeCinematicCameraId == 0)
         return;
 
-    uint32 cinematicCameraId = m_activeCinematic->Camera[++m_activeCinematicCameraIndex];
-    if (!cinematicCameraId)
-        return;
-
-    if (std::vector<FlyByCamera> const* flyByCameras = GetFlyByCameras(cinematicCameraId))
+    if (std::vector<FlyByCamera> const* flyByCameras = GetFlyByCameras(m_activeCinematicCameraId))
     {
         // Initialize diff, and set camera
         m_cinematicDiff = 0;
         m_cinematicCamera = flyByCameras;
 
-        if (!m_cinematicCamera->empty())
+        auto camitr = m_cinematicCamera->begin();
+        if (camitr != m_cinematicCamera->end())
         {
-            FlyByCamera const& firstCamera = m_cinematicCamera->front();
-            Position const& pos = firstCamera.locations;
+            Position const& pos = camitr->locations;
             if (!pos.IsPositionValid())
                 return;
 
-            player->GetMap()->LoadGridForActiveObject(pos.GetPositionX(), pos.GetPositionY(), player);
+            player->GetMap()->LoadGrid(pos.GetPositionX(), pos.GetPositionY());
             if (TempSummon* cinematicObject = player->SummonCreature(VISUAL_WAYPOINT, pos.m_positionX, pos.m_positionY, pos.m_positionZ, 0.0f, TEMPSUMMON_TIMED_DESPAWN, 5min))
             {
                 m_CinematicObjectGUID = cinematicObject->GetGUID();
@@ -76,20 +69,19 @@ void CinematicMgr::NextCinematicCamera()
             }
 
             // Get cinematic length
-            m_cinematicLength = m_cinematicCamera->back().timeStamp;
+            m_cinematicLength = flyByCameras->back().timeStamp;
         }
     }
 }
 
 void CinematicMgr::EndCinematic()
 {
-    if (!m_activeCinematic)
+    if (m_activeCinematicCameraId == 0)
         return;
 
     m_cinematicDiff = 0;
     m_cinematicCamera = nullptr;
-    m_activeCinematic = nullptr;
-    m_activeCinematicCameraIndex = -1;
+    m_activeCinematicCameraId = 0;
     if (!m_CinematicObjectGUID.IsEmpty())
     {
         if (WorldObject* vpObject = player->GetViewpoint())
@@ -103,7 +95,7 @@ void CinematicMgr::EndCinematic()
 
 void CinematicMgr::UpdateCinematicLocation(uint32 /*diff*/)
 {
-    if (!m_activeCinematic || m_activeCinematicCameraIndex == -1 || !m_cinematicCamera || m_cinematicCamera->size() == 0)
+    if (m_activeCinematicCameraId == 0 || !m_cinematicCamera || m_cinematicCamera->size() == 0)
         return;
 
     Position lastPosition;
@@ -112,7 +104,7 @@ void CinematicMgr::UpdateCinematicLocation(uint32 /*diff*/)
     uint32 nextTimestamp = 0;
 
     // Obtain direction of travel
-    for (FlyByCamera const& cam : *m_cinematicCamera)
+    for (FlyByCamera cam : *m_cinematicCamera)
     {
         if (cam.timeStamp > m_cinematicDiff)
         {
@@ -144,7 +136,7 @@ void CinematicMgr::UpdateCinematicLocation(uint32 /*diff*/)
         workDiff = m_cinematicDiff;
 
     // Obtain the previous and next waypoint based on timestamp
-    for (FlyByCamera const& cam : *m_cinematicCamera)
+    for (FlyByCamera cam : *m_cinematicCamera)
     {
         if (static_cast<int32>(cam.timeStamp) >= workDiff)
         {

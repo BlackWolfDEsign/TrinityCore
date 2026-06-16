@@ -31,7 +31,7 @@ EndContentData */
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
-#include "ScriptedCreature.h"
+#include "ScriptedEscortAI.h"
 #include "SpellScript.h"
 
 /*######
@@ -313,7 +313,7 @@ class at_commander_dawnforge : public AreaTriggerScript
 public:
     at_commander_dawnforge() : AreaTriggerScript("at_commander_dawnforge") { }
 
-    bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+    bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
     {
         //if player lost aura or not have at all, we should not try start event.
         if (!player->HasAura(SPELL_SUNFURY_DISGUISE))
@@ -454,6 +454,8 @@ public:
                     me->SetInCombatWith(player);
                 }
             } // end: support for quest 10190
+
+            DoMeleeAttackIfReady();
         }
     };
 };
@@ -462,7 +464,7 @@ public:
 ## Quest 10857: Teleport This!
 ######*/
 
-enum DetonateTeleporter
+enum TeleportThis
 {
     SPELL_TELEPORTER_KILL_CREDIT_1   = 38982,    // 22348
     SPELL_TELEPORTER_KILL_CREDIT_2   = 38983,    // 22351
@@ -473,8 +475,10 @@ enum DetonateTeleporter
 };
 
 // 38920 - Detonate Teleporter
-class spell_detonate_teleporter : public SpellScript
+class spell_netherstorm_detonate_teleporter : public SpellScript
 {
+    PrepareSpellScript(spell_netherstorm_detonate_teleporter);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -523,7 +527,52 @@ class spell_detonate_teleporter : public SpellScript
 
     void Register() override
     {
-        OnEffectHitTarget += SpellEffectFn(spell_detonate_teleporter::HandleScript, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
+        OnEffectHitTarget += SpellEffectFn(spell_netherstorm_detonate_teleporter::HandleScript, EFFECT_2, SPELL_EFFECT_SCRIPT_EFFECT);
+    }
+};
+
+/*######
+## Quest 10409: Deathblow to the Legion
+######*/
+
+enum DeathblowToTheLegion
+{
+    SPELL_SOCRETHAR_TO_SEAT          = 35743,
+    SPELL_SOCRETHAR_FROM_SEAT        = 35744,
+
+    AREA_INVASION_POINT_OVERLORD     = 3900,
+    AREA_SOCRETHARS_SEAT             = 3742
+};
+
+// 35745 - Socrethar's Stone
+class spell_netherstorm_socrethars_stone : public SpellScript
+{
+    PrepareSpellScript(spell_netherstorm_socrethars_stone);
+
+    bool Validate(SpellInfo const* /*spell*/) override
+    {
+        return ValidateSpellInfo({ SPELL_SOCRETHAR_TO_SEAT, SPELL_SOCRETHAR_FROM_SEAT });
+    }
+
+    void HandleDummy(SpellEffIndex /* effIndex */)
+    {
+        Unit* caster = GetCaster();
+        switch (caster->GetAreaId())
+        {
+            case AREA_INVASION_POINT_OVERLORD:
+                caster->CastSpell(caster, SPELL_SOCRETHAR_TO_SEAT);
+                break;
+            case AREA_SOCRETHARS_SEAT:
+                caster->CastSpell(caster, SPELL_SOCRETHAR_FROM_SEAT);
+                break;
+            default:
+                return;
+        }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_netherstorm_socrethars_stone::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -532,5 +581,6 @@ void AddSC_netherstorm()
     new npc_commander_dawnforge();
     new at_commander_dawnforge();
     new npc_phase_hunter();
-    RegisterSpellScript(spell_detonate_teleporter);
+    RegisterSpellScript(spell_netherstorm_detonate_teleporter);
+    RegisterSpellScript(spell_netherstorm_socrethars_stone);
 }

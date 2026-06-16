@@ -20,7 +20,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <Windows.h>
+#include <windows.h>
 #include <winsvc.h>
 
 namespace
@@ -48,7 +48,7 @@ void Trinity::Service::Init(_TCHAR* serviceLongName, _TCHAR* serviceName, _TCHAR
 
 int32 Trinity::Service::Install()
 {
-    SC_HANDLE serviceControlManager = OpenSCManager(nullptr, nullptr, SC_MANAGER_CREATE_SERVICE);
+    SC_HANDLE serviceControlManager = OpenSCManager(0, 0, SC_MANAGER_CREATE_SERVICE);
 
     if (serviceControlManager)
     {
@@ -65,11 +65,11 @@ int32 Trinity::Service::Install()
                 SERVICE_AUTO_START,                         // start type
                 SERVICE_ERROR_IGNORE,                       // error control type
                 path,                                       // service's binary
-                nullptr,                                    // no load ordering group
-                nullptr,                                    // no tag identifier
-                nullptr,                                    // no dependencies
-                nullptr,                                    // LocalSystem account
-                nullptr);                                   // no password
+                0,                                          // no load ordering group
+                0,                                          // no tag identifier
+                0,                                          // no dependencies
+                0,                                          // LocalSystem account
+                0);                                         // no password
             if (service)
             {
                 SERVICE_DESCRIPTION sdBuf;
@@ -105,7 +105,7 @@ int32 Trinity::Service::Install()
 
 int32 Trinity::Service::Uninstall()
 {
-    SC_HANDLE serviceControlManager = OpenSCManager(nullptr, nullptr, SC_MANAGER_CONNECT);
+    SC_HANDLE serviceControlManager = OpenSCManager(0, 0, SC_MANAGER_CONNECT);
 
     if (serviceControlManager)
     {
@@ -244,7 +244,7 @@ int32 Trinity::Service::Run()
     SERVICE_TABLE_ENTRY serviceTable[] =
     {
         { ServiceName, ServiceMain },
-        { nullptr, nullptr }
+        { 0, 0 }
     };
 
     if (!StartServiceCtrlDispatcher(serviceTable))

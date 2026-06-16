@@ -24,17 +24,14 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Containers.h"
-#include "DB2Stores.h"
+#include "DatabaseEnv.h"
 #include "Language.h"
 #include "MapManager.h"
 #include "ObjectMgr.h"
-#include "PhasingHandler.h"
 #include "Player.h"
 #include "RBAC.h"
-#include "SupportMgr.h"
-#include "TerrainMgr.h"
+#include "TicketMgr.h"
 #include "Transport.h"
 #include "Util.h"
 #include "WorldSession.h"
@@ -46,7 +43,7 @@ class go_commandscript : public CommandScript
 public:
     go_commandscript() : CommandScript("go_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable goCommandTable =
         {
@@ -56,14 +53,11 @@ public:
             { "gameobject id",      HandleGoGameObjectGOIdCommand,          rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "graveyard",          HandleGoGraveyardCommand,               rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "grid",               HandleGoGridCommand,                    rbac::RBAC_PERM_COMMAND_GO,             Console::No },
-            { "quest",              HandleGoQuestCommand,                   rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "taxinode",           HandleGoTaxinodeCommand,                rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "areatrigger",        HandleGoAreaTriggerCommand,             rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "zonexy",             HandleGoZoneXYCommand,                  rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "xyz",                HandleGoXYZCommand,                     rbac::RBAC_PERM_COMMAND_GO,             Console::No },
-            { "bugticket",          HandleGoTicketCommand<BugTicket>,       rbac::RBAC_PERM_COMMAND_GO,             Console::No },
-            { "complaintticket",    HandleGoTicketCommand<ComplaintTicket>, rbac::RBAC_PERM_COMMAND_GO,             Console::No },
-            { "suggestionticket",   HandleGoTicketCommand<SuggestionTicket>,rbac::RBAC_PERM_COMMAND_GO,             Console::No },
+            { "ticket",             HandleGoTicketCommand,                  rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "offset",             HandleGoOffsetCommand,                  rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "instance",           HandleGoInstanceCommand,                rbac::RBAC_PERM_COMMAND_GO,             Console::No },
             { "boss",               HandleGoBossCommand,                    rbac::RBAC_PERM_COMMAND_GO,             Console::No }
@@ -139,7 +133,7 @@ public:
         return DoTeleport(handler, spawnpoint->spawnPoint, spawnpoint->mapId);
     }
 
-    static bool HandleGoGameObjectSpawnIdCommand(ChatHandler* handler, Variant<Hyperlink<gameobject>, ObjectGuid::LowType> spawnId)
+    static bool HandleGoGameObjectSpawnIdCommand(ChatHandler* handler, uint32 spawnId)
     {
         GameObjectData const* spawnpoint = sObjectMgr->GetGameObjectData(spawnId);
         if (!spawnpoint)
@@ -152,12 +146,12 @@ public:
         return DoTeleport(handler, spawnpoint->spawnPoint, spawnpoint->mapId);
     }
 
-    static bool HandleGoGameObjectGOIdCommand(ChatHandler* handler, Variant<Hyperlink<gameobject_entry>, uint32> goId)
+    static bool HandleGoGameObjectGOIdCommand(ChatHandler* handler, uint32 goId)
     {
         GameObjectData const* spawnpoint = nullptr;
         for (auto const& pair : sObjectMgr->GetAllGameObjectData())
         {
-            if (pair.second.id != *goId)
+            if (pair.second.id != goId)
                 continue;
 
             if (!spawnpoint)
@@ -181,7 +175,7 @@ public:
 
     static bool HandleGoGraveyardCommand(ChatHandler* handler, uint32 gyId)
     {
-        WorldSafeLocsEntry const* gy = sObjectMgr->GetWorldSafeLoc(gyId);
+        WorldSafeLocsEntry const* gy = sWorldSafeLocsStore.LookupEntry(gyId);
         if (!gy)
         {
             handler->PSendSysMessage(LANG_COMMAND_GRAVEYARDNOEXIST, gyId);
@@ -189,9 +183,9 @@ public:
             return false;
         }
 
-        if (!MapManager::IsValidMapCoord(gy->Loc))
+        if (!MapManager::IsValidMapCoord(gy->Continent, gy->Loc.X, gy->Loc.Y, gy->Loc.Z))
         {
-            handler->PSendSysMessage(LANG_INVALID_TARGET_COORD, gy->Loc.GetPositionX(), gy->Loc.GetPositionY(), gy->Loc.GetMapId());
+            handler->PSendSysMessage(LANG_INVALID_TARGET_COORD, gy->Loc.X, gy->Loc.Y, gy->Continent);
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -203,7 +197,7 @@ public:
         else
             player->SaveRecallPosition(); // save only in non-flight case
 
-        player->TeleportTo(gy->Loc);
+        player->TeleportTo(gy->Continent, gy->Loc.X, gy->Loc.Y, gy->Loc.Z, player->GetOrientation());
         return true;
     }
 
@@ -230,69 +224,10 @@ public:
         else
             player->SaveRecallPosition(); // save only in non-flight case
 
-        std::shared_ptr<TerrainInfo> terrain = sTerrainMgr.LoadTerrain(mapId);
-        float z = std::max(terrain->GetStaticHeight(PhasingHandler::GetEmptyPhaseShift(), mapId, x, y, MAX_HEIGHT), terrain->GetWaterLevel(PhasingHandler::GetEmptyPhaseShift(), mapId, x, y));
+        Map const* map = sMapMgr->CreateBaseMap(mapId);
+        float z = std::max(map->GetHeight(x, y, MAX_HEIGHT), map->GetWaterLevel(x, y));
 
         player->TeleportTo(mapId, x, y, z, player->GetOrientation());
-        return true;
-    }
-
-    static bool HandleGoQuestCommand(ChatHandler* handler, Variant<Hyperlink<quest>, uint32> questData)
-    {
-        Player* player = handler->GetSession()->GetPlayer();
-
-        uint32 questID;
-        if (questData.holds_alternative<uint32>())
-        {
-            questID = questData.get<uint32>();
-
-            if (!sObjectMgr->GetQuestTemplate(questID))
-            {
-                handler->PSendSysMessage(LANG_COMMAND_QUEST_NOTFOUND, questID);
-                handler->SetSentErrorMessage(true);
-                return false;
-            }
-        }
-        else
-            questID = questData.get<Hyperlink<quest>>()->Quest->GetQuestId();
-
-        float x, y, z;
-        uint32 mapId;
-
-        if (QuestPOIData const* poiData = sObjectMgr->GetQuestPOIData(questID))
-        {
-            QuestPOIBlobData const& data = poiData->Blobs.front();
-
-            mapId = data.MapID;
-
-            x = data.Points.front().X;
-            y = data.Points.front().Y;
-            z = data.Points.front().Z;
-        }
-        else
-        {
-            handler->PSendSysMessage(LANG_COMMAND_QUEST_NOTFOUND, questID);
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
-
-        if (!MapManager::IsValidMapCoord(mapId, x, y) || sObjectMgr->IsTransportMap(mapId))
-        {
-            handler->PSendSysMessage(LANG_INVALID_TARGET_COORD, x, y, mapId);
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
-
-        // stop flight if need
-        if (player->IsInFlight())
-            player->FinishTaxiFlight();
-        else
-            player->SaveRecallPosition(); // save only in non-flight case
-
-        std::shared_ptr<TerrainInfo> terrain = sTerrainMgr.LoadTerrain(mapId);
-        z = std::max(terrain->GetStaticHeight(PhasingHandler::GetEmptyPhaseShift(), mapId, x, y, MAX_HEIGHT), terrain->GetWaterLevel(PhasingHandler::GetEmptyPhaseShift(), mapId, x, y));
-
-        player->TeleportTo(mapId, x, y, z, 0.0f);
         return true;
     }
 
@@ -337,25 +272,23 @@ public:
         }
 
         // update to parent zone if exist (client map show only zones without parents)
-        AreaTableEntry const* zoneEntry = areaEntry->ParentAreaID && areaEntry->GetFlags().HasFlag(AreaFlags::IsSubzone)
-            ? sAreaTableStore.LookupEntry(areaEntry->ParentAreaID)
-            : areaEntry;
+        AreaTableEntry const* zoneEntry = areaEntry->ParentAreaID ? sAreaTableStore.LookupEntry(areaEntry->ParentAreaID) : areaEntry;
         ASSERT(zoneEntry);
 
-        x /= 100.0f;
-        y /= 100.0f;
+        Map const* map = sMapMgr->CreateBaseMap(zoneEntry->ContinentID);
 
-        std::shared_ptr<TerrainInfo> terrain = sTerrainMgr.LoadTerrain(zoneEntry->ContinentID);
-        if (!sDB2Manager.Zone2MapCoordinates(zoneEntry->ID, x, y))
+        if (map->Instanceable())
         {
-            handler->PSendSysMessage(LANG_INVALID_ZONE_MAP, areaId, areaEntry->AreaName[handler->GetSessionDbcLocale()], terrain->GetId(), terrain->GetMapName());
+            handler->PSendSysMessage(LANG_INVALID_ZONE_MAP, areaEntry->ID, areaEntry->AreaName[handler->GetSessionDbcLocale()], map->GetId(), map->GetMapName());
             handler->SetSentErrorMessage(true);
             return false;
         }
 
+        Zone2MapCoordinates(x, y, zoneEntry->ID);
+
         if (!MapManager::IsValidMapCoord(zoneEntry->ContinentID, x, y))
         {
-            handler->PSendSysMessage(LANG_INVALID_TARGET_COORD, x, y, uint32(zoneEntry->ContinentID));
+            handler->PSendSysMessage(LANG_INVALID_TARGET_COORD, x, y, zoneEntry->ContinentID);
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -366,7 +299,7 @@ public:
         else
             player->SaveRecallPosition(); // save only in non-flight case
 
-        float z = std::max(terrain->GetStaticHeight(PhasingHandler::GetEmptyPhaseShift(), zoneEntry->ContinentID, x, y, MAX_HEIGHT), terrain->GetWaterLevel(PhasingHandler::GetEmptyPhaseShift(), zoneEntry->ContinentID, x, y));
+        float z = std::max(map->GetHeight(x, y, MAX_HEIGHT), map->GetWaterLevel(x, y));
 
         player->TeleportTo(zoneEntry->ContinentID, x, y, z, player->GetOrientation());
         return true;
@@ -394,17 +327,16 @@ public:
                 handler->SetSentErrorMessage(true);
                 return false;
             }
-            std::shared_ptr<TerrainInfo> terrain = sTerrainMgr.LoadTerrain(mapId);
-            z = std::max(terrain->GetStaticHeight(PhasingHandler::GetEmptyPhaseShift(), mapId, x, y, MAX_HEIGHT), terrain->GetWaterLevel(PhasingHandler::GetEmptyPhaseShift(), mapId, x, y));
+            Map const* map = sMapMgr->CreateBaseMap(mapId);
+            z = std::max(map->GetHeight(x, y, MAX_HEIGHT), map->GetWaterLevel(x, y));
         }
 
         return DoTeleport(handler, { x, y, *z, o.value_or(0.0f) }, mapId);
     }
 
-    template<typename T>
     static bool HandleGoTicketCommand(ChatHandler* handler, uint32 ticketId)
     {
-        T* ticket = sSupportMgr->GetTicket<T>(ticketId);
+        GmTicket* ticket = sTicketMgr->GetTicket(ticketId);
         if (!ticket)
         {
             handler->SendSysMessage(LANG_COMMAND_TICKETNOTEXIST);
@@ -483,14 +415,14 @@ public:
         // try going to entrance
         if (AreaTriggerTeleport const* exit = sObjectMgr->GetGoBackTrigger(mapId))
         {
-            if (player->TeleportTo(exit->Loc.GetMapId(), exit->Loc.GetPositionX(), exit->Loc.GetPositionY(), exit->Loc.GetPositionZ(), exit->Loc.GetOrientation() + M_PI))
+            if (player->TeleportTo(exit->target_mapId, exit->target_X, exit->target_Y, exit->target_Z, exit->target_Orientation + M_PI))
             {
                 handler->PSendSysMessage(LANG_COMMAND_WENT_TO_INSTANCE_GATE, mapName, mapId);
                 return true;
             }
             else
             {
-                uint32 const parentMapId = exit->Loc.GetMapId();
+                uint32 const parentMapId = exit->target_mapId;
                 char const* const parentMapName = ASSERT_NOTNULL(sMapStore.LookupEntry(parentMapId))->MapName[handler->GetSessionDbcLocale()];
                 handler->PSendSysMessage(LANG_COMMAND_GO_INSTANCE_GATE_FAILED, mapName, mapId, parentMapName, parentMapId);
             }
@@ -501,7 +433,7 @@ public:
         // try going to start
         if (AreaTriggerTeleport const* entrance = sObjectMgr->GetMapEntranceTrigger(mapId))
         {
-            if (player->TeleportTo(entrance->Loc))
+            if (player->TeleportTo(entrance->target_mapId, entrance->target_X, entrance->target_Y, entrance->target_Z, entrance->target_Orientation))
             {
                 handler->PSendSysMessage(LANG_COMMAND_WENT_TO_INSTANCE_START, mapName, mapId);
                 return true;
@@ -521,13 +453,16 @@ public:
         if (needles.empty())
             return false;
 
-        std::multimap<uint32, CreatureTemplate const*, std::greater<uint32>> matches;
+        std::multimap<uint32, CreatureTemplate const*> matches;
         std::unordered_map<uint32, std::vector<CreatureData const*>> spawnLookup;
 
         // find all boss flagged mobs that match our needles
         for (auto const& pair : sObjectMgr->GetCreatureTemplates())
         {
             CreatureTemplate const& data = pair.second;
+            if (!(data.flags_extra & CREATURE_FLAG_EXTRA_DUNGEON_BOSS))
+                continue;
+
             uint32 count = 0;
             std::string const& scriptName = sObjectMgr->GetScriptName(data.ScriptID);
             for (std::string_view label : needles)
@@ -537,7 +472,7 @@ public:
             if (count)
             {
                 matches.emplace(count, &data);
-                spawnLookup.try_emplace(data.Entry);    // inserts default-constructed vector
+                (void)spawnLookup[data.Entry]; // inserts default-constructed vector
             }
         }
 
@@ -565,7 +500,7 @@ public:
         }
 
         // see if we have multiple equal matches left
-        auto it = matches.cbegin(), end = matches.cend();
+        auto it = matches.crbegin(), end = matches.crend();
         uint32 const maxCount = it->first;
         if ((++it) != end && it->first == maxCount)
         {
@@ -578,7 +513,7 @@ public:
             return false;
         }
 
-        CreatureTemplate const* const boss = matches.cbegin()->second;
+        CreatureTemplate const* const boss = matches.crbegin()->second;
         std::vector<CreatureData const*> const& spawns = spawnLookup[boss->Entry];
         ASSERT(!spawns.empty());
 

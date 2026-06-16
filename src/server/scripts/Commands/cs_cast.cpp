@@ -24,7 +24,6 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Creature.h"
 #include "Language.h"
 #include "Player.h"
@@ -40,7 +39,7 @@ class cast_commandscript : public CommandScript
 public:
     cast_commandscript() : CommandScript("cast_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable castCommandTable =
         {

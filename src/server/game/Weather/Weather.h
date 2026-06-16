@@ -46,7 +46,7 @@ struct WeatherData
 enum WeatherState : uint32
 {
     WEATHER_STATE_FINE              = 0,
-    WEATHER_STATE_FOG               = 1, // Used in some instance encounters.
+    WEATHER_STATE_FOG               = 1,
     WEATHER_STATE_DRIZZLE           = 2,
     WEATHER_STATE_LIGHT_RAIN        = 3,
     WEATHER_STATE_MEDIUM_RAIN       = 4,
@@ -68,7 +68,7 @@ class TC_GAME_API Weather
     public:
 
         Weather(Map* map, uint32 zoneId, WeatherData const* weatherChances);
-        ~Weather() { }
+        ~Weather() { };
 
         bool Update(uint32 diff);
         bool ReGenerate();
@@ -78,12 +78,13 @@ class TC_GAME_API Weather
         static void SendFineWeatherUpdateToPlayer(Player* player);
         void SetWeather(WeatherType type, float intensity);
 
-        WeatherState GetWeatherState() const;
         /// For which zone is this weather?
-        uint32 GetZone() const { return m_zone; }
+        uint32 GetZone() const { return m_zone; };
         uint32 GetScriptId() const { return m_weatherChances->ScriptId; }
 
     private:
+
+        WeatherState GetWeatherState() const;
         Map* m_map;
         uint32 m_zone;
         WeatherType m_type;

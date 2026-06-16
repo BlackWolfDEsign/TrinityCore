@@ -18,42 +18,12 @@
 #ifndef Realm_h__
 #define Realm_h__
 
-#include "AsioHacksFwd.h"
 #include "Common.h"
-#include "EnumFlag.h"
+#include "AsioHacksFwd.h"
 #include <compare>
-#include <vector>
+#include <memory>
 
-enum class RealmFlags : uint8
-{
-    None                    = 0x00,
-    VersionMismatch         = 0x01,
-    Hidden                  = 0x02,
-    Tournament              = 0x04,
-    VersionBelow            = 0x08,
-    VersionAbove            = 0x10,
-    MobileVersionMismatch   = 0x20,
-    MobileVersionBelow      = 0x40,
-    MobileVersionAbove      = 0x80
-};
-
-DEFINE_ENUM_FLAG(RealmFlags);
-
-enum class RealmPopulationState : uint8
-{
-    Offline     = 0,
-    Low         = 1,
-    Medium      = 2,
-    High        = 3,
-    New         = 4,
-    Recommended = 5,
-    Full        = 6,
-    Locked      = 7
-};
-
-namespace Trinity::Legacy
-{
-enum RealmFlags : uint8
+enum RealmFlags
 {
     REALM_FLAG_NONE             = 0x00,
     REALM_FLAG_VERSION_MISMATCH = 0x01,
@@ -66,56 +36,15 @@ enum RealmFlags : uint8
     REALM_FLAG_FULL             = 0x80
 };
 
-inline constexpr uint8 format_as(RealmFlags e) { return uint8(e); }
-
-inline constexpr ::RealmFlags ConvertLegacyRealmFlags(RealmFlags legacyRealmFlags)
+struct TC_SHARED_API RealmHandle
 {
-    ::RealmFlags realmFlags = ::RealmFlags::None;
-    if (legacyRealmFlags & REALM_FLAG_VERSION_MISMATCH)
-        realmFlags |= ::RealmFlags::VersionMismatch;
-    return realmFlags;
-}
+    RealmHandle() : Realm(0) { }
+    RealmHandle(uint32 index) : Realm(index) { }
 
-inline constexpr RealmPopulationState ConvertLegacyPopulationState(RealmFlags legacyRealmFlags, float population)
-{
-    if (legacyRealmFlags & REALM_FLAG_OFFLINE)
-        return RealmPopulationState::Offline;
-    if (legacyRealmFlags & REALM_FLAG_RECOMMENDED)
-        return RealmPopulationState::Recommended;
-    if (legacyRealmFlags & REALM_FLAG_NEW)
-        return RealmPopulationState::New;
-    if (legacyRealmFlags & REALM_FLAG_FULL || population > 0.95f)
-        return RealmPopulationState::Full;
-    if (population > 0.66f)
-        return RealmPopulationState::High;
-    if (population > 0.33f)
-        return RealmPopulationState::Medium;
-    return RealmPopulationState::Low;
-}
-}
+    uint32 Realm;   // primary key in `realmlist` table
 
-namespace Battlenet
-{
-    struct TC_SHARED_API RealmHandle
-    {
-        RealmHandle() : Region(0), Site(0), Realm(0) { }
-        RealmHandle(uint8 region, uint8 battlegroup, uint32 index)
-            : Region(region), Site(battlegroup), Realm(index) { }
-        RealmHandle(uint32 realmAddress) : Region((realmAddress >> 24) & 0xFF), Site((realmAddress >> 16) & 0xFF), Realm(realmAddress & 0xFFFF) { }
-
-        uint8 Region;
-        uint8 Site;
-        uint32 Realm;   // primary key in `realmlist` table
-
-        bool operator==(RealmHandle const& r) const { return Realm == r.Realm; }
-
-        std::strong_ordering operator<=>(RealmHandle const& r) const { return Realm <=> r.Realm; }
-
-        uint32 GetAddress() const { return (Region << 24) | (Site << 16) | uint16(Realm); }
-        std::string GetAddressString() const;
-        std::string GetSubRegionAddress() const;
-    };
-}
+    std::strong_ordering operator<=>(RealmHandle const& r) const { return Realm <=> r.Realm; }
+};
 
 /// Type of server, this is values from second column of Cfg_Configs.dbc
 enum RealmType
@@ -132,36 +61,23 @@ enum RealmType
                                                             // replaced by REALM_PVP in realm list
 };
 
-inline constexpr uint32 HARDCODED_DEVELOPMENT_REALM_CATEGORY_ID = 1;
-
 // Storage object for a realm
 struct TC_SHARED_API Realm
 {
-    Realm();
-    Realm(Realm const& other);
-    Realm(Realm&& other) noexcept;
-    Realm& operator=(Realm const& other);
-    Realm& operator=(Realm&& other) noexcept;
-    ~Realm();
-
-    Battlenet::RealmHandle Id;
+    RealmHandle Id;
     uint32 Build;
-    std::vector<boost::asio::ip::address> Addresses;
+    std::unique_ptr<boost::asio::ip::address> ExternalAddress;
+    std::unique_ptr<boost::asio::ip::address> LocalAddress;
+    std::unique_ptr<boost::asio::ip::address> LocalSubnetMask;
     uint16 Port;
     std::string Name;
-    std::string NormalizedName;
     uint8 Type;
     RealmFlags Flags;
     uint8 Timezone;
     AccountTypes AllowedSecurityLevel;
-    RealmPopulationState PopulationLevel;
+    float PopulationLevel;
 
-    void SetName(std::string name);
-
-    boost::asio::ip::address GetAddressForClient(boost::asio::ip::address const& clientAddr) const;
-    uint32 GetConfigId() const;
-
-    static uint32 const ConfigIdByType[MAX_CLIENT_REALM_TYPE];
+    boost::asio::ip::tcp_endpoint GetAddressForClient(boost::asio::ip::address const& clientAddr) const;
 };
 
 #endif // Realm_h__

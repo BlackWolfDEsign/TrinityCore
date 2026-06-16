@@ -15,16 +15,14 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "VMapFactory.h"
-#include "VMapManager.h"
-#include "VMapDefinitions.h"
-#include "WorldModel.h"
 #include "GameObjectModel.h"
 #include "Log.h"
 #include "MapTree.h"
-#include "Memory.h"
 #include "Timer.h"
-#include <G3D/Quat.h>
+#include "VMapDefinitions.h"
+#include "VMapFactory.h"
+#include "VMapManager2.h"
+#include "WorldModel.h"
 
 using G3D::Vector3;
 using G3D::Ray;
@@ -32,49 +30,53 @@ using G3D::AABox;
 
 struct GameobjectModelData
 {
-    GameobjectModelData(char const* name_, uint32 nameLength, Vector3 const& lowBound, Vector3 const& highBound) :
-        bound(lowBound, highBound), name(name_, nameLength) { }
+    GameobjectModelData(char const* name_, uint32 nameLength, Vector3 const& lowBound, Vector3 const& highBound, bool isWmo_) :
+        bound(lowBound, highBound), name(name_, nameLength), isWmo(isWmo_) { }
 
     AABox bound;
     std::string name;
+    bool isWmo;
 };
 
 typedef std::unordered_map<uint32, GameobjectModelData> ModelList;
 ModelList model_list;
 
-bool LoadGameObjectModelList(std::string const& dataPath)
+void LoadGameObjectModelList(std::string const& dataPath)
 {
     uint32 oldMSTime = getMSTime();
 
-    auto model_list_file = Trinity::make_unique_ptr_with_deleter<&::fclose>(fopen((dataPath + "vmaps/" + VMAP::GAMEOBJECT_MODELS).c_str(), "rb"));
+    FILE* model_list_file = fopen((dataPath + "vmaps/" + VMAP::GAMEOBJECT_MODELS).c_str(), "rb");
     if (!model_list_file)
     {
         TC_LOG_ERROR("misc", "Unable to open '{}' file.", VMAP::GAMEOBJECT_MODELS);
-        return false;
+        return;
     }
 
     char magic[8];
-    if (fread(magic, 1, 8, model_list_file.get()) != 8
+    if (fread(magic, 1, 8, model_list_file) != 8
         || memcmp(magic, VMAP::VMAP_MAGIC, 8) != 0)
     {
         TC_LOG_ERROR("misc", "File '{}' has wrong header, expected {}.", VMAP::GAMEOBJECT_MODELS, VMAP::VMAP_MAGIC);
-        return false;
+        fclose(model_list_file);
+        return;
     }
 
     uint32 name_length, displayId;
+    uint8 isWmo;
     char buff[500];
     while (true)
     {
         Vector3 v1, v2;
-        if (fread(&displayId, sizeof(uint32), 1, model_list_file.get()) != 1)
-            if (feof(model_list_file.get()))  // EOF flag is only set after failed reading attempt
+        if (fread(&displayId, sizeof(uint32), 1, model_list_file) != 1)
+            if (feof(model_list_file))  // EOF flag is only set after failed reading attempt
                 break;
 
-        if (fread(&name_length, sizeof(uint32), 1, model_list_file.get()) != 1
+        if (fread(&isWmo, sizeof(uint8), 1, model_list_file) != 1
+            || fread(&name_length, sizeof(uint32), 1, model_list_file) != 1
             || name_length >= sizeof(buff)
-            || fread(&buff, sizeof(char), name_length, model_list_file.get()) != name_length
-            || fread(&v1, sizeof(Vector3), 1, model_list_file.get()) != 1
-            || fread(&v2, sizeof(Vector3), 1, model_list_file.get()) != 1)
+            || fread(&buff, sizeof(char), name_length, model_list_file) != name_length
+            || fread(&v1, sizeof(Vector3), 1, model_list_file) != 1
+            || fread(&v2, sizeof(Vector3), 1, model_list_file) != 1)
         {
             TC_LOG_ERROR("misc", "File '{}' seems to be corrupted!", VMAP::GAMEOBJECT_MODELS);
             break;
@@ -86,14 +88,18 @@ bool LoadGameObjectModelList(std::string const& dataPath)
             continue;
         }
 
-        model_list.emplace(std::piecewise_construct, std::forward_as_tuple(displayId), std::forward_as_tuple(&buff[0], name_length, v1, v2));
+        model_list.emplace(std::piecewise_construct, std::forward_as_tuple(displayId), std::forward_as_tuple(&buff[0], name_length, v1, v2, isWmo != 0));
     }
 
+    fclose(model_list_file);
     TC_LOG_INFO("server.loading", ">> Loaded {} GameObject models in {} ms", uint32(model_list.size()), GetMSTimeDiffToNow(oldMSTime));
-    return true;
 }
 
-GameObjectModel::~GameObjectModel() = default;
+GameObjectModel::~GameObjectModel()
+{
+    if (iModel)
+        VMAP::VMapFactory::createOrGetVMapManager()->releaseModelInstance(name);
+}
 
 bool GameObjectModel::initialize(std::unique_ptr<GameObjectModelOwnerBase> modelOwner, std::string const& dataPath)
 {
@@ -114,15 +120,17 @@ bool GameObjectModel::initialize(std::unique_ptr<GameObjectModelOwnerBase> model
     if (!iModel)
         return false;
 
+    name = it->second.name;
     iPos = modelOwner->GetPosition();
+    phasemask = modelOwner->GetPhaseMask();
     iScale = modelOwner->GetScale();
     iInvScale = 1.f / iScale;
 
-    G3D::Matrix3 iRotation = modelOwner->GetRotation().toRotationMatrix();
+    G3D::Matrix3 iRotation = G3D::Matrix3::fromEulerAnglesZYX(modelOwner->GetOrientation(), 0, 0);
     iInvRot = iRotation.inverse();
     // transform bounding box:
     mdl_box = AABox(mdl_box.low() * iScale, mdl_box.high() * iScale);
-    AABox rotated_bounds = G3D::AABox::empty();
+    AABox rotated_bounds;
     for (int i = 0; i < 8; ++i)
         rotated_bounds.merge(iRotation * mdl_box.corner(i));
 
@@ -137,29 +145,25 @@ bool GameObjectModel::initialize(std::unique_ptr<GameObjectModelOwnerBase> model
 #endif
 
     owner = std::move(modelOwner);
+    isWmo = it->second.isWmo;
     return true;
 }
 
-std::unique_ptr<GameObjectModel> GameObjectModel::Create(std::unique_ptr<GameObjectModelOwnerBase> modelOwner, std::string const& dataPath)
+GameObjectModel* GameObjectModel::Create(std::unique_ptr<GameObjectModelOwnerBase> modelOwner, std::string const& dataPath)
 {
-    std::unique_ptr<GameObjectModel> mdl(new GameObjectModel());
+    GameObjectModel* mdl = new GameObjectModel();
     if (!mdl->initialize(std::move(modelOwner), dataPath))
-        mdl = nullptr;
+    {
+        delete mdl;
+        return nullptr;
+    }
 
     return mdl;
 }
 
-bool GameObjectModel::IsMapObject() const
+bool GameObjectModel::intersectRay(const G3D::Ray& ray, float& MaxDist, bool StopAtFirstHit, uint32 ph_mask, VMAP::ModelIgnoreFlags ignoreFlags) const
 {
-    return !iModel->IsM2();
-}
-
-bool GameObjectModel::IntersectRay(G3D::Ray const& ray, float& maxDist, bool stopAtFirstHit, PhaseShift const& phaseShift, VMAP::ModelIgnoreFlags ignoreFlags) const
-{
-    if (!IsCollisionEnabled() || !owner->IsSpawned())
-        return false;
-
-    if (!owner->IsInPhase(phaseShift))
+    if (!(phasemask & ph_mask) || !owner->IsSpawned())
         return false;
 
     float time = ray.intersectionTime(iBound);
@@ -169,22 +173,19 @@ bool GameObjectModel::IntersectRay(G3D::Ray const& ray, float& maxDist, bool sto
     // child bounds are defined in object space:
     Vector3 p = iInvRot * (ray.origin() - iPos) * iInvScale;
     Ray modRay(p, iInvRot * ray.direction());
-    float distance = maxDist * iInvScale;
-    bool hit = iModel->IntersectRay(modRay, distance, stopAtFirstHit, ignoreFlags);
+    float distance = MaxDist * iInvScale;
+    bool hit = iModel->IntersectRay(modRay, distance, StopAtFirstHit, ignoreFlags);
     if (hit)
     {
         distance *= iScale;
-        maxDist = distance;
+        MaxDist = distance;
     }
     return hit;
 }
 
-bool GameObjectModel::GetLocationInfo(G3D::Vector3 const& point, VMAP::LocationInfo& info, PhaseShift const& phaseShift) const
+bool GameObjectModel::GetLocationInfo(G3D::Vector3 const& point, VMAP::LocationInfo& info, uint32 ph_mask) const
 {
-    if (!IsCollisionEnabled() || !owner->IsSpawned() || !IsMapObject())
-        return false;
-
-    if (!owner->IsInPhase(phaseShift))
+    if (!(phasemask & ph_mask) || !owner->IsSpawned() || !isMapObject())
         return false;
 
     if (!iBound.contains(point))
@@ -219,7 +220,8 @@ bool GameObjectModel::GetLiquidLevel(G3D::Vector3 const& point, VMAP::LocationIn
     if (info.hitModel->GetLiquidLevel(pModel, zDist))
     {
         // calculate world height (zDist in model coords):
-        liqHeight = (Vector3(pModel.x, pModel.y, zDist) * iInvRot * iScale + iPos).z;
+        // assume WMO not tilted (wouldn't make much sense anyway)
+        liqHeight = zDist * iScale + iPos.z;
         return true;
     }
     return false;
@@ -244,11 +246,11 @@ bool GameObjectModel::UpdatePosition()
 
     iPos = owner->GetPosition();
 
-    G3D::Matrix3 iRotation = owner->GetRotation().toRotationMatrix();
+    G3D::Matrix3 iRotation = G3D::Matrix3::fromEulerAnglesZYX(owner->GetOrientation(), 0, 0);
     iInvRot = iRotation.inverse();
     // transform bounding box:
     mdl_box = AABox(mdl_box.low() * iScale, mdl_box.high() * iScale);
-    AABox rotated_bounds = G3D::AABox::empty();
+    AABox rotated_bounds;
     for (int i = 0; i < 8; ++i)
         rotated_bounds.merge(iRotation * mdl_box.corner(i));
 

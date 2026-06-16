@@ -21,7 +21,7 @@
 #include "Define.h"
 #include "Duration.h"
 
-inline TimePoint GetApplicationStartTime()
+inline std::chrono::steady_clock::time_point GetApplicationStartTime()
 {
     using namespace std::chrono;
 
@@ -46,7 +46,7 @@ inline uint32 getMSTimeDiff(uint32 oldMSTime, uint32 newMSTime)
         return newMSTime - oldMSTime;
 }
 
-inline uint32 getMSTimeDiff(uint32 oldMSTime, TimePoint newTime)
+inline uint32 getMSTimeDiff(uint32 oldMSTime, std::chrono::steady_clock::time_point newTime)
 {
     using namespace std::chrono;
 

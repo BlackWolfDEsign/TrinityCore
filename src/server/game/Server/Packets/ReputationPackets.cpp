@@ -16,61 +16,24 @@
  */
 
 #include "ReputationPackets.h"
-#include "PacketOperators.h"
 
 namespace WorldPackets::Reputation
 {
 ByteBuffer& operator<<(ByteBuffer& data, FactionData const& factionData)
 {
-    data << int32(factionData.FactionID);
-    data << uint16(factionData.Flags);
+    data << uint8(factionData.Flags);
     data << int32(factionData.Standing);
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, FactionBonusData const& factionBonusData)
+WorldPacket const* InitializeFactions::Write()
 {
-    data << int32(factionBonusData.FactionID);
-    data << Bits<1>(factionBonusData.FactionHasBonus);
-    data.FlushBits();
-
-    return data;
-}
-}
-
-WorldPacket const* WorldPackets::Reputation::InitializeFactions::Write()
-{
-    _worldPacket << Size<uint32>(Factions);
-    _worldPacket << Size<uint32>(Bonuses);
+    _worldPacket << uint32(Factions.size());
 
     for (FactionData const& faction : Factions)
         _worldPacket << faction;
 
-    for (FactionBonusData const& bonus : Bonuses)
-        _worldPacket << bonus;
-
     return &_worldPacket;
 }
-
-ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Reputation::FactionStandingData const& factionStanding)
-{
-    data << int32(factionStanding.Index);
-    data << int32(factionStanding.Standing);
-    data << int32(factionStanding.FactionID);
-
-    return data;
-}
-
-WorldPacket const* WorldPackets::Reputation::SetFactionStanding::Write()
-{
-    _worldPacket << float(BonusFromAchievementSystem);
-    _worldPacket << Size<uint32>(Faction);
-    for (FactionStandingData const& factionStanding : Faction)
-        _worldPacket << factionStanding;
-
-    _worldPacket << Bits<1>(ShowVisual);
-    _worldPacket.FlushBits();
-
-    return &_worldPacket;
 }

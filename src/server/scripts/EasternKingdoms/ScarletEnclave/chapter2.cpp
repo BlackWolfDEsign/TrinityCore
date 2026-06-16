@@ -21,7 +21,7 @@
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
-#include "ScriptedCreature.h"
+#include "ScriptedEscortAI.h"
 #include "SpellScript.h"
 
 enum BloodyBreakoutTexts
@@ -138,7 +138,7 @@ struct npc_koltira_deathweaver : public ScriptedAI
 
     void Reset() override
     {
-        me->SetImmuneToNPC(true);
+        me->SetUnitFlag(UNIT_FLAG_IMMUNE_TO_NPC);
         me->SetNpcFlag(UNIT_NPC_FLAG_GOSSIP);
         me->SetStandState(UNIT_STAND_STATE_DEAD);
         me->RemoveAllAuras();
@@ -177,7 +177,7 @@ struct npc_koltira_deathweaver : public ScriptedAI
                     _events.ScheduleEvent(EVENT_INTRO_2, 2s);
                     break;
                 case EVENT_INTRO_2:
-                    me->GetMotionMaster()->MoveJump(EVENT_JUMP, koltiraPos[0], 12.0f, 1.0f);
+                    me->GetMotionMaster()->MoveJump(koltiraPos[0], 25.0f, 15.0f);
 
                     _events.ScheduleEvent(EVENT_INTRO_3, 2s);
                     break;
@@ -259,7 +259,7 @@ struct npc_koltira_deathweaver : public ScriptedAI
                     break;
                 case EVENT_OUTRO_4:
                     me->SetWalk(false);
-                    me->SetImmuneToNPC(false);
+                    me->RemoveUnitFlag(UNIT_FLAG_IMMUNE_TO_NPC);
                     DoCastSelf(SPELL_HERO_AGGRO);
                     me->GetMotionMaster()->MovePath(NPC_KOLTIRA << 3, false);
 
@@ -324,7 +324,7 @@ private:
     SummonList _summons;
     ObjectGuid _playerGUID;
 
-    bool _eventGossip = false;
+    bool _eventGossip;
 };
 
 //Scarlet courier
@@ -416,6 +416,8 @@ public:
 
             if (!UpdateVictim())
                 return;
+
+            DoMeleeAttackIfReady();
         }
     };
 
@@ -612,9 +614,11 @@ public:
 // 53110 - Devour Humanoid
 class spell_death_knight_devour_humanoid : public SpellScript
 {
+    PrepareSpellScript(spell_death_knight_devour_humanoid);
+
     void HandleScriptEffect(SpellEffIndex /* effIndex */)
     {
-        GetHitUnit()->CastSpell(GetCaster(), GetEffectValueAsInt(), true);
+        GetHitUnit()->CastSpell(GetCaster(), GetEffectValue(), true);
     }
 
     void Register() override

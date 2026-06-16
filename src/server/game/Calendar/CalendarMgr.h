@@ -65,8 +65,7 @@ enum CalendarEventType
     CALENDAR_TYPE_DUNGEON           = 1,
     CALENDAR_TYPE_PVP               = 2,
     CALENDAR_TYPE_MEETING           = 3,
-    CALENDAR_TYPE_OTHER             = 4,
-    CALENDAR_TYPE_HEROIC            = 5
+    CALENDAR_TYPE_OTHER             = 4
 };
 
 enum CalendarRepeatType
@@ -143,17 +142,23 @@ enum CalendarLimits
 struct TC_GAME_API CalendarInvite
 {
     public:
-        CalendarInvite(CalendarInvite const& calendarInvite, uint64 inviteId, uint64 eventId) : _inviteId(inviteId), _eventId(eventId),
-            _invitee(calendarInvite.GetInviteeGUID()), _senderGUID(calendarInvite.GetSenderGUID()), _responseTime(calendarInvite.GetResponseTime()),
-            _status(calendarInvite.GetStatus()), _rank(calendarInvite.GetRank()), _note(calendarInvite.GetNote())
+        CalendarInvite(CalendarInvite const& calendarInvite, uint64 inviteId, uint64 eventId)
         {
+            _inviteId = inviteId;
+            _eventId = eventId;
+            _invitee = calendarInvite.GetInviteeGUID();
+            _senderGUID = calendarInvite.GetSenderGUID();
+            _responseTime = calendarInvite.GetResponseTime();
+            _status = calendarInvite.GetStatus();
+            _rank = calendarInvite.GetRank();
+            _note = calendarInvite.GetNote();
         }
 
         CalendarInvite();
 
-        CalendarInvite(uint64 inviteId, uint64 eventId, ObjectGuid invitee, ObjectGuid senderGUID, time_t responseTime,
+        CalendarInvite(uint64 inviteId, uint64 eventId, ObjectGuid invitee, ObjectGuid senderGUID, time_t statusTime,
             CalendarInviteStatus status, CalendarModerationRank rank, std::string note) :
-            _inviteId(inviteId), _eventId(eventId), _invitee(invitee), _senderGUID(senderGUID), _responseTime(responseTime),
+            _inviteId(inviteId), _eventId(eventId), _invitee(invitee), _senderGUID(senderGUID), _responseTime(statusTime),
             _status(status), _rank(rank), _note(std::move(note)) { }
 
         CalendarInvite(CalendarInvite const&) = delete;
@@ -176,7 +181,7 @@ struct TC_GAME_API CalendarInvite
         void SetInvitee(ObjectGuid guid) { _invitee = guid; }
         ObjectGuid GetInviteeGUID() const { return _invitee; }
 
-        void SetResponseTime(time_t responseTime) { _responseTime = responseTime; }
+        void SetResponseTime(time_t statusTime) { _responseTime = statusTime; }
         time_t GetResponseTime() const { return _responseTime; }
 
         void SetNote(std::string const& note) { _note = note; }
@@ -202,10 +207,19 @@ struct TC_GAME_API CalendarInvite
 struct TC_GAME_API CalendarEvent
 {
     public:
-        CalendarEvent(CalendarEvent const& calendarEvent, uint64 eventId) : _eventId(eventId), _ownerGUID(calendarEvent.GetOwnerGUID()),
-            _eventGuildId(calendarEvent.GetGuildId()), _eventType(calendarEvent.GetType()), _textureId(calendarEvent.GetTextureId()),
-            _date(calendarEvent.GetDate()), _flags(calendarEvent.GetFlags()), _title(calendarEvent.GetTitle()), _description(calendarEvent.GetDescription()),
-            _lockDate(calendarEvent.GetLockDate()) { }
+        CalendarEvent(CalendarEvent const& calendarEvent, uint64 eventId)
+        {
+            _eventId = eventId;
+            _ownerGUID = calendarEvent.GetOwnerGUID();
+            _eventGuildId = calendarEvent.GetGuildId();
+            _eventType = calendarEvent.GetType();
+            _textureId = calendarEvent.GetTextureId();
+            _date = calendarEvent.GetDate();
+            _flags = calendarEvent.GetFlags();
+            _title = calendarEvent.GetTitle();
+            _description = calendarEvent.GetDescription();
+            _lockDate = calendarEvent.GetLockDate();
+        }
 
         CalendarEvent(uint64 eventId, ObjectGuid ownerGUID, ObjectGuid::LowType guildId, CalendarEventType type, int32 textureId,
             time_t date, uint32 flags, std::string title, std::string description, time_t lockDate) :
@@ -277,7 +291,7 @@ struct TC_GAME_API CalendarEvent
 };
 typedef std::vector<CalendarInvite*> CalendarInviteStore;
 typedef std::set<CalendarEvent*> CalendarEventStore;
-typedef std::map<uint64 /* eventID */, CalendarInviteStore > CalendarEventInviteStore;
+typedef std::map<uint64 /* eventId */, CalendarInviteStore > CalendarEventInviteStore;
 
 class TC_GAME_API CalendarMgr
 {

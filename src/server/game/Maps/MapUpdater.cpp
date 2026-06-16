@@ -20,6 +20,8 @@
 #include "Map.h"
 #include "Metric.h"
 
+#include <mutex>
+
 class MapUpdateRequest
 {
     private:
@@ -46,7 +48,9 @@ class MapUpdateRequest
 void MapUpdater::activate(size_t num_threads)
 {
     for (size_t i = 0; i < num_threads; ++i)
-        _workerThreads.emplace_back(&MapUpdater::WorkerThread, this);
+    {
+        _workerThreads.push_back(std::thread(&MapUpdater::WorkerThread, this));
+    }
 }
 
 void MapUpdater::deactivate()
@@ -58,33 +62,38 @@ void MapUpdater::deactivate()
     _queue.Cancel();
 
     for (auto& thread : _workerThreads)
+    {
         thread.join();
+    }
 }
 
 void MapUpdater::wait()
 {
-    std::unique_lock lock(_lock);
+    std::unique_lock<std::mutex> lock(_lock);
 
-    _condition.wait(lock, [&] { return pending_requests == 0; });
+    while (pending_requests > 0)
+        _condition.wait(lock);
+
+    lock.unlock();
 }
 
 void MapUpdater::schedule_update(Map& map, uint32 diff)
 {
-    std::scoped_lock lock(_lock);
+    std::lock_guard<std::mutex> lock(_lock);
 
     ++pending_requests;
 
     _queue.Push(new MapUpdateRequest(map, *this, diff));
 }
 
-bool MapUpdater::activated() const
+bool MapUpdater::activated()
 {
-    return !_workerThreads.empty();
+    return _workerThreads.size() > 0;
 }
 
 void MapUpdater::update_finished()
 {
-    std::scoped_lock lock(_lock);
+    std::lock_guard<std::mutex> lock(_lock);
 
     --pending_requests;
 
@@ -96,7 +105,6 @@ void MapUpdater::WorkerThread()
     LoginDatabase.WarnAboutSyncQueries(true);
     CharacterDatabase.WarnAboutSyncQueries(true);
     WorldDatabase.WarnAboutSyncQueries(true);
-    HotfixDatabase.WarnAboutSyncQueries(true);
 
     while (true)
     {

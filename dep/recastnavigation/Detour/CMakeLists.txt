@@ -8,36 +8,27 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_library(Detour STATIC)
-
-target_sources(Detour
-  PRIVATE
+set(Detour_STAT_SRCS
     Source/DetourAlloc.cpp 
     Source/DetourAssert.cpp 
     Source/DetourCommon.cpp 
     Source/DetourNavMesh.cpp 
     Source/DetourNavMeshBuilder.cpp 
     Source/DetourNavMeshQuery.cpp 
-    Source/DetourNode.cpp)
+    Source/DetourNode.cpp 
+)
 
-target_sources(Detour
+add_library(Detour STATIC ${Detour_STAT_SRCS})
+
+target_include_directories(Detour
   PUBLIC
-    FILE_SET HEADERS
-    BASE_DIRS Include
-    FILES
-      Include/DetourAlloc.h
-      Include/DetourAssert.h
-      Include/DetourCommon.h
-      Include/DetourMath.h
-      Include/DetourNavMeshBuilder.h
-      Include/DetourNavMesh.h
-      Include/DetourNavMeshQuery.h
-      Include/DetourNode.h
-      Include/DetourStatus.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/Include)
 
 target_link_libraries(Detour
   PRIVATE
-    trinity-dependency-interface)
+    trinity-dependency-interface
+  PUBLIC
+    zlib)
 
 set_target_properties(Detour
     PROPERTIES

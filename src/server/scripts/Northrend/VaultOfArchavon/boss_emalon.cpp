@@ -153,6 +153,8 @@ struct boss_emalon : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 
@@ -237,6 +239,8 @@ struct npc_tempest_minion : public ScriptedAI
             DoCastVictim(SPELL_SHOCK);
             _events.ScheduleEvent(EVENT_SHOCK, 20s);
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:

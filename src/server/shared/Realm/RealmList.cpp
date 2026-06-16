@@ -16,39 +16,14 @@
  */
 
 #include "RealmList.h"
-#include "BattlenetRpcErrorCodes.h"
-#include "CryptoRandom.h"
+#include "ClientBuildInfo.h"
 #include "DatabaseEnv.h"
 #include "DeadlineTimer.h"
+#include "IoContext.h"
 #include "Log.h"
-#include "MapUtils.h"
-#include "ProtobufJSON.h"
 #include "Resolver.h"
 #include "Util.h"
-#include "RealmList.pb.h"
-#include "advstd.h"
 #include <boost/asio/ip/tcp.hpp>
-#include <zlib.h>
-
-namespace
-{
-bool CompressJson(std::string const& json, std::vector<uint8>* compressed)
-{
-    uLong uncompressedLength = uLong(json.length() + 1);
-    uLong compressedLength = compressBound(uLong(json.length()));
-    compressed->resize(compressedLength + 4);
-    memcpy(compressed->data(), &uncompressedLength, sizeof(uncompressedLength));
-
-    if (compress(compressed->data() + 4, &compressedLength, reinterpret_cast<uint8 const*>(json.data()), uncompressedLength) != Z_OK)
-    {
-        compressed->clear();
-        return false;
-    }
-
-    compressed->resize(compressedLength + 4);   // trim excess bytes
-    return true;
-}
-}
 
 RealmList::RealmList() : _updateInterval(0)
 {
@@ -67,11 +42,11 @@ void RealmList::Initialize(Trinity::Asio::IoContext& ioContext, uint32 updateInt
 {
     _updateInterval = updateInterval;
     _updateTimer = std::make_unique<Trinity::Asio::DeadlineTimer>(ioContext);
-    _resolver = std::make_unique<Trinity::Net::Resolver>(ioContext);
+    _resolver = std::make_unique<Trinity::Asio::Resolver>(ioContext);
 
     ClientBuild::LoadBuildInfo();
     // Get the content of the realmlist table in the database
-    UpdateRealms();
+    UpdateRealms(boost::system::error_code());
 }
 
 void RealmList::Close()
@@ -79,312 +54,129 @@ void RealmList::Close()
     _updateTimer->cancel();
 }
 
-void RealmList::UpdateRealm(Realm& realm, Battlenet::RealmHandle const& id, uint32 build, std::string const& name,
-    std::vector<boost::asio::ip::address>&& addresses,
-    uint16 port, uint8 icon, RealmFlags flag, uint8 timezone, AccountTypes allowedSecurityLevel,
-    RealmPopulationState population)
+void RealmList::UpdateRealm(RealmHandle const& id, uint32 build, std::string const& name,
+    boost::asio::ip::address&& address, boost::asio::ip::address&& localAddr, boost::asio::ip::address&& localSubmask,
+    uint16 port, uint8 icon, RealmFlags flag, uint8 timezone, AccountTypes allowedSecurityLevel, float population)
 {
+    // Create new if not exist or update existed
+    Realm& realm = _realms[id];
+
     realm.Id = id;
     realm.Build = build;
-    if (realm.Name != name)
-        realm.SetName(name);
+    realm.Name = name;
     realm.Type = icon;
     realm.Flags = flag;
     realm.Timezone = timezone;
     realm.AllowedSecurityLevel = allowedSecurityLevel;
     realm.PopulationLevel = population;
-    realm.Addresses = std::move(addresses);
+    if (!realm.ExternalAddress || *realm.ExternalAddress != address)
+        realm.ExternalAddress = std::make_unique<boost::asio::ip::address>(std::move(address));
+    if (!realm.LocalAddress || *realm.LocalAddress != localAddr)
+        realm.LocalAddress = std::make_unique<boost::asio::ip::address>(std::move(localAddr));
+    if (!realm.LocalSubnetMask || *realm.LocalSubnetMask != localSubmask)
+        realm.LocalSubnetMask = std::make_unique<boost::asio::ip::address>(std::move(localSubmask));
     realm.Port = port;
 }
 
-void RealmList::UpdateRealms()
+void RealmList::UpdateRealms(boost::system::error_code const& error)
 {
-    TC_LOG_DEBUG("realmlist", "Updating Realm List...");
+    if (error)
+        return;
+
+    TC_LOG_DEBUG("server.authserver", "Updating Realm List...");
 
     LoginDatabasePreparedStatement *stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_REALMLIST);
     PreparedQueryResult result = LoginDatabase.Query(stmt);
 
-    std::map<Battlenet::RealmHandle, std::string> existingRealms;
+    std::map<RealmHandle, std::string> existingRealms;
     for (auto const& p : _realms)
-        existingRealms[p.first] = p.second->Name;
+        existingRealms[p.first] = p.second.Name;
 
-    std::unordered_set<std::string> newSubRegions;
-    RealmMap newRealms;
+    _realms.clear();
 
     // Circle through results and add them to the realm map
     if (result)
     {
         do
         {
-            Field* fields = result->Fetch();
-            uint32 realmId = fields[0].GetUInt32();
-            std::string name = fields[1].GetString();
-            std::vector<boost::asio::ip::address> addresses;
-
-            for (std::size_t i = 0; i < 4; ++i)
+            try
             {
-                if (Optional<std::string_view> addressStr = fields[2 + i].GetStringViewOrNull())
+                Field* fields = result->Fetch();
+                uint32 realmId = fields[0].GetUInt32();
+                std::string name = fields[1].GetString();
+                std::string externalAddressString = fields[2].GetString();
+                std::string localAddressString = fields[3].GetString();
+                std::string localSubmaskString = fields[4].GetString();
+
+                Optional<boost::asio::ip::tcp::endpoint> externalAddress = _resolver->Resolve(boost::asio::ip::tcp::v4(), externalAddressString, "");
+                if (!externalAddress)
                 {
-                    for (boost::asio::ip::tcp::endpoint const& endpoint : _resolver->ResolveAll(*addressStr, ""))
-                    {
-                        boost::asio::ip::address address = endpoint.address();
-                        if (advstd::ranges::contains(addresses, address))
-                            continue;
-
-                        addresses.push_back(std::move(address));
-                    }
+                    TC_LOG_ERROR("server.authserver", "Could not resolve address {} for realm \"{}\" id {}", externalAddressString, name, realmId);
+                    continue;
                 }
-            }
 
-            if (addresses.empty())
-            {
-                TC_LOG_ERROR("realmlist", "Could not resolve any address for realm \"{}\" id {}", name, realmId);
-                continue;
-            }
-
-            uint16 port = fields[6].GetUInt16();
-            uint8 icon = fields[7].GetUInt8();
-            if (icon == REALM_TYPE_FFA_PVP)
-                icon = REALM_TYPE_PVP;
-            if (icon >= MAX_CLIENT_REALM_TYPE)
-                icon = REALM_TYPE_NORMAL;
-            RealmFlags flag = ConvertLegacyRealmFlags(Trinity::Legacy::RealmFlags(fields[8].GetUInt8()));
-            uint8 timezone = fields[9].GetUInt8();
-            uint8 allowedSecurityLevel = fields[10].GetUInt8();
-            RealmPopulationState pop = ConvertLegacyPopulationState(Trinity::Legacy::RealmFlags(fields[8].GetUInt8()), fields[11].GetFloat());
-            uint32 build = fields[12].GetUInt32();
-            uint8 region = fields[13].GetUInt8();
-            uint8 battlegroup = fields[14].GetUInt8();
-
-            Battlenet::RealmHandle id{ region, battlegroup, realmId };
-
-            UpdateRealm(*newRealms.try_emplace(id, std::make_shared<Realm>()).first->second, id, build, name, std::move(addresses), port, icon,
-                flag, timezone, (allowedSecurityLevel <= SEC_ADMINISTRATOR ? AccountTypes(allowedSecurityLevel) : SEC_ADMINISTRATOR), pop);
-
-            newSubRegions.insert(Battlenet::RealmHandle{ region, battlegroup, 0 }.GetAddressString());
-
-            auto buildAddressesLogText = [&]
-            {
-                std::string text;
-                for (boost::asio::ip::address const& address : newRealms[id]->Addresses)
+                Optional<boost::asio::ip::tcp::endpoint> localAddress = _resolver->Resolve(boost::asio::ip::tcp::v4(), localAddressString, "");
+                if (!localAddress)
                 {
-                    text += address.to_string();
-                    text += ' ';
+                    TC_LOG_ERROR("server.authserver", "Could not resolve localAddress {} for realm \"{}\" id {}", localAddressString, name, realmId);
+                    continue;
                 }
-                return text;
-            };
 
-            if (!existingRealms.erase(id))
-                TC_LOG_INFO("realmlist", "Added realm \"{}\" at {}(port {}).", name, buildAddressesLogText(), port);
-            else
-                TC_LOG_DEBUG("realmlist", "Updating realm \"{}\" at {}(port {}).", name, buildAddressesLogText(), port);
+                Optional<boost::asio::ip::tcp::endpoint> localSubmask = _resolver->Resolve(boost::asio::ip::tcp::v4(), localSubmaskString, "");
+                if (!localSubmask)
+                {
+                    TC_LOG_ERROR("server.authserver", "Could not resolve localSubnetMask {} for realm \"{}\" id {}", localSubmaskString, name, realmId);
+                    continue;
+                }
+
+                uint16 port = fields[5].GetUInt16();
+                uint8 icon = fields[6].GetUInt8();
+                if (icon == REALM_TYPE_FFA_PVP)
+                    icon = REALM_TYPE_PVP;
+                if (icon >= MAX_CLIENT_REALM_TYPE)
+                    icon = REALM_TYPE_NORMAL;
+                RealmFlags flag = RealmFlags(fields[7].GetUInt8());
+                uint8 timezone = fields[8].GetUInt8();
+                uint8 allowedSecurityLevel = fields[9].GetUInt8();
+                float pop = fields[10].GetFloat();
+                uint32 build = fields[11].GetUInt32();
+
+                RealmHandle id{ realmId };
+
+                UpdateRealm(id, build, name, externalAddress->address(), localAddress->address(), localSubmask->address(), port, icon, flag,
+                    timezone, (allowedSecurityLevel <= SEC_ADMINISTRATOR ? AccountTypes(allowedSecurityLevel) : SEC_ADMINISTRATOR), pop);
+
+                if (!existingRealms.count(id))
+                    TC_LOG_INFO("server.authserver", "Added realm \"{}\" at {}:{}.", name, externalAddressString, port);
+                else
+                    TC_LOG_DEBUG("server.authserver", "Updating realm \"{}\" at {}:{}.", name, externalAddressString, port);
+
+                existingRealms.erase(id);
+            }
+            catch (std::exception& ex)
+            {
+                TC_LOG_ERROR("server.authserver", "Realmlist::UpdateRealms has thrown an exception: {}", ex.what());
+                ABORT();
+            }
         }
         while (result->NextRow());
     }
 
     for (auto itr = existingRealms.begin(); itr != existingRealms.end(); ++itr)
-        TC_LOG_INFO("realmlist", "Removed realm \"{}\".", itr->second);
-
-    {
-        std::scoped_lock lock(_realmsMutex);
-
-        _subRegions.swap(newSubRegions);
-        _realms.swap(newRealms);
-        _removedRealms.swap(existingRealms);
-
-        if (_currentRealmId)
-            if (std::shared_ptr<Realm> realm = Trinity::Containers::MapGetValuePtr(_realms, *_currentRealmId))
-                _currentRealmId = realm->Id;    // fill other fields of realm id
-    }
+        TC_LOG_INFO("server.authserver", "Removed realm \"{}\".", itr->second);
 
     if (_updateInterval)
     {
         _updateTimer->expires_after(std::chrono::seconds(_updateInterval));
-        _updateTimer->async_wait([this](boost::system::error_code const& error)
-        {
-            if (error)
-                return;
-
-            UpdateRealms();
-        });
+        _updateTimer->async_wait(std::bind(&RealmList::UpdateRealms, this, std::placeholders::_1));
     }
 }
 
-std::shared_ptr<Realm const> RealmList::GetRealm(Battlenet::RealmHandle const& id) const
+Realm const* RealmList::GetRealm(RealmHandle const& id) const
 {
-    std::shared_lock lock(_realmsMutex);
-    return Trinity::Containers::MapGetValuePtr(_realms, id);
-}
+    auto itr = _realms.find(id);
+    if (itr != _realms.end())
+        return &itr->second;
 
-Battlenet::RealmHandle RealmList::GetCurrentRealmId() const
-{
-    return _currentRealmId ? *_currentRealmId : Battlenet::RealmHandle();
-}
-
-void RealmList::SetCurrentRealmId(Battlenet::RealmHandle const& id)
-{
-    _currentRealmId = id;
-}
-
-std::shared_ptr<Realm const> RealmList::GetCurrentRealm() const
-{
-    if (_currentRealmId)
-        return GetRealm(*_currentRealmId);
     return nullptr;
-}
-
-std::vector<std::string> RealmList::GetSubRegions() const
-{
-    std::shared_lock lock(_realmsMutex);
-    return { _subRegions.begin(), _subRegions.end() };
-}
-
-void RealmList::FillRealmEntry(Realm const& realm, uint32 clientBuild, AccountTypes accountSecurityLevel, JSON::RealmList::RealmEntry* realmEntry) const
-{
-    realmEntry->set_wowrealmaddress(realm.Id.GetAddress());
-    realmEntry->set_cfgtimezonesid(1);
-    if (accountSecurityLevel >= realm.AllowedSecurityLevel || realm.PopulationLevel == RealmPopulationState::Offline)
-        realmEntry->set_populationstate(AsUnderlyingType(realm.PopulationLevel));
-    else
-        realmEntry->set_populationstate(AsUnderlyingType(RealmPopulationState::Locked));
-
-    realmEntry->set_cfgcategoriesid(realm.Timezone);
-
-    JSON::RealmList::ClientVersion* version = realmEntry->mutable_version();
-    if (ClientBuild::Info const* buildInfo = ClientBuild::GetBuildInfo(realm.Build))
-    {
-        version->set_versionmajor(buildInfo->MajorVersion);
-        version->set_versionminor(buildInfo->MinorVersion);
-        version->set_versionrevision(buildInfo->BugfixVersion);
-        version->set_versionbuild(buildInfo->Build);
-    }
-    else
-    {
-        version->set_versionmajor(6);
-        version->set_versionminor(2);
-        version->set_versionrevision(4);
-        version->set_versionbuild(realm.Build);
-    }
-
-    RealmFlags flag = realm.Flags;
-    if (realm.Build != clientBuild)
-        flag |= RealmFlags::VersionMismatch;
-
-    realmEntry->set_cfgrealmsid(realm.Id.Realm);
-    realmEntry->set_flags(AsUnderlyingType(flag));
-    realmEntry->set_name(realm.Name);
-    realmEntry->set_cfgconfigsid(realm.GetConfigId());
-    realmEntry->set_cfglanguagesid(1);
-}
-
-std::vector<uint8> RealmList::GetRealmEntryJSON(Battlenet::RealmHandle const& id, uint32 build, AccountTypes accountSecurityLevel) const
-{
-    std::vector<uint8> compressed;
-    if (std::shared_ptr<Realm const> realm = GetRealm(id))
-    {
-        if (realm->PopulationLevel != RealmPopulationState::Offline && realm->Build == build && accountSecurityLevel >= realm->AllowedSecurityLevel)
-        {
-            JSON::RealmList::RealmEntry realmEntry;
-            FillRealmEntry(*realm, build, accountSecurityLevel, &realmEntry);
-
-            std::string json = "JamJSONRealmEntry:" + JSON::Serialize(realmEntry);
-            CompressJson(json, &compressed);
-        }
-    }
-
-    return compressed;
-}
-
-std::vector<uint8> RealmList::GetRealmList(uint32 build, AccountTypes accountSecurityLevel, std::string const& subRegion) const
-{
-    JSON::RealmList::RealmListUpdates realmList;
-    {
-        std::shared_lock lock(_realmsMutex);
-        for (auto const& [_, realm] : _realms)
-        {
-            if (realm->Id.GetSubRegionAddress() != subRegion)
-                continue;
-
-            JSON::RealmList::RealmListUpdatePart* state = realmList.add_updates();
-            FillRealmEntry(*realm, build, accountSecurityLevel, state->mutable_update());
-            state->set_deleting(false);
-        }
-
-        for (auto const& [id, _] : _removedRealms)
-        {
-            if (id.GetSubRegionAddress() != subRegion)
-                continue;
-
-            JSON::RealmList::RealmListUpdatePart* state = realmList.add_updates();
-            state->set_wowrealmaddress(id.GetAddress());
-            state->set_deleting(true);
-        }
-    }
-
-    std::string json = "JSONRealmListUpdates:" + JSON::Serialize(realmList);
-    std::vector<uint8> compressed;
-    CompressJson(json, &compressed);
-    return compressed;
-}
-
-RealmJoinResult RealmList::JoinRealm(uint32 realmAddress, uint32 build, ClientBuild::VariantId const& buildVariant, boost::asio::ip::address const& clientAddress,
-    std::array<uint8, 32> const& clientSecret, LocaleConstant locale, std::string const& os, Minutes timezoneOffset, std::string const& accountName,
-    AccountTypes accountSecurityLevel) const
-{
-    if (std::shared_ptr<Realm const> realm = GetRealm(realmAddress))
-    {
-        if (realm->PopulationLevel == RealmPopulationState::Offline || realm->Build != build || accountSecurityLevel < realm->AllowedSecurityLevel)
-            return { .Result = ERROR_USER_SERVER_NOT_PERMITTED_ON_REALM };
-
-        boost::asio::ip::address addressForClient = realm->GetAddressForClient(clientAddress);
-
-        JSON::RealmList::RealmListServerIPAddresses serverAddresses;
-        JSON::RealmList::RealmIPAddressFamily* addressFamily = serverAddresses.add_families();
-        addressFamily->set_family(addressForClient.is_v6() ? 2 : 1);
-
-        JSON::RealmList::IPAddress* address = addressFamily->add_addresses();
-        address->set_ip(addressForClient.to_string());
-        address->set_port(realm->Port);
-
-        std::string json = "JSONRealmListServerIPAddresses:" + JSON::Serialize(serverAddresses);
-        std::vector<uint8> serverAddressesCompressed;
-
-        if (!CompressJson(json, &serverAddressesCompressed))
-            return { .Result = ERROR_UTIL_SERVER_FAILED_TO_SERIALIZE_RESPONSE };
-
-        std::vector<uint8> serverSecret(32);
-        Trinity::Crypto::GetRandomBytes(serverSecret);
-
-        std::array<uint8, 64> keyData;
-        auto keyDestItr = keyData.begin();
-        keyDestItr = std::ranges::copy(clientSecret, keyDestItr).out;
-        keyDestItr = std::ranges::copy(serverSecret, keyDestItr).out;
-
-        LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_BNET_GAME_ACCOUNT_LOGIN_INFO);
-        stmt->setBinary(0, keyData);
-        stmt->setString(1, clientAddress.to_string());
-        stmt->setUInt32(2, build);
-        stmt->setUInt8(3, locale);
-        stmt->setString(4, os);
-        stmt->setInt16(5, timezoneOffset.count());
-        stmt->setString(6, accountName);
-        LoginDatabase.DirectExecute(stmt);
-
-        JSON::RealmList::RealmJoinTicket joinTicket;
-        joinTicket.set_gameaccount(accountName);
-        joinTicket.set_platform(buildVariant.Platform);
-        joinTicket.set_clientarch(buildVariant.Arch);
-        joinTicket.set_type(buildVariant.Type);
-
-        std::string joinTicketJson = JSON::Serialize(joinTicket);
-
-        return {
-            .Result = ERROR_OK,
-            .JoinTicket = { joinTicketJson.begin(), joinTicketJson.end() },
-            .ServerAddresses = std::move(serverAddressesCompressed),
-            .JoinSecret = std::move(serverSecret)
-        };
-    }
-
-    return { .Result = ERROR_UTIL_SERVER_UNKNOWN_REALM };
 }

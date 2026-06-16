@@ -18,6 +18,7 @@
 #ifndef __TRINITY_VEHICLE_H
 #define __TRINITY_VEHICLE_H
 
+#include "ObjectDefines.h"
 #include "Object.h"
 #include "UniqueTrackablePtr.h"
 #include "Unit.h"
@@ -28,23 +29,18 @@ struct VehicleEntry;
 class Unit;
 class VehicleJoinEvent;
 
-class TC_GAME_API Vehicle final : public TransportBase
+class TC_GAME_API Vehicle : public TransportBase
 {
     public:
         Vehicle(Unit* unit, VehicleEntry const* vehInfo, uint32 creatureEntry);
         ~Vehicle();
-
-        Vehicle(Vehicle const& right) = delete;
-        Vehicle(Vehicle&& right) = delete;
-        Vehicle& operator=(Vehicle const& right) = delete;
-        Vehicle& operator=(Vehicle&& right) = delete;
 
         void Install();
         void Uninstall();
         void Reset(bool evading = false);
         void InstallAllAccessories(bool evading);
         void ApplyAllImmunities();
-        void InstallAccessory(uint32 entry, int8 seatId, bool minion, uint8 type, uint32 summonTime, Optional<uint32> rideSpellId = {});   // May be called from scripts
+        void InstallAccessory(uint32 entry, int8 seatId, bool minion, uint8 type, uint32 summonTime);   //! May be called from scripts
 
         Unit* GetBase() const { return _me; }
         VehicleEntry const* GetVehicleInfo() const { return _vehicleInfo; }
@@ -56,14 +52,14 @@ class TC_GAME_API Vehicle final : public TransportBase
         VehicleSeatAddon const* GetSeatAddonForSeatOfPassenger(Unit const* passenger) const;
         uint8 GetAvailableSeatCount() const;
 
-        bool AddVehiclePassenger(Unit* unit, int8 seatId = -1);
-        Vehicle* RemovePassenger(WorldObject* passenger) override;
+        bool AddPassenger(Unit* passenger, int8 seatId = -1);
+        void EjectPassenger(Unit* passenger, Unit* controller);
+        Vehicle* RemovePassenger(Unit* passenger);
         void RelocatePassengers();
         void RemoveAllPassengers();
         bool IsVehicleInUse() const;
         bool IsControllableVehicle() const;
 
-        SeatMap::iterator GetSeatIteratorForPassenger(Unit* passenger);
         SeatMap Seats;                                      ///< The collection of all seats on the vehicle. Including vacant ones.
 
         VehicleSeatEntry const* GetSeatForPassenger(Unit const* passenger) const;
@@ -71,7 +67,6 @@ class TC_GAME_API Vehicle final : public TransportBase
         void RemovePendingEventsForPassenger(Unit* passenger);
 
         Milliseconds GetDespawnDelay();
-        float GetPitch();
 
         std::string GetDebugInfo() const;
 
@@ -89,21 +84,24 @@ class TC_GAME_API Vehicle final : public TransportBase
             STATUS_UNINSTALLING,
         };
 
+        SeatMap::iterator GetSeatIteratorForPassenger(Unit* passenger);
         void InitMovementInfoForBase();
 
-        ObjectGuid GetTransportGUID() const override { return GetBase()->GetGUID(); }
-
-        float GetTransportOrientation() const override { return GetBase()->GetOrientation(); }
-
-        void AddPassenger(WorldObject* /*passenger*/, Position const& /*offset*/) override { ABORT_MSG("Vehicle cannot directly gain passengers without auras"); }
-
         /// This method transforms supplied transport offsets into global coordinates
-        Position GetPositionWithOffset(Position const& offset) const override { return GetBase()->GetPositionWithOffset(offset); }
+        void CalculatePassengerPosition(float& x, float& y, float& z, float* o /*= nullptr*/) const override
+        {
+            TransportBase::CalculatePassengerPosition(x, y, z, o,
+                GetBase()->GetPositionX(), GetBase()->GetPositionY(),
+                GetBase()->GetPositionZ(), GetBase()->GetOrientation());
+        }
 
         /// This method transforms supplied global coordinates into local offsets
-        Position GetPositionOffsetTo(Position const& endPos) const override { return GetBase()->GetPositionOffsetTo(endPos); }
-
-        int32 GetMapIdForSpawning() const override { return GetBase()->GetMapId(); }
+        void CalculatePassengerOffset(float& x, float& y, float& z, float* o /*= nullptr*/) const override
+        {
+            TransportBase::CalculatePassengerOffset(x, y, z, o,
+                GetBase()->GetPositionX(), GetBase()->GetPositionY(),
+                GetBase()->GetPositionZ(), GetBase()->GetOrientation());
+        }
 
         void RemovePendingEvent(VehicleJoinEvent* e);
         void RemovePendingEventsForSeat(int8 seatId);
@@ -120,6 +118,19 @@ class TC_GAME_API Vehicle final : public TransportBase
 
         typedef std::list<VehicleJoinEvent*> PendingJoinEventContainer;
         PendingJoinEventContainer _pendingJoinEvents;       ///< Collection of delayed join events for prospective passengers
+};
+
+class TC_GAME_API VehicleJoinEvent : public BasicEvent
+{
+    friend class Vehicle;
+    protected:
+        VehicleJoinEvent(Vehicle* v, Unit* u) : Target(v), Passenger(u), Seat(Target->Seats.end()) { }
+        bool Execute(uint64, uint32) override;
+        void Abort(uint64) override;
+
+        Vehicle* Target;
+        Unit* Passenger;
+        SeatMap::iterator Seat;
 };
 
 #endif

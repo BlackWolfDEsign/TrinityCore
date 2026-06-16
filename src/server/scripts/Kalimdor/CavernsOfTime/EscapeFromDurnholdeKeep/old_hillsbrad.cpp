@@ -1,4 +1,4 @@
- /*
+/*
  * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -49,9 +49,9 @@ enum Erozion
 };
 #define GOSSIP_HELLO_EROZION2   "[PH] Teleport please, i'm tired." //not in DB,maybe incorrect?
 
-//constexpr Position ThrallRespawnPositionAfterSkarloc(2062.934f, 229.14508f, 64.57113f, 2.338741064071655273);
-//constexpr Position ThrallRespawnPositionAfterHorseRide(2486.5637f, 624.09796f, 57.95088f, 4.136430263519287109);
-//constexpr Position ThrallRespawnPositionAfterMeetingTaretha(2660.0847f, 659.54816f, 62.020317f, 5.864306449890136718);
+Position const ThrallRespawnPositionAfterSkarloc(2062.934f, 229.14508f, 64.57113f, 2.338741064071655273);
+Position const ThrallRespawnPositionAfterHorseRide(2486.5637f, 624.09796f, 57.95088f, 4.136430263519287109);
+Position const ThrallRespawnPositionAfterMeetingTaretha(2660.0847f, 659.54816f, 62.020317f, 5.864306449890136718);
 
 /*######
 ## npc_erozion
@@ -92,7 +92,7 @@ struct npc_erozion : public ScriptedAI
             AddGossipItemFor(player, GOSSIP_MENU_EROZION, GOSSIP_OPTION_BOMB, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
 
         if (player->GetQuestStatus(QUEST_ENTRY_RETURN) == QUEST_STATUS_COMPLETE)
-            AddGossipItemFor(player, GossipOptionNpc::None, GOSSIP_HELLO_EROZION2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
+            AddGossipItemFor(player, GOSSIP_ICON_CHAT, GOSSIP_HELLO_EROZION2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 2);
 
         SendGossipMenuFor(player, 9778, me->GetGUID());
 
@@ -207,7 +207,7 @@ struct npc_thrall_old_hillsbrad : public EscortAI
     void InitializeAI() override
     {
         /* correct respawn positions after wipe cannot be used because of how waypoints are set up for this creature
-         * it would require splitting the path into 4 segments, moving it out of waypoint_path_node table and changing
+         * it would require splitting the path into 4 segments, moving it out of waypoint_data table and changing
          * all waypoint ids in WaypointReached function
         switch (instance->GetData(TYPE_THRALL_EVENT))
         {
@@ -434,11 +434,10 @@ struct npc_thrall_old_hillsbrad : public EscortAI
             DoUnmount();
     }
 
-    void JustReachedHome() override
+    void EnterEvadeMode(EvadeReason why) override
     {
-        EscortAI::JustReachedHome();
-        if (HadMount)
-            DoMount();
+        EscortAI::EnterEvadeMode(why);
+        Reset();
     }
 
     void JustSummoned(Creature* summoned) override
@@ -535,7 +534,7 @@ struct npc_thrall_old_hillsbrad : public EscortAI
         if (me->IsQuestGiver())
         {
             player->PrepareQuestMenu(me->GetGUID());
-            player->SendPreparedQuest(me);
+            player->SendPreparedQuest(me->GetGUID());
         }
 
         if (instance->GetBossState(DATA_LIEUTENANT_DRAKE) == DONE && instance->GetData(TYPE_THRALL_EVENT) == OH_ESCORT_PRISON_TO_SKARLOC)

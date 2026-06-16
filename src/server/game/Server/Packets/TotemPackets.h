@@ -15,12 +15,11 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_TOTEM_PACKETS_H
-#define TRINITYCORE_TOTEM_PACKETS_H
+#ifndef TotemPackets_h__
+#define TotemPackets_h__
 
-#include "ObjectGuid.h"
 #include "Packet.h"
-#include "PacketUtilities.h"
+#include "ObjectGuid.h"
 
 namespace WorldPackets
 {
@@ -29,41 +28,27 @@ namespace WorldPackets
         class TotemDestroyed final : public ClientPacket
         {
         public:
-            explicit TotemDestroyed(WorldPacket&& packet) : ClientPacket(CMSG_TOTEM_DESTROYED, std::move(packet)) { }
+            TotemDestroyed(WorldPacket&& packet) : ClientPacket(CMSG_TOTEM_DESTROYED, std::move(packet)) { }
 
             void Read() override;
 
-            ObjectGuid TotemGUID;
             uint8 Slot = 0;
         };
 
         class TotemCreated final : public ServerPacket
         {
         public:
-            explicit TotemCreated() : ServerPacket(SMSG_TOTEM_CREATED, 25) { }
+            TotemCreated() : ServerPacket(SMSG_TOTEM_CREATED, 1 + 8 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
-            ObjectGuid Totem;
-            int32 SpellID = 0;
-            WorldPackets::Duration<Milliseconds, int32> Duration;
             uint8 Slot = 0;
-            float TimeMod = 1.0f;
-            bool CannotDismiss = false;
-        };
-
-        class TotemMoved final : public ServerPacket
-        {
-        public:
-            explicit TotemMoved() : ServerPacket(SMSG_TOTEM_MOVED, 18) { }
-
-            WorldPacket const* Write() override;
-
             ObjectGuid Totem;
-            uint8 Slot = 0;
-            uint8 NewSlot = 0;
+            uint32 Duration = 0;
+            uint32 SpellID = 0;
+
         };
     }
 }
 
-#endif // TRINITYCORE_TOTEM_PACKETS_H
+#endif // TotemPackets_h__

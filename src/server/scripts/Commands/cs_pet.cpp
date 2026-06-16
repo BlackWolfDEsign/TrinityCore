@@ -17,9 +17,10 @@
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Language.h"
+#include "Log.h"
 #include "Map.h"
+#include "ObjectMgr.h"
 #include "Pet.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -48,7 +49,7 @@ class pet_commandscript : public CommandScript
 public:
     pet_commandscript() : CommandScript("pet_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable petCommandTable =
         {
@@ -94,21 +95,31 @@ public:
 
         // Everything looks OK, create new pet
         Pet* pet = player->CreateTamedPetFrom(creatureTarget);
+        if (!pet)
+        {
+            handler->PSendSysMessage("CreateTamedPetFrom returned null.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
 
         // "kill" original creature
         creatureTarget->DespawnOrUnsummon();
 
+        uint8 level = (creatureTarget->GetLevel() < (player->GetLevel() - 5)) ? (player->GetLevel() - 5) : player->GetLevel();
+
         // prepare visual effect for levelup
-        pet->SetLevel(player->GetLevel() - 1);
+        pet->SetUInt32Value(UNIT_FIELD_LEVEL, level - 1);
 
         // add to world
         pet->GetMap()->AddToMap(pet->ToCreature());
 
         // visual effect for levelup
-        pet->SetLevel(player->GetLevel());
+        pet->SetUInt32Value(UNIT_FIELD_LEVEL, level);
 
         // caster have pet now
         player->SetMinion(pet, true);
+
+        pet->InitTalentForLevel();
 
         pet->SavePetToDB(PET_SAVE_AS_CURRENT);
         player->PetSpellInitialize();

@@ -18,196 +18,99 @@
 #include "ChannelPackets.h"
 #include "Channel.h"
 #include "Errors.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::Channel
+WorldPackets::Channel::ChannelListRequest::ChannelListRequest(WorldPacket&& packet) : ClientPacket(std::move(packet))
 {
-WorldPacket const* ChannelListResponse::Write()
+    ASSERT(GetOpcode() == CMSG_CHANNEL_LIST || GetOpcode() == CMSG_CHANNEL_DISPLAY_LIST);
+}
+
+void WorldPackets::Channel::ChannelListRequest::Read()
 {
-    _worldPacket << Bits<1>(Display);
-    _worldPacket << SizedString::BitsSize<7>(_Channel);
-    _worldPacket << uint32(_ChannelFlags);
-    _worldPacket << Size<uint32>(Members);
-    _worldPacket << SizedString::Data(_Channel);
+    _worldPacket >> ChannelName;
+}
+
+WorldPacket const* WorldPackets::Channel::ChannelListResponse::Write()
+{
+    _worldPacket << uint8(Display);
+    _worldPacket << _Channel;
+    _worldPacket << uint8(_ChannelFlags);
+    _worldPacket << uint32(Members.size());
 
     for (ChannelPlayer const& player : Members)
     {
         _worldPacket << player.Guid;
-        _worldPacket << uint32(player.VirtualRealmAddress);
         _worldPacket << uint8(player.Flags);
     }
 
     return &_worldPacket;
 }
 
-WorldPacket const* ChannelNotify::Write()
+WorldPacket const* WorldPackets::Channel::ChannelNotify::Write()
 {
-    _worldPacket << Bits<6>(Type);
-    _worldPacket << SizedString::BitsSize<7>(_Channel);
-    _worldPacket << SizedString::BitsSize<6>(Sender);
+    _worldPacket << uint8(Type);
+    _worldPacket << _Channel;
 
-    _worldPacket << SenderGuid;
-    _worldPacket << SenderAccountID;
-    _worldPacket << uint32(SenderVirtualRealm);
-    _worldPacket << TargetGuid;
-    _worldPacket << uint32(TargetVirtualRealm);
-    _worldPacket << int32(ChatChannelID);
-
-    if (Type == CHAT_MODE_CHANGE_NOTICE)
+    switch (Type)
     {
-        _worldPacket << uint8(OldFlags);
-        _worldPacket << uint8(NewFlags);
-    }
-
-    _worldPacket << SizedString::Data(_Channel);
-    _worldPacket << SizedString::Data(Sender);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* ChannelNotifyJoined::Write()
-{
-    _worldPacket << SizedString::BitsSize<7>(_Channel);
-    _worldPacket << SizedString::BitsSize<11>(ChannelWelcomeMsg);
-    _worldPacket << uint32(_ChannelFlags);
-    _worldPacket << uint8(Unknown1107);
-    _worldPacket << int32(ChatChannelID);
-    _worldPacket << uint64(InstanceID);
-    _worldPacket << ChannelGUID;
-    _worldPacket << SizedString::Data(_Channel);
-    _worldPacket << SizedString::Data(ChannelWelcomeMsg);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* ChannelNotifyLeft::Write()
-{
-    _worldPacket << SizedString::BitsSize<7>(Channel);
-    _worldPacket << Bits<1>(Suspended);
-    _worldPacket << int32(ChatChannelID);
-    _worldPacket << SizedString::Data(Channel);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* UserlistAdd::Write()
-{
-    _worldPacket << AddedUserGUID;
-    _worldPacket << uint8(UserFlags);
-    _worldPacket << uint32(_ChannelFlags);
-    _worldPacket << uint32(ChannelID);
-    _worldPacket << SizedString::BitsSize<7>(ChannelName);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(ChannelName);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* UserlistRemove::Write()
-{
-    _worldPacket << RemovedUserGUID;
-    _worldPacket << uint32(_ChannelFlags);
-    _worldPacket << uint32(ChannelID);
-    _worldPacket << SizedString::BitsSize<7>(ChannelName);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(ChannelName);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* UserlistUpdate::Write()
-{
-    _worldPacket << UpdatedUserGUID;
-    _worldPacket << uint8(UserFlags);
-    _worldPacket << uint32(_ChannelFlags);
-    _worldPacket << int32(ChannelID);
-    _worldPacket << SizedString::BitsSize<7>(ChannelName);
-    _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(ChannelName);
-
-    return &_worldPacket;
-}
-
-ChannelCommand::ChannelCommand(WorldPacket&& packet) : ClientPacket(std::move(packet))
-{
-    switch (packet.GetOpcode())
-    {
-        case CMSG_CHAT_CHANNEL_ANNOUNCEMENTS:
-        case CMSG_CHAT_CHANNEL_DECLINE_INVITE:
-        case CMSG_CHAT_CHANNEL_DISPLAY_LIST:
-        case CMSG_CHAT_CHANNEL_LIST:
-        case CMSG_CHAT_CHANNEL_OWNER:
+        case CHAT_JOINED_NOTICE:
+        case CHAT_LEFT_NOTICE:
+        case CHAT_PASSWORD_CHANGED_NOTICE:
+        case CHAT_OWNER_CHANGED_NOTICE:
+        case CHAT_ANNOUNCEMENTS_ON_NOTICE:
+        case CHAT_ANNOUNCEMENTS_OFF_NOTICE:
+        case CHAT_MODERATION_ON_NOTICE:
+        case CHAT_MODERATION_OFF_NOTICE:
+        case CHAT_PLAYER_ALREADY_MEMBER_NOTICE:
+        case CHAT_INVITE_NOTICE:
+        case CHAT_VOICE_ON_NOTICE:
+        case CHAT_VOICE_OFF_NOTICE:
+            _worldPacket << SenderGuid;
+            break;
+        case CHAT_YOU_JOINED_NOTICE:
+            _worldPacket << uint8(NewFlags);
+            _worldPacket << int32(ChatChannelID);
+            _worldPacket << int32(InstanceID);
+            break;
+        case CHAT_YOU_LEFT_NOTICE:
+            _worldPacket << int32(ChatChannelID);
+            _worldPacket << uint8(Suspended);
+            break;
+        case CHAT_PLAYER_NOT_FOUND_NOTICE:
+        case CHAT_CHANNEL_OWNER_NOTICE:
+        case CHAT_PLAYER_NOT_BANNED_NOTICE:
+        case CHAT_PLAYER_INVITED_NOTICE:
+        case CHAT_PLAYER_INVITE_BANNED_NOTICE:
+            _worldPacket << Sender;
+            break;
+        case CHAT_MODE_CHANGE_NOTICE:
+            _worldPacket << SenderGuid;
+            _worldPacket << uint8(OldFlags);
+            _worldPacket << uint8(NewFlags);
+            break;
+        case CHAT_PLAYER_KICKED_NOTICE:
+        case CHAT_PLAYER_BANNED_NOTICE:
+        case CHAT_PLAYER_UNBANNED_NOTICE:
+            _worldPacket << TargetGuid;
+            _worldPacket << SenderGuid;
             break;
         default:
-            ABORT();
             break;
     }
+
+    return &_worldPacket;
 }
 
-void ChannelCommand::Read()
-{
-    _worldPacket >> SizedString::BitsSize<7>(ChannelName);
-
-    _worldPacket >> SizedString::Data(ChannelName);
-}
-
-ChannelPlayerCommand::ChannelPlayerCommand(WorldPacket&& packet) : ClientPacket(std::move(packet))
-{
-    switch (GetOpcode())
-    {
-        case CMSG_CHAT_CHANNEL_BAN:
-        case CMSG_CHAT_CHANNEL_INVITE:
-        case CMSG_CHAT_CHANNEL_KICK:
-        case CMSG_CHAT_CHANNEL_MODERATOR:
-        case CMSG_CHAT_CHANNEL_SET_OWNER:
-        case CMSG_CHAT_CHANNEL_SILENCE_ALL:
-        case CMSG_CHAT_CHANNEL_UNBAN:
-        case CMSG_CHAT_CHANNEL_UNMODERATOR:
-        case CMSG_CHAT_CHANNEL_UNSILENCE_ALL:
-            break;
-        default:
-            ABORT();
-            break;
-    }
-}
-
-void ChannelPlayerCommand::Read()
-{
-    _worldPacket >> SizedString::BitsSize<7>(ChannelName);
-    _worldPacket >> SizedString::BitsSize<9>(Name);
-
-    _worldPacket >> SizedString::Data(ChannelName);
-    _worldPacket >> SizedString::Data(Name);
-}
-
-void ChannelPassword::Read()
-{
-    _worldPacket >> SizedString::BitsSize<7>(ChannelName);
-    _worldPacket >> SizedString::BitsSize<7>(Password);
-
-    _worldPacket >> SizedString::Data(ChannelName);
-    _worldPacket >> SizedString::Data(Password);
-}
-
-void JoinChannel::Read()
+void WorldPackets::Channel::JoinChannel::Read()
 {
     _worldPacket >> ChatChannelId;
-    _worldPacket >> Bits<1>(CreateVoiceSession);
-    _worldPacket >> Bits<1>(Internal);
-    _worldPacket >> SizedString::BitsSize<7>(ChannelName);
-    _worldPacket >> SizedString::BitsSize<7>(Password);
-
-    _worldPacket >> SizedString::Data(ChannelName);
-    _worldPacket >> SizedString::Data(Password);
+    _worldPacket >> CreateVoiceSession;
+    _worldPacket >> Internal;
+    _worldPacket >> ChannelName;
+    _worldPacket >> Password;
 }
 
-void LeaveChannel::Read()
+void WorldPackets::Channel::LeaveChannel::Read()
 {
     _worldPacket >> ZoneChannelID;
-    _worldPacket >> SizedString::BitsSize<7>(ChannelName);
-    _worldPacket >> SizedString::Data(ChannelName);
-}
+    _worldPacket >> ChannelName;
 }

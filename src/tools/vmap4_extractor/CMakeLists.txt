@@ -8,23 +8,17 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_executable(vmap4extractor)
-
-CollectAndAddSourceFiles(
-  vmap4extractor
+CollectSourceFiles(
   ${CMAKE_CURRENT_SOURCE_DIR}
-  EXCLUDE
-  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
+  PRIVATE_SOURCES)
+
+add_executable(vmap4extractor ${PRIVATE_SOURCES})
 
 target_link_libraries(vmap4extractor
   PRIVATE
     trinity-core-interface
   PUBLIC
     extractor_common)
-
-target_include_directories(vmap4extractor
-  PRIVATE
-    ${CMAKE_CURRENT_BINARY_DIR})
 
 set_target_properties(vmap4extractor
   PROPERTIES

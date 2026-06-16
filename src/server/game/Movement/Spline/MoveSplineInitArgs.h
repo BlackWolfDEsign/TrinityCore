@@ -19,57 +19,32 @@
 #define TRINITYSERVER_MOVESPLINEINIT_ARGS_H
 
 #include "MoveSplineFlag.h"
-#include "MovementTypedefs.h"
 #include "ObjectGuid.h"
-#include "Optional.h"
+#include <vector>
 
 class Unit;
-
-enum class AnimTier : uint8;
 
 namespace Movement
 {
     typedef std::vector<Vector3> PointsArray;
 
-    struct FacingInfo
+    union FacingInfo
     {
-        struct
-        {
+        struct {
             float x, y, z;
         } f;
         ObjectGuid target;
         float angle;
 
-        MonsterMoveType type;
-
-        FacingInfo() : angle(0.0f), type(MONSTER_MOVE_NORMAL) { f.x = f.y = f.z = 0.0f; }
-    };
-
-    struct SpellEffectExtraData
-    {
-        ObjectGuid Target;
-        uint32 SpellVisualId = 0;
-        uint32 ProgressCurveId = 0;
-        uint32 ParabolicCurveId = 0;
-    };
-
-    struct TurnData
-    {
-        float StartFacing = 0.0f;
-        float TotalTurnRads = 0.0f;
-        float RadsPerSec = 0.0f;
-    };
-
-    struct AnimTierTransition
-    {
-        uint32 TierTransitionId = 0;
-        ::AnimTier AnimTier = ::AnimTier(0);
+        FacingInfo(float o) : angle(o) { }
+        FacingInfo(ObjectGuid t) : target(t) { }
+        FacingInfo() { }
     };
 
     struct MoveSplineInitArgs
     {
-        explicit MoveSplineInitArgs();
-        MoveSplineInitArgs(MoveSplineInitArgs&& args) noexcept;
+        MoveSplineInitArgs(size_t path_capacity = 16);
+        MoveSplineInitArgs(MoveSplineInitArgs&& args);
         ~MoveSplineInitArgs();
 
         PointsArray path;
@@ -78,22 +53,18 @@ namespace Movement
         int32 path_Idx_offset;
         float velocity;
         float parabolic_amplitude;
-        int32 effect_start_point;
-        int32 fade_object_duration_ms;
+        float time_perc;
         uint32 splineId;
         float initialOrientation;
-        Optional<SpellEffectExtraData> spellEffectExtra;
-        Optional<TurnData> turnData;
-        Optional<AnimTierTransition> animTier;
         bool walk;
         bool HasVelocity;
         bool TransformForTransport;
 
         /** Returns true to show that the arguments were configured correctly and MoveSpline initialization will succeed. */
-        bool Validate(Unit const* unit);
+        bool Validate(Unit* unit) const;
 
     private:
-        bool _checkPathLengths();
+        bool _checkPathBounds() const;
     };
 }
 

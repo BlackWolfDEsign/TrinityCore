@@ -20,6 +20,7 @@
 #include "ScriptMgr.h"
 #include "SpellScript.h"
 #include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "oculus.h"
 
 enum Texts
@@ -36,11 +37,10 @@ enum Spells
 {
     SPELL_SUMMON_UNSTABLE_SPHERE    = 50754,
     SPELL_MAGIC_PULL                = 51336,
+    SPELL_THUNDERING_STOMP          = 50774,
 
     SPELL_MAGIC_PULL_EFFECT         = 50770
 };
-
-#define SPELL_THUNDERING_STOMP DUNGEON_MODE<uint32>(50774, 59370)
 
 enum Events
 {
@@ -79,8 +79,8 @@ struct boss_drakos : public BossAI
 
     void OnSpellCast(SpellInfo const* spell) override
     {
-        if (spell->Id == SPELL_THUNDERING_STOMP)
-            if (roll_chance(50))
+        if (spell->Id == sSpellMgr->GetSpellIdForDifficulty(SPELL_THUNDERING_STOMP, me))
+            if (roll_chance_i(50))
                 Talk(SAY_STOMP);
     }
 
@@ -95,7 +95,7 @@ struct boss_drakos : public BossAI
         Talk(SAY_DEATH);
 
         // start achievement timer (kill Eregos within 20 min)
-        instance->TriggerGameEvent(ACHIEV_TIMED_START_EVENT);
+        instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
     }
 
     void UpdateAI(uint32 diff) override
@@ -131,12 +131,16 @@ struct boss_drakos : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 
 // 51336 - Magic Pull
 class spell_drakos_magic_pull : public SpellScript
 {
+    PrepareSpellScript(spell_drakos_magic_pull);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_MAGIC_PULL_EFFECT, SPELL_SUMMON_UNSTABLE_SPHERE });

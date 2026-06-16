@@ -16,90 +16,32 @@
  */
 
 #include "OpenSSLCrypto.h"
+#include "Errors.h"
 #include <openssl/crypto.h>
-#include <openssl/provider.h>
-#include <cstdlib>
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#include <openssl/provider.h>
 OSSL_PROVIDER* LegacyProvider;
+#endif
 
 void OpenSSLCrypto::threadsSetup([[maybe_unused]] boost::filesystem::path const& providerModulePath)
 {
-#ifdef VALGRIND
-    ValgrindRandomSetup();
-#endif
-
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #if TRINITY_PLATFORM == TRINITY_PLATFORM_WINDOWS
-    if (!std::getenv("OPENSSL_MODULES"))
-        OSSL_PROVIDER_set_default_search_path(nullptr, providerModulePath.string().c_str());
+    OSSL_PROVIDER_set_default_search_path(nullptr, providerModulePath.string().c_str());
+#define OPENSSL_LEGACY_PROVIDER_FILENAME "legacy.dll"
+#else
+#define OPENSSL_LEGACY_PROVIDER_FILENAME "legacy.so"
 #endif
     LegacyProvider = OSSL_PROVIDER_try_load(nullptr, "legacy", 1);
+    WPFatal(LegacyProvider != nullptr, "OpenSSL failed to load " OPENSSL_LEGACY_PROVIDER_FILENAME);
+#endif
 }
 
 void OpenSSLCrypto::threadsCleanup()
 {
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
     OSSL_PROVIDER_unload(LegacyProvider);
     OSSL_PROVIDER_set_default_search_path(nullptr, nullptr);
-}
-
-#ifdef VALGRIND
-#include <openssl/rand.h>
-
-RAND_METHOD const* default_rand;
-
-static int Valgrind_RAND_seed(const void* buf, int num)
-{
-    VALGRIND_DISCARD(VALGRIND_MAKE_MEM_DEFINED(buf, num));
-    return default_rand->seed(buf, num);
-}
-
-static int Valgrind_RAND_bytes(unsigned char* buf, int num)
-{
-    int ret = default_rand->bytes(buf, num);
-    VALGRIND_DISCARD(VALGRIND_MAKE_MEM_DEFINED(buf, num));
-    return ret;
-}
-
-static void Valgrind_RAND_cleanup(void)
-{
-    default_rand->cleanup();
-}
-
-static int Valgrind_RAND_add(const void* buf, int num, double randomness)
-{
-    VALGRIND_DISCARD(VALGRIND_MAKE_MEM_DEFINED(buf, num));
-    return default_rand->add(buf, num, randomness);
-}
-
-static int Valgrind_RAND_pseudorand(unsigned char* buf, int num)
-{
-    int ret = default_rand->pseudorand(buf, num);
-    VALGRIND_DISCARD(VALGRIND_MAKE_MEM_DEFINED(buf, num));
-    return ret;
-}
-
-static int Valgrind_RAND_status(void)
-{
-    return default_rand->status();
-}
-
-static RAND_METHOD valgrind_rand;
-
-void ValgrindRandomSetup()
-{
-    memset(&valgrind_rand, 0, sizeof(RAND_METHOD));
-    default_rand = RAND_get_rand_method();
-    if (default_rand->seed)
-        valgrind_rand.seed = &Valgrind_RAND_seed;
-    if (default_rand->bytes)
-        valgrind_rand.bytes = &Valgrind_RAND_bytes;
-    if (default_rand->cleanup)
-        valgrind_rand.cleanup = &Valgrind_RAND_cleanup;
-    if (default_rand->add)
-        valgrind_rand.add = &Valgrind_RAND_add;
-    if (default_rand->pseudorand)
-        valgrind_rand.pseudorand = &Valgrind_RAND_pseudorand;
-    if (default_rand->status)
-        valgrind_rand.status = &Valgrind_RAND_status;
-    RAND_set_rand_method(&valgrind_rand);
-}
 #endif
+}

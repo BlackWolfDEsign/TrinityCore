@@ -98,7 +98,7 @@ class at_ring_of_law : public AreaTriggerScript
 public:
     at_ring_of_law() : AreaTriggerScript("at_ring_of_law") { }
 
-    bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+    bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
     {
         if (InstanceScript* instance = player->GetInstanceScript())
         {
@@ -229,6 +229,7 @@ public:
                     Event_Timer = 5000;
                     break;
                 case 5:
+                    instance->UpdateEncounterStateForKilledCreature(NPC_GRIMSTONE, me);
                     instance->SetData(TYPE_RING_OF_LAW, DONE);
                     TC_LOG_DEBUG("scripts", "npc_grimstone: event reached end and set complete.");
                     break;
@@ -373,9 +374,9 @@ public:
         return GetBlackrockDepthsAI<npc_phalanxAI>(creature);
     }
 
-    struct npc_phalanxAI : public BossAI
+    struct npc_phalanxAI : public ScriptedAI
     {
-        npc_phalanxAI(Creature* creature) : BossAI(creature, BOSS_PHALANX)
+        npc_phalanxAI(Creature* creature) : ScriptedAI(creature)
         {
             Initialize();
         }
@@ -393,7 +394,6 @@ public:
 
         void Reset() override
         {
-            _Reset();
             Initialize();
         }
 
@@ -426,6 +426,8 @@ public:
                 DoCastVictim(SPELL_MIGHTYBLOW);
                 MightyBlow_Timer = 10000;
             } else MightyBlow_Timer -= diff;
+
+            DoMeleeAttackIfReady();
         }
     };
 };
@@ -481,7 +483,7 @@ class npc_lokhtos_darkbargainer : public CreatureScript
                     !player->HasItemCount(ITEM_THRORIUM_BROTHERHOOD_CONTRACT, 1, true) &&
                     player->HasItemCount(ITEM_SULFURON_INGOT))
                 {
-                    AddGossipItemFor(player, GossipOptionNpc::None, GOSSIP_ITEM_GET_CONTRACT, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
+                    AddGossipItemFor(player, GOSSIP_ICON_CHAT, GOSSIP_ITEM_GET_CONTRACT, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 1);
                 }
 
                 if (player->GetReputationRank(59) < REP_FRIENDLY)
@@ -603,7 +605,7 @@ public:
             EscortAI::UpdateAI(diff);
         }
 
-        void OnQuestReward(Player* /*player*/, Quest const* quest, LootItemType /*type*/, uint32 /*item*/) override
+        void OnQuestReward(Player* /*player*/, Quest const* quest, uint32 /*item*/) override
         {
             if (instance->GetData(TYPE_BAR) == DONE || instance->GetData(TYPE_BAR) == SPECIAL)
                 return;

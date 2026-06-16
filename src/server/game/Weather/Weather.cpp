@@ -19,8 +19,8 @@
     \ingroup world
 */
 
-#include "GameTime.h"
 #include "Weather.h"
+#include "GameTime.h"
 #include "Log.h"
 #include "Map.h"
 #include "MiscPackets.h"
@@ -95,7 +95,7 @@ bool Weather::ReGenerate()
     time_t gtime = GameTime::GetGameTime();
     struct tm ltime;
     localtime_r(&gtime, &ltime);
-    uint32 season = ((ltime.tm_yday - 78 + 365) / 91) % 4;
+    uint32 season = ((ltime.tm_yday - 78 + 365)/91)%4;
 
     static char const* seasonName[WEATHER_SEASONS] = { "spring", "summer", "fall", "winter" };
 
@@ -150,8 +150,8 @@ bool Weather::ReGenerate()
 
     // At this point, only weather that isn't doing anything remains but that have weather data
     uint32 chance1 = m_weatherChances->data[season].rainChance;
-    uint32 chance2 = chance1 + m_weatherChances->data[season].snowChance;
-    uint32 chance3 = chance2 + m_weatherChances->data[season].stormChance;
+    uint32 chance2 = chance1+ m_weatherChances->data[season].snowChance;
+    uint32 chance3 = chance2+ m_weatherChances->data[season].stormChance;
 
     uint32 rnd = urand(1, 100);
     if (rnd <= chance1)
@@ -175,16 +175,16 @@ bool Weather::ReGenerate()
     }
     else if (u < 90)
     {
-        m_intensity = rand_norm() * 0.3333f;
+        m_intensity = (float)rand_norm() * 0.3333f;
     }
     else
     {
         // Severe change, but how severe?
         rnd = urand(0, 99);
         if (rnd < 50)
-            m_intensity = rand_norm() * 0.3333f + 0.3334f;
+            m_intensity = (float)rand_norm() * 0.3333f + 0.3334f;
         else
-            m_intensity = rand_norm() * 0.3333f + 0.6667f;
+            m_intensity = (float)rand_norm() * 0.3333f + 0.6667f;
     }
 
     // return true only in case weather changes

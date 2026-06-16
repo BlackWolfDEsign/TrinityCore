@@ -18,27 +18,25 @@
 #ifndef _WORLDPACKETCRYPT_H
 #define _WORLDPACKETCRYPT_H
 
-#include "AES.h"
+#include "ARC4.h"
+#include "AuthDefines.h"
+#include <span>
 
 class TC_COMMON_API WorldPacketCrypt
 {
 public:
-    using Key = std::array<uint8, 32>;
-
     WorldPacketCrypt();
 
-    void Init(Key const& key);
-    bool PeekDecryptRecv(uint8* data, size_t length);
-    bool DecryptRecv(uint8* data, size_t length, Trinity::Crypto::AES::Tag& tag);
-    bool EncryptSend(uint8* data, size_t length, Trinity::Crypto::AES::Tag& tag);
+    void Init(SessionKey const& K);
+    void Init(SessionKey const& K, std::span<uint8 const, 16> serverKey, std::span<uint8 const, 16> clientKey);
+    void DecryptRecv(uint8* data, size_t len);
+    void EncryptSend(uint8* data, size_t len);
 
     bool IsInitialized() const { return _initialized; }
 
-protected:
-    Trinity::Crypto::AES _clientDecrypt;
-    Trinity::Crypto::AES _serverEncrypt;
-    uint64 _clientCounter;
-    uint64 _serverCounter;
+private:
+    Trinity::Crypto::ARC4 _clientDecrypt;
+    Trinity::Crypto::ARC4 _serverEncrypt;
     bool _initialized;
 };
 

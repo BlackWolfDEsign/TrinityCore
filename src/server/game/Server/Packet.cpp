@@ -22,14 +22,13 @@ WorldPackets::Packet::Packet(WorldPacket&& worldPacket) : _worldPacket(std::move
 {
 }
 
-WorldPackets::ServerPacket::ServerPacket(OpcodeServer opcode, size_t initialSize /*= 200*/, ConnectionType connection /*= CONNECTION_TYPE_DEFAULT*/)
-    : Packet(WorldPacket(opcode, initialSize, connection))
+WorldPackets::ServerPacket::ServerPacket(OpcodeServer opcode, size_t initialSize /*= 200*/) : Packet(WorldPacket(opcode, initialSize))
 {
 }
 
 void WorldPackets::ServerPacket::Read()
 {
-    ABORT_MSG("Read not implemented for server packets.");
+    ASSERT(!"Read not implemented for server packets.");
 }
 
 WorldPackets::ClientPacket::ClientPacket(OpcodeClient expectedOpcode, WorldPacket&& packet) : Packet(std::move(packet))
@@ -37,13 +36,14 @@ WorldPackets::ClientPacket::ClientPacket(OpcodeClient expectedOpcode, WorldPacke
     ASSERT(GetOpcode() == expectedOpcode);
 }
 
-WorldPackets::ClientPacket::ClientPacket(WorldPacket&& packet) : Packet(std::move(packet))
+WorldPackets::ClientPacket::ClientPacket(WorldPacket&& packet)
+    : Packet(std::move(packet))
 {
 }
 
 WorldPacket const* WorldPackets::ClientPacket::Write()
 {
-    ABORT_MSG("Write not allowed for client packets.");
+    ASSERT(!"Write not allowed for client packets.");
     // Shut up some compilers
     return nullptr;
 }

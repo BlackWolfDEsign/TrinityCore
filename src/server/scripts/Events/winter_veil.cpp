@@ -19,6 +19,7 @@
 #include "Containers.h"
 #include "CreatureAIImpl.h"
 #include "Player.h"
+#include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 
@@ -32,6 +33,8 @@ enum Mistletoe
 // 26218 - Mistletoe
 class spell_winter_veil_mistletoe : public SpellScript
 {
+    PrepareSpellScript(spell_winter_veil_mistletoe);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo(
@@ -44,11 +47,7 @@ class spell_winter_veil_mistletoe : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        if (Player* target = GetHitPlayer())
-        {
-            uint32 spellId = RAND(SPELL_CREATE_HOLLY, SPELL_CREATE_MISTLETOE, SPELL_CREATE_SNOWFLAKES);
-            GetCaster()->CastSpell(target, spellId, true);
-        }
+        GetCaster()->CastSpell(GetHitUnit(), RAND(SPELL_CREATE_HOLLY, SPELL_CREATE_MISTLETOE, SPELL_CREATE_SNOWFLAKES), true);
     }
 
     void Register() override
@@ -76,23 +75,22 @@ std::array<uint32, 4> const WonderboltTransformSpells =
 // 26275 - PX-238 Winter Wondervolt TRAP
 class spell_winter_veil_px_238_winter_wondervolt : public SpellScript
 {
+    PrepareSpellScript(spell_winter_veil_px_238_winter_wondervolt);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo(WonderboltTransformSpells);
     }
 
-    void HandleScript(SpellEffIndex effIndex)
+    void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        PreventHitDefaultEffect(effIndex);
+        Unit* target = GetHitUnit();
 
-        if (Unit* target = GetHitUnit())
-        {
-            for (uint32 spell : WonderboltTransformSpells)
-                if (target->HasAura(spell))
-                    return;
+        for (uint32 spell : WonderboltTransformSpells)
+            if (target->HasAura(spell))
+                return;
 
-            target->CastSpell(target, Trinity::Containers::SelectRandomContainerElement(WonderboltTransformSpells), true);
-        }
+        target->CastSpell(target, Trinity::Containers::SelectRandomContainerElement(WonderboltTransformSpells), true);
     }
 
     void Register() override
@@ -113,6 +111,8 @@ enum ReindeerTransformation
 // 25860 - Reindeer Transformation
 class spell_winter_veil_reindeer_transformation : public SpellScript
 {
+    PrepareSpellScript(spell_winter_veil_reindeer_transformation);
+
     bool Validate(SpellInfo const* /*spell*/) override
     {
         return ValidateSpellInfo(

@@ -24,7 +24,6 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Language.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -37,7 +36,7 @@ class honor_commandscript : public CommandScript
 public:
     honor_commandscript() : CommandScript("honor_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable honorAddCommandTable =
         {
@@ -58,7 +57,7 @@ public:
         return commandTable;
     }
 
-    static bool HandleHonorAddCommand(ChatHandler* handler, int32 amount)
+    static bool HandleHonorAddCommand(ChatHandler* handler, uint32 amount)
     {
         Player* target = handler->getSelectedPlayer();
         if (!target)
@@ -72,7 +71,7 @@ public:
         if (handler->HasLowerSecurity(target, ObjectGuid::Empty))
             return false;
 
-        target->RewardHonor(nullptr, 1, amount, HonorGainSource::Spell);
+        target->RewardHonor(nullptr, 1, amount);
         return true;
     }
 
@@ -91,7 +90,7 @@ public:
             if (handler->HasLowerSecurity(player, ObjectGuid::Empty))
                 return false;
 
-        handler->GetSession()->GetPlayer()->RewardHonor(target, 1, -1, HonorGainSource::Kill);
+        handler->GetSession()->GetPlayer()->RewardHonor(target, 1);
         return true;
     }
 

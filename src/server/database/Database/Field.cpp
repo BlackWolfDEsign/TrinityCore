@@ -26,219 +26,138 @@ Field::Field() : _value(nullptr), _length(0), _meta(nullptr)
 
 Field::~Field() = default;
 
-uint8 Field::GetUInt8() const noexcept
+uint8 Field::GetUInt8() const
 {
-    if (_value)
-        return _meta->Converter->GetUInt8(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetUInt8(_value, _length, _meta);
 }
 
-int8 Field::GetInt8() const noexcept
+int8 Field::GetInt8() const
 {
-    if (_value)
-        return _meta->Converter->GetInt8(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetInt8(_value, _length, _meta);
 }
 
-uint16 Field::GetUInt16() const noexcept
+uint16 Field::GetUInt16() const
 {
-    if (_value)
-        return _meta->Converter->GetUInt16(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetUInt16(_value, _length, _meta);
 }
 
-int16 Field::GetInt16() const noexcept
+int16 Field::GetInt16() const
 {
-    if (_value)
-        return _meta->Converter->GetInt16(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetInt16(_value, _length, _meta);
 }
 
-uint32 Field::GetUInt32() const noexcept
+uint32 Field::GetUInt32() const
 {
-    if (_value)
-        return _meta->Converter->GetUInt32(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetUInt32(_value, _length, _meta);
 }
 
-int32 Field::GetInt32() const noexcept
+int32 Field::GetInt32() const
 {
-    if (_value)
-        return _meta->Converter->GetInt32(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetInt32(_value, _length, _meta);
 }
 
-uint64 Field::GetUInt64() const noexcept
+uint64 Field::GetUInt64() const
 {
-    if (_value)
-        return _meta->Converter->GetUInt64(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetUInt64(_value, _length, _meta);
 }
 
-int64 Field::GetInt64() const noexcept
+int64 Field::GetInt64() const
 {
-    if (_value)
-        return _meta->Converter->GetInt64(_value, _length, _meta);
-    return 0;
+    if (!_value)
+        return 0;
+
+    return _meta->Converter->GetInt64(_value, _length, _meta);
 }
 
-float Field::GetFloat() const noexcept
+float Field::GetFloat() const
 {
-    if (_value)
-        return _meta->Converter->GetFloat(_value, _length, _meta);
-    return 0.0f;
+    if (!_value)
+        return 0.0f;
+
+    return _meta->Converter->GetFloat(_value, _length, _meta);
 }
 
-double Field::GetDouble() const noexcept
+double Field::GetDouble() const
 {
-    if (_value)
-        return _meta->Converter->GetDouble(_value, _length, _meta);
-    return 0.0;
+    if (!_value)
+        return 0.0;
+
+    return _meta->Converter->GetDouble(_value, _length, _meta);
 }
 
-SystemTimePoint Field::GetDate() const noexcept
+SystemTimePoint Field::GetDate() const
 {
-    if (_value)
-        return _meta->Converter->GetDate(_value, _length, _meta);
-    return SystemTimePoint::min();
+    if (!_value)
+        return SystemTimePoint::min();
+
+    return _meta->Converter->GetDate(_value, _length, _meta);
 }
 
-char const* Field::GetCString() const noexcept
+char const* Field::GetCString() const
 {
-    if (_value)
-        return _meta->Converter->GetCString(_value, _length, _meta);
-    return nullptr;
+    if (!_value)
+        return nullptr;
+
+    return _meta->Converter->GetCString(_value, _length, _meta);
 }
 
-std::string Field::GetString() const noexcept
+std::string Field::GetString() const
 {
-    return std::string(GetStringView());
+    if (!_value)
+        return "";
+
+    char const* string = GetCString();
+    if (!string)
+        return "";
+
+    return std::string(string, _length);
 }
 
-std::string_view Field::GetStringView() const noexcept
+std::string_view Field::GetStringView() const
 {
-    if (char const* string = GetCString())
-        return { string, _length };
-    return {};
+    if (!_value)
+        return {};
+
+    char const* const string = GetCString();
+    if (!string)
+        return {};
+
+    return { string, _length };
 }
 
-std::vector<uint8> Field::GetBinary() const noexcept
+std::vector<uint8> Field::GetBinary() const
 {
-    std::span<uint8 const> binary = GetBinaryView();
-    return { binary.begin(), binary.end() };
+    std::vector<uint8> result;
+    if (!_value || !_length)
+        return result;
+
+    result.resize(_length);
+    memcpy(result.data(), _value, _length);
+    return result;
 }
 
-std::span<uint8 const> Field::GetBinaryView() const noexcept
-{
-    return { reinterpret_cast<uint8 const*>(_value), _length };
-}
-
-Optional<uint8> Field::GetUInt8OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetUInt8(_value, _length, _meta);
-    return {};
-}
-
-Optional<int8> Field::GetInt8OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetInt8(_value, _length, _meta);
-    return {};
-}
-
-Optional<uint16> Field::GetUInt16OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetUInt16(_value, _length, _meta);
-    return {};
-}
-
-Optional<int16> Field::GetInt16OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetInt16(_value, _length, _meta);
-    return {};
-}
-
-Optional<uint32> Field::GetUInt32OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetUInt32(_value, _length, _meta);
-    return {};
-}
-
-Optional<int32> Field::GetInt32OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetInt32(_value, _length, _meta);
-    return {};
-}
-
-Optional<uint64> Field::GetUInt64OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetUInt64(_value, _length, _meta);
-    return {};
-}
-
-Optional<int64> Field::GetInt64OrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetInt64(_value, _length, _meta);
-    return {};
-}
-
-Optional<float> Field::GetFloatOrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetFloat(_value, _length, _meta);
-    return {};
-}
-
-Optional<double> Field::GetDoubleOrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetDouble(_value, _length, _meta);
-    return {};
-}
-
-Optional<SystemTimePoint> Field::GetDateOrNull() const noexcept
-{
-    if (_value)
-        return _meta->Converter->GetDate(_value, _length, _meta);
-    return {};
-}
-
-Optional<std::string> Field::GetStringOrNull() const noexcept
-{
-    if (Optional<std::string_view> string = GetStringViewOrNull())
-        return Optional<std::string>(std::in_place, *string);
-    return {};
-}
-
-Optional<std::string_view> Field::GetStringViewOrNull() const noexcept
-{
-    if (char const* string = GetCString())
-        return Optional<std::string_view>(std::in_place, string, _length);
-    return {};
-}
-
-Optional<std::vector<uint8>> Field::GetBinaryOrNull() const noexcept
-{
-    if (Optional<std::span<uint8 const>> binary = GetBinaryViewOrNull())
-        return Optional<std::vector<uint8>>(std::in_place, binary->begin(), binary->end());
-    return {};
-}
-
-Optional<std::span<uint8 const>> Field::GetBinaryViewOrNull() const noexcept
-{
-    if (_value)
-        return Optional<std::span<uint8 const>>(std::in_place, reinterpret_cast<uint8 const*>(_value), _length);
-    return {};
-}
-
-void Field::GetBinarySizeChecked(uint8* buf, size_t length) const noexcept
+void Field::GetBinarySizeChecked(uint8* buf, size_t length) const
 {
     ASSERT(_value && (_length == length), "Expected %zu-byte binary blob, got %sdata (%u bytes) instead", length, _value ? "" : "no ", _length);
     memcpy(buf, _value, length);

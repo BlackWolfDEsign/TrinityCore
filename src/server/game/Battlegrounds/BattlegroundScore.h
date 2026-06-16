@@ -18,68 +18,113 @@
 #ifndef TRINITY_BATTLEGROUND_SCORE_H
 #define TRINITY_BATTLEGROUND_SCORE_H
 
-#include "BattlegroundPackets.h"
+#include "Errors.h"
 #include "ObjectGuid.h"
-#include <map>
-#include <string>
+#include "SharedDefines.h"
 
-struct BattlegroundPlayerScoreTemplate;
+namespace WorldPackets::Battleground
+{
+struct PVPLogData_Player;
+}
+
+class WorldPacket;
 
 enum ScoreType
 {
-    // ALL
     SCORE_KILLING_BLOWS         = 1,
     SCORE_DEATHS                = 2,
     SCORE_HONORABLE_KILLS       = 3,
     SCORE_BONUS_HONOR           = 4,
     SCORE_DAMAGE_DONE           = 5,
-    SCORE_HEALING_DONE          = 6
+    SCORE_HEALING_DONE          = 6,
+
+    // WS and EY
+    SCORE_FLAG_CAPTURES         = 7,
+    SCORE_FLAG_RETURNS          = 8,
+
+    // AB and IC
+    SCORE_BASES_ASSAULTED       = 9,
+    SCORE_BASES_DEFENDED        = 10,
+
+    // AV
+    SCORE_GRAVEYARDS_ASSAULTED  = 11,
+    SCORE_GRAVEYARDS_DEFENDED   = 12,
+    SCORE_TOWERS_ASSAULTED      = 13,
+    SCORE_TOWERS_DEFENDED       = 14,
+    SCORE_MINES_CAPTURED        = 15,
+
+    // SOTA
+    SCORE_DESTROYED_DEMOLISHER  = 16,
+    SCORE_DESTROYED_WALL        = 17
 };
 
 struct BattlegroundScore
 {
-    BattlegroundScore(ObjectGuid playerGuid, uint32 team, std::unordered_set<uint32> const* pvpStatIds);
-    virtual ~BattlegroundScore();
+    friend class Arena;
+    friend class Battleground;
 
-    void UpdateScore(uint32 type, uint32 value);
-    void UpdatePvpStat(uint32 pvpStatID, uint32 value);
+    protected:
+        BattlegroundScore(ObjectGuid playerGuid) : PlayerGuid(playerGuid), KillingBlows(0), Deaths(0),
+            HonorableKills(0), BonusHonor(0), DamageDone(0), HealingDone(0) { }
 
-    // For Logging purpose
-    std::string ToString() const;
+        virtual ~BattlegroundScore() { }
 
-    uint32 GetKillingBlows() const { return KillingBlows; }
-    uint32 GetDeaths() const { return Deaths; }
-    uint32 GetHonorableKills() const { return HonorableKills; }
-    uint32 GetBonusHonor() const { return BonusHonor; }
-    uint32 GetDamageDone() const { return DamageDone; }
-    uint32 GetHealingDone() const { return HealingDone; }
+        virtual void UpdateScore(uint32 type, uint32 value)
+        {
+            switch (type)
+            {
+                case SCORE_KILLING_BLOWS:   // Killing blows
+                    KillingBlows += value;
+                    break;
+                case SCORE_DEATHS:          // Deaths
+                    Deaths += value;
+                    break;
+                case SCORE_HONORABLE_KILLS: // Honorable kills
+                    HonorableKills += value;
+                    break;
+                case SCORE_BONUS_HONOR:     // Honor bonus
+                    BonusHonor += value;
+                    break;
+                case SCORE_DAMAGE_DONE:     // Damage Done
+                    DamageDone += value;
+                    break;
+                case SCORE_HEALING_DONE:    // Healing Done
+                    HealingDone += value;
+                    break;
+                default:
+                    ABORT_MSG("Not implemented Battleground score type!");
+                    break;
+            }
+        }
 
-    uint32 GetAttr(uint8 index) const;
+        virtual void AppendToPacket(WorldPackets::Battleground::PVPLogData_Player& playerData);
+        virtual void BuildObjectivesBlock(WorldPackets::Battleground::PVPLogData_Player& playerData) = 0;
 
-    void BuildPvPLogPlayerDataPacket(WorldPackets::Battleground::PVPMatchStatistics::PVPMatchPlayerStatistics& playerData) const;
+        // For Logging purpose
+        virtual std::string ToString() const { return ""; }
 
-protected:
+        uint32 GetKillingBlows() const    { return KillingBlows; }
+        uint32 GetDeaths() const          { return Deaths; }
+        uint32 GetHonorableKills() const  { return HonorableKills; }
+        uint32 GetBonusHonor() const      { return BonusHonor; }
+        uint32 GetDamageDone() const      { return DamageDone; }
+        uint32 GetHealingDone() const     { return HealingDone; }
 
-    ObjectGuid PlayerGuid;
-    uint8 TeamId; // PvPTeamId
+        virtual uint32 GetAttr1() const { return 0; }
+        virtual uint32 GetAttr2() const { return 0; }
+        virtual uint32 GetAttr3() const { return 0; }
+        virtual uint32 GetAttr4() const { return 0; }
+        virtual uint32 GetAttr5() const { return 0; }
 
-    // Default score, present in every type
-    uint32 KillingBlows;
-    uint32 Deaths;
-    uint32 HonorableKills;
-    uint32 BonusHonor;
-    uint32 DamageDone;
-    uint32 HealingDone;
+        ObjectGuid PlayerGuid;
 
-    uint32 PreMatchRating;
-    uint32 PreMatchMMR;
-    uint32 PostMatchRating;
-    uint32 PostMatchMMR;
-
-    std::map<uint32 /*pvpStatID*/, uint32 /*value*/> PvpStats;
-
-private:
-    std::unordered_set<uint32> const* _validPvpStatIds;
+        // Default score, present in every type
+        uint32 KillingBlows;
+        uint32 Deaths;
+        uint32 HonorableKills;
+        uint32 BonusHonor;
+        uint32 DamageDone;
+        uint32 HealingDone;
 };
 
 #endif // TRINITY_BATTLEGROUND_SCORE_H

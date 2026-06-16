@@ -21,15 +21,15 @@
 #include <memory>
 #include <random>
 
-namespace
-{
-constexpr RandomEngine engine;
+static thread_local std::unique_ptr<SFMTRand> sfmtRand;
+static RandomEngine engine;
 
-SFMTRand* GetRng() noexcept
+static SFMTRand* GetRng()
 {
-    thread_local std::unique_ptr<SFMTRand> sfmtRand = std::make_unique<SFMTRand>();
+    if (!sfmtRand)
+        sfmtRand = std::make_unique<SFMTRand>();
+
     return sfmtRand.get();
-}
 }
 
 int32 irand(int32 min, int32 max)
@@ -63,8 +63,8 @@ Milliseconds randtime(Milliseconds min, Milliseconds max)
 {
     long long diff = max.count() - min.count();
     ASSERT(diff >= 0);
-    ASSERT(diff <= 0xFFFFFFFF);
-    return min + Milliseconds(urand(0, uint32(diff)));
+    ASSERT(diff <= (uint32)-1);
+    return min + Milliseconds(urand(0, diff));
 }
 
 uint32 rand32()
@@ -72,15 +72,15 @@ uint32 rand32()
     return GetRng()->RandomUInt32();
 }
 
-float rand_norm()
+double rand_norm()
 {
-    std::uniform_real_distribution<float> urd;
+    std::uniform_real_distribution<double> urd;
     return urd(engine);
 }
 
-float rand_chance()
+double rand_chance()
 {
-    std::uniform_real_distribution<float> urd(0.0f, 100.0f);
+    std::uniform_real_distribution<double> urd(0.0, 100.0);
     return urd(engine);
 }
 
@@ -88,4 +88,9 @@ uint32 urandweighted(size_t count, double const* chances)
 {
     std::discrete_distribution<uint32> dd(chances, chances + count);
     return dd(engine);
+}
+
+RandomEngine& RandomEngine::Instance()
+{
+    return engine;
 }

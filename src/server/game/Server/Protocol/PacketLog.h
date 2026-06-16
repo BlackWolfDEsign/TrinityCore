@@ -19,6 +19,8 @@
 #define TRINITY_PACKETLOG_H
 
 #include "Common.h"
+
+#include <boost/asio/ip/address.hpp>
 #include <mutex>
 
 enum Direction
@@ -28,18 +30,6 @@ enum Direction
 };
 
 class WorldPacket;
-enum ConnectionType : int8;
-
-namespace boost
-{
-    namespace asio
-    {
-        namespace ip
-        {
-            class address;
-        }
-    }
-}
 
 class TC_GAME_API PacketLog
 {
@@ -50,16 +40,11 @@ class TC_GAME_API PacketLog
         std::once_flag _initializeFlag;
 
     public:
-        PacketLog(PacketLog const&) = delete;
-        PacketLog(PacketLog&&) = delete;
-        PacketLog& operator=(PacketLog const&) = delete;
-        PacketLog& operator=(PacketLog&&) = delete;
-
         static PacketLog* instance();
 
         void Initialize();
         bool CanLogPacket() const { return (_file != nullptr); }
-        void LogPacket(WorldPacket const& packet, Direction direction, boost::asio::ip::address const& addr, uint16 port, ConnectionType connectionType);
+        void LogPacket(WorldPacket const& packet, Direction direction, boost::asio::ip::address const& addr, uint16 port);
 
     private:
         FILE* _file;

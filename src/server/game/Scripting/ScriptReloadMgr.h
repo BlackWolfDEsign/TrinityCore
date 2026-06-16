@@ -18,14 +18,10 @@
 #ifndef SCRIPT_RELOADER_H
 #define SCRIPT_RELOADER_H
 
-#include "Define.h"
 #include <memory>
 #include <string>
-
-namespace boost::filesystem
-{
-class path;
-}
+#include "Define.h"
+#include <boost/filesystem/path.hpp>
 
 /// Represents a strong reference to a dynamic library which
 /// provides C++ scripts. As long as one reference to the library exists
@@ -38,7 +34,7 @@ class path;
 class ModuleReference
 {
 public:
-    virtual ~ModuleReference() = default;
+    virtual ~ModuleReference() { }
 
     /// Returns the git revision hash of the referenced script module
     virtual char const* GetScriptModuleRevisionHash() const = 0;
@@ -56,14 +52,10 @@ public:
 class TC_GAME_API ScriptReloadMgr
 {
 protected:
-    ScriptReloadMgr() = default;
+    ScriptReloadMgr() { }
 
 public:
-    ScriptReloadMgr(ScriptReloadMgr const&) = delete;
-    ScriptReloadMgr(ScriptReloadMgr&&) = delete;
-    ScriptReloadMgr& operator=(ScriptReloadMgr const&) = delete;
-    ScriptReloadMgr& operator=(ScriptReloadMgr&&) = delete;
-    virtual ~ScriptReloadMgr() = default;
+    virtual ~ScriptReloadMgr() { }
 
     /// Initializes the ScriptReloadMgr
     virtual void Initialize() { }

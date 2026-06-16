@@ -23,9 +23,8 @@ Category: commandscripts
 EndScriptData */
 
 #include "ScriptMgr.h"
+#include "AchievementMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
-#include "DB2Stores.h"
 #include "Language.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -37,7 +36,7 @@ class achievement_commandscript : public CommandScript
 public:
     achievement_commandscript() : CommandScript("achievement_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable commandTable =
         {

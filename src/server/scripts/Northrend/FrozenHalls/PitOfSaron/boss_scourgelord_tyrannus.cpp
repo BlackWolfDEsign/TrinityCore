@@ -275,6 +275,8 @@ struct boss_tyrannus : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 };
 
@@ -381,8 +383,7 @@ class player_overlord_brandAI : public PlayerAI
             if (Creature* tyrannus = ObjectAccessor::GetCreature(*me, _tyrannusGUID))
                 if (Unit* victim = tyrannus->GetVictim())
                 {
-                    CastSpellExtraArgs args(TRIGGERED_FULL_MASK);
-                    args.SetOriginalCaster(tyrannus->GetGUID());
+                    CastSpellExtraArgs args(tyrannus->GetGUID());
                     args.AddSpellBP0(damage);
                     me->CastSpell(victim, SPELL_OVERLORD_BRAND_DAMAGE, args);
                 }
@@ -392,8 +393,7 @@ class player_overlord_brandAI : public PlayerAI
         {
             if (Creature* tyrannus = ObjectAccessor::GetCreature(*me, _tyrannusGUID))
             {
-                CastSpellExtraArgs args(TRIGGERED_FULL_MASK);
-                args.SetOriginalCaster(tyrannus->GetGUID());
+                CastSpellExtraArgs args(tyrannus->GetGUID());
                 args.AddSpellBP0(addHealth * 5.5f);
                 me->CastSpell(tyrannus, SPELL_OVERLORD_BRAND_HEAL, args);
             }
@@ -408,6 +408,8 @@ class player_overlord_brandAI : public PlayerAI
 // 69172 - Overlord's Brand
 class spell_tyrannus_overlord_brand : public AuraScript
 {
+    PrepareAuraScript(spell_tyrannus_overlord_brand);
+
     bool Load() override
     {
         return GetCaster() && GetCaster()->GetEntry() == NPC_TYRANNUS;
@@ -440,6 +442,8 @@ class spell_tyrannus_overlord_brand : public AuraScript
 // 69275 - Mark of Rimefang
 class spell_tyrannus_mark_of_rimefang : public AuraScript
 {
+    PrepareAuraScript(spell_tyrannus_mark_of_rimefang);
+
     void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* caster = GetCaster();
@@ -460,6 +464,8 @@ class spell_tyrannus_mark_of_rimefang : public AuraScript
 // 69232 - Icy Blast
 class spell_tyrannus_rimefang_icy_blast : public SpellScript
 {
+    PrepareSpellScript(spell_tyrannus_rimefang_icy_blast);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_ICY_BLAST_AURA });

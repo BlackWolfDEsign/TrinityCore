@@ -26,17 +26,16 @@ EndScriptData */
 #include "AccountMgr.h"
 #include "CharacterCache.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "DatabaseEnv.h"
-#include "DB2Stores.h"
+#include "DBCStores.h"
 #include "Log.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "PlayerDump.h"
 #include "ReputationMgr.h"
 #include "World.h"
 #include "WorldSession.h"
-#include <sstream>
 
 using namespace Trinity::ChatCommands;
 
@@ -45,7 +44,7 @@ class character_commandscript : public CommandScript
 public:
     character_commandscript() : CommandScript("character_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable pdumpCommandTable =
         {
@@ -103,28 +102,27 @@ public:
     * @param searchString the search string which either contains a player GUID or a part fo the character-name
     * @return             returns false if there was a problem while selecting the characters (e.g. player name not normalizeable)
     */
-    static bool GetDeletedCharacterInfoList(DeletedInfoList& foundList, std::string_view searchString)
+    static bool GetDeletedCharacterInfoList(DeletedInfoList& foundList, std::string& searchString)
     {
         PreparedQueryResult result;
         CharacterDatabasePreparedStatement* stmt;
         if (!searchString.empty())
         {
             // search by GUID
-            if (Optional<uint64> guidValue = Trinity::StringTo<uint64>(searchString))
+            if (Optional<uint32> guidValue = Trinity::StringTo<uint64>(searchString))
             {
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_DEL_INFO_BY_GUID);
-                stmt->setUInt64(0, *guidValue);
+                stmt->setUInt32(0, *guidValue);
                 result = CharacterDatabase.Query(stmt);
             }
             // search by name
             else
             {
-                std::string normalizedName(searchString);
-                if (!normalizePlayerName(normalizedName))
+                if (!normalizePlayerName(searchString))
                     return false;
 
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHAR_DEL_INFO_BY_NAME);
-                stmt->setString(0, normalizedName);
+                stmt->setString(0, searchString);
                 result = CharacterDatabase.Query(stmt);
             }
         }
@@ -142,13 +140,13 @@ public:
 
                 DeletedInfo info;
 
-                info.guid       = ObjectGuid::Create<HighGuid::Player>(fields[0].GetUInt64());
+                info.guid       = ObjectGuid::Create<HighGuid::Player>(fields[0].GetUInt32());
                 info.name       = fields[1].GetString();
                 info.accountId  = fields[2].GetUInt32();
 
                 // account name will be empty for nonexisting account
                 AccountMgr::GetName(info.accountId, info.accountName);
-                info.deleteDate = fields[3].GetInt64();
+                info.deleteDate = time_t(fields[3].GetUInt32());
                 foundList.push_back(info);
             }
             while (result->NextRow());
@@ -182,11 +180,11 @@ public:
 
             if (!handler->GetSession())
                 handler->PSendSysMessage(LANG_CHARACTER_DELETED_LIST_LINE_CONSOLE,
-                    Trinity::ToString(itr->guid.GetCounter()), itr->name.c_str(), itr->accountName.empty() ? "<Not existing>" : itr->accountName.c_str(),
+                    itr->guid.ToString().c_str(), itr->name.c_str(), itr->accountName.empty() ? "<Not existing>" : itr->accountName.c_str(),
                     itr->accountId, dateStr.c_str());
             else
                 handler->PSendSysMessage(LANG_CHARACTER_DELETED_LIST_LINE_CHAT,
-                    Trinity::ToString(itr->guid.GetCounter()), itr->name.c_str(), itr->accountName.empty() ? "<Not existing>" : itr->accountName.c_str(),
+                    itr->guid.ToString().c_str(), itr->name.c_str(), itr->accountName.empty() ? "<Not existing>" : itr->accountName.c_str(),
                     itr->accountId, dateStr.c_str());
         }
 
@@ -208,31 +206,34 @@ public:
     {
         if (delInfo.accountName.empty())                    // account does not exist
         {
-            handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_ACCOUNT, delInfo.name.c_str(), Trinity::ToString(delInfo.guid.GetCounter()), delInfo.accountId);
+            handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_ACCOUNT, delInfo.name.c_str(), delInfo.guid.ToString().c_str(), delInfo.accountId);
             return;
         }
 
         // check character count
         uint32 charcount = AccountMgr::GetCharactersCount(delInfo.accountId);
-        if (charcount >= sWorld->getIntConfig(CONFIG_CHARACTERS_PER_REALM))
+        if (charcount >= 10)
         {
-            handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_FULL, delInfo.name.c_str(), Trinity::ToString(delInfo.guid.GetCounter()), delInfo.accountId);
+            handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_FULL, delInfo.name.c_str(), delInfo.guid.ToString().c_str(), delInfo.accountId);
             return;
         }
 
         if (!sCharacterCache->GetCharacterGuidByName(delInfo.name).IsEmpty())
         {
-            handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_NAME, delInfo.name.c_str(), Trinity::ToString(delInfo.guid.GetCounter()), delInfo.accountId);
+            handler->PSendSysMessage(LANG_CHARACTER_DELETED_SKIP_NAME, delInfo.name.c_str(), delInfo.guid.ToString().c_str(), delInfo.accountId);
             return;
         }
 
         CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_RESTORE_DELETE_INFO);
         stmt->setString(0, delInfo.name);
         stmt->setUInt32(1, delInfo.accountId);
-        stmt->setUInt64(2, delInfo.guid.GetCounter());
+        stmt->setUInt32(2, delInfo.guid.GetCounter());
         CharacterDatabase.Execute(stmt);
 
-        sCharacterCache->UpdateCharacterInfoDeleted(delInfo.guid, false, delInfo.name);
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_NAME_DATA);
+        stmt->setUInt32(0, delInfo.guid.GetCounter());
+        if (PreparedQueryResult result = CharacterDatabase.Query(stmt))
+            sCharacterCache->AddCharacterCacheEntry(delInfo.guid, delInfo.accountId, delInfo.name, (*result)[2].GetUInt8(), (*result)[0].GetUInt8(), (*result)[1].GetUInt8(), (*result)[3].GetUInt8());
     }
 
     static bool HandleCharacterTitlesCommand(ChatHandler* handler, Optional<PlayerIdentifier> player)
@@ -265,7 +266,7 @@ public:
                     continue;
 
                 char const* activeStr = "";
-                if (*target->m_playerData->PlayerTitle == titleInfo->MaskID)
+                if (target->GetUInt32Value(PLAYER_CHOSEN_TITLE) == titleInfo->MaskID)
                     activeStr = handler->GetTrinityString(LANG_ACTIVE);
 
                 std::string titleName = ChatHandler::PGetParseString(name, player->GetName());
@@ -334,7 +335,7 @@ public:
 
             // Remove declined name from db
             stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_DECLINED_NAME);
-            stmt->setUInt64(0, player->GetGUID().GetCounter());
+            stmt->setUInt32(0, player->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
 
             if (Player* target = player->GetConnectedPlayer())
@@ -348,7 +349,7 @@ public:
             {
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_NAME_BY_GUID);
                 stmt->setString(0, newName);
-                stmt->setUInt64(1, player->GetGUID().GetCounter());
+                stmt->setUInt32(1, player->GetGUID().GetCounter());
                 CharacterDatabase.Execute(stmt);
             }
 
@@ -381,7 +382,7 @@ public:
 
                 CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ADD_AT_LOGIN_FLAG);
                 stmt->setUInt16(0, uint16(AT_LOGIN_RENAME));
-                stmt->setUInt64(1, player->GetGUID().GetCounter());
+                stmt->setUInt32(1, player->GetGUID().GetCounter());
                 CharacterDatabase.Execute(stmt);
             }
         }
@@ -407,7 +408,7 @@ public:
             handler->PSendSysMessage(LANG_CUSTOMIZE_PLAYER_GUID, handler->playerLink(*player).c_str(), player->GetGUID().ToString().c_str());
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ADD_AT_LOGIN_FLAG);
             stmt->setUInt16(0, static_cast<uint16>(AT_LOGIN_CUSTOMIZE));
-            stmt->setUInt64(1, player->GetGUID().GetCounter());
+            stmt->setUInt32(1, player->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
         }
 
@@ -449,7 +450,7 @@ public:
             handler->PSendSysMessage(LANG_CUSTOMIZE_PLAYER_GUID, handler->playerLink(*player).c_str(), player->GetGUID().ToString().c_str());
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ADD_AT_LOGIN_FLAG);
             stmt->setUInt16(0, uint16(AT_LOGIN_CHANGE_FACTION));
-            stmt->setUInt64(1, player->GetGUID().GetCounter());
+            stmt->setUInt32(1, player->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
         }
 
@@ -473,7 +474,7 @@ public:
             handler->PSendSysMessage(LANG_CUSTOMIZE_PLAYER_GUID, handler->playerLink(*player).c_str(), player->GetGUID().ToString().c_str());
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ADD_AT_LOGIN_FLAG);
             stmt->setUInt16(0, uint16(AT_LOGIN_CHANGE_RACE));
-            stmt->setUInt64(1, player->GetGUID().GetCounter());
+            stmt->setUInt32(1, player->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
         }
 
@@ -515,7 +516,7 @@ public:
 
         CharacterDatabasePreparedStatement* charStmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_ACCOUNT_BY_GUID);
         charStmt->setUInt32(0, newAccount.GetID());
-        charStmt->setUInt64(1, player->GetGUID().GetCounter());
+        charStmt->setUInt32(1, player->GetGUID().GetCounter());
         CharacterDatabase.DirectExecute(charStmt);
 
         sWorld->UpdateRealmCharCount(oldAccountId);
@@ -578,7 +579,7 @@ public:
             if (faction.Flags.HasFlag(ReputationFlags::Inactive))
                 ss << handler->GetTrinityString(LANG_FACTION_INACTIVE);
 
-            handler->SendSysMessage(ss.view());
+            handler->SendSysMessage(ss.str().c_str());
         }
 
         return true;
@@ -592,12 +593,15 @@ public:
     * @see HandleCharacterDeletedDeleteCommand
     * @see DeletedInfoList
     *
-    * @param needle the search string which either contains a player GUID or a part fo the character-name
+    * @param args the search string which either contains a player GUID or a part fo the character-name
     */
-    static bool HandleCharacterDeletedListCommand(ChatHandler* handler, Optional<std::string_view> const& needle)
+    static bool HandleCharacterDeletedListCommand(ChatHandler* handler, Optional<std::string_view> needleStr)
     {
+        std::string needle;
+        if (needleStr)
+            needle.assign(*needleStr);
         DeletedInfoList foundList;
-        if (!GetDeletedCharacterInfoList(foundList, needle.value_or(""sv)))
+        if (!GetDeletedCharacterInfoList(foundList, needle))
             return false;
 
         // if no characters have been found, output a warning
@@ -622,11 +626,9 @@ public:
      * @see HandleCharacterDeletedListCommand
      * @see HandleCharacterDeletedDeleteCommand
      *
-     * @param needle the search string which either contains a player GUID or a part of the character-name
-     * @param newCharName new character name after restoring
-     * @param newAccount account to attach restored character to
+     * @param args the search string which either contains a player GUID or a part of the character-name
      */
-    static bool HandleCharacterDeletedRestoreCommand(ChatHandler* handler, std::string_view needle, Optional<std::string_view> const& newCharName, Optional<AccountIdentifier> const& newAccount)
+    static bool HandleCharacterDeletedRestoreCommand(ChatHandler* handler, std::string needle, Optional<std::string_view> newCharName, Optional<AccountIdentifier> newAccount)
     {
         DeletedInfoList foundList;
         if (!GetDeletedCharacterInfoList(foundList, needle))
@@ -682,9 +684,9 @@ public:
      * @see HandleCharacterDeletedListCommand
      * @see HandleCharacterDeletedRestoreCommand
      *
-     * @param needle the search string which either contains a player GUID or a part fo the character-name
+     * @param args the search string which either contains a player GUID or a part fo the character-name
      */
-    static bool HandleCharacterDeletedDeleteCommand(ChatHandler* handler, std::string_view needle)
+    static bool HandleCharacterDeletedDeleteCommand(ChatHandler* handler, std::string needle)
     {
         DeletedInfoList foundList;
         if (!GetDeletedCharacterInfoList(foundList, needle))
@@ -716,7 +718,7 @@ public:
      * @see HandleCharacterDeletedListCommand
      * @see HandleCharacterDeletedRestoreCommand
      *
-     * @param days removes characters deleted more than this many days ago
+     * @param args the search string which either contains a player GUID or a part fo the character-name
      */
     static bool HandleCharacterDeletedOldCommand(ChatHandler* /*handler*/, Optional<uint16> days)
     {
@@ -788,7 +790,7 @@ public:
             // Update level and reset XP, everything else will be updated at login
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_LEVEL);
             stmt->setUInt8(0, static_cast<uint8>(newlevel));
-            stmt->setUInt64(1, player->GetGUID().GetCounter());
+            stmt->setUInt32(1, player->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
         }
 
@@ -835,7 +837,7 @@ public:
             // Update level and reset XP, everything else will be updated at login
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_LEVEL);
             stmt->setUInt8(0, static_cast<uint8>(newlevel));
-            stmt->setUInt64(1, player->GetGUID().GetCounter());
+            stmt->setUInt32(1, player->GetGUID().GetCounter());
             CharacterDatabase.Execute(stmt);
         }
 

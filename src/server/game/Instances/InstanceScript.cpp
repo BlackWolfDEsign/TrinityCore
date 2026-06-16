@@ -21,32 +21,23 @@
 #include "CreatureAI.h"
 #include "CreatureAIImpl.h"
 #include "DatabaseEnv.h"
-#include "DB2Stores.h"
-#include "GameEventSender.h"
+#include "DBCStructure.h"
 #include "GameObject.h"
 #include "Group.h"
-#include "InstancePackets.h"
-#include "InstanceScenario.h"
-#include "InstanceScriptData.h"
 #include "LFGMgr.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectMgr.h"
-#include "PhasingHandler.h"
+#include "Opcodes.h"
+#include "Pet.h"
 #include "Player.h"
 #include "RBAC.h"
-#include "ScriptedCreature.h"
+#include "ScriptMgr.h"
 #include "ScriptReloadMgr.h"
-#include "SmartEnum.h"
-#include "SpellMgr.h"
 #include "World.h"
 #include "WorldSession.h"
-#include "WorldStateMgr.h"
 #include <cstdarg>
-
-#ifdef TRINITY_API_USE_DYNAMIC_LINKING
-#include "ScriptMgr.h"
-#endif
+#include <sstream>
 
 BossBoundaryData::~BossBoundaryData()
 {
@@ -54,18 +45,7 @@ BossBoundaryData::~BossBoundaryData()
         delete it->Boundary;
 }
 
-DungeonEncounterEntry const* BossInfo::GetDungeonEncounterForDifficulty(Difficulty difficulty) const
-{
-    auto itr = std::ranges::find_if(DungeonEncounters, [difficulty](DungeonEncounterEntry const* dungeonEncounter)
-    {
-        return dungeonEncounter && (dungeonEncounter->DifficultyID == 0 || Difficulty(dungeonEncounter->DifficultyID) == difficulty);
-    });
-
-    return itr != DungeonEncounters.end() ? *itr : nullptr;
-}
-
-InstanceScript::InstanceScript(InstanceMap* map) noexcept : instance(map), _instanceSpawnGroups(sObjectMgr->GetInstanceSpawnGroupsForMap(map->GetId())),
-_entranceId(0), _temporaryEntranceId(0), _combatResurrectionTimer(0), _combatResurrectionCharges(0), _combatResurrectionTimerStarted(false)
+InstanceScript::InstanceScript(InstanceMap* map) : instance(map), completedEncounters(0), _instanceSpawnGroups(sObjectMgr->GetSpawnGroupsForInstance(map->GetId()))
 {
 #ifdef TRINITY_API_USE_DYNAMIC_LINKING
     uint32 scriptId = sObjectMgr->GetInstanceTemplate(map->GetId())->ScriptId;
@@ -77,7 +57,18 @@ _entranceId(0), _temporaryEntranceId(0), _combatResurrectionTimer(0), _combatRes
 #endif // #ifndef TRINITY_API_USE_DYNAMIC_LINKING
 }
 
-InstanceScript::~InstanceScript() = default;
+void InstanceScript::SaveToDB()
+{
+    std::string data = GetSaveData();
+    if (data.empty())
+        return;
+
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_INSTANCE_DATA);
+    stmt->setUInt32(0, GetCompletedEncounterMask());
+    stmt->setString(1, data);
+    stmt->setUInt32(2, instance->GetInstanceId());
+    CharacterDatabase.Execute(stmt);
+}
 
 bool InstanceScript::IsEncounterInProgress() const
 {
@@ -125,23 +116,6 @@ ObjectGuid InstanceScript::GetGuidData(uint32 type) const
     return GetObjectGuid(type);
 }
 
-void InstanceScript::TriggerGameEvent(uint32 gameEventId, WorldObject* source /*= nullptr*/, WorldObject* target /*= nullptr*/)
-{
-    if (source)
-    {
-        ZoneScript::TriggerGameEvent(gameEventId, source, target);
-        return;
-    }
-
-    ProcessEvent(target, gameEventId, source);
-    instance->DoOnPlayers([gameEventId](Player* player)
-    {
-        GameEvents::TriggerForPlayer(gameEventId, player);
-    });
-
-    GameEvents::TriggerForMap(gameEventId, instance);
-}
-
 Creature* InstanceScript::GetCreature(uint32 type)
 {
     return instance->GetCreature(GetObjectGuid(type));
@@ -152,14 +126,11 @@ GameObject* InstanceScript::GetGameObject(uint32 type)
     return instance->GetGameObject(GetObjectGuid(type));
 }
 
-void InstanceScript::SetHeaders(std::string_view dataHeaders)
+void InstanceScript::SetHeaders(std::string const& dataHeaders)
 {
-    headers = dataHeaders;
-}
-
-void InstanceScript::SetBossNumber(uint32 number)
-{
-    bosses.resize(number);
+    for (char header : dataHeaders)
+        if (isalpha(header))
+            headers.push_back(header);
 }
 
 void InstanceScript::LoadBossBoundaries(BossBoundaryData const& data)
@@ -169,53 +140,49 @@ void InstanceScript::LoadBossBoundaries(BossBoundaryData const& data)
             bosses[entry.BossId].boundary.push_back(entry.Boundary);
 }
 
-void InstanceScript::LoadDoorData(std::span<DoorData const> data)
+void InstanceScript::LoadMinionData(MinionData const* data)
 {
-    for (DoorData const& door : data)
-        if (door.bossId < bosses.size())
-            doors.emplace(std::piecewise_construct, std::forward_as_tuple(door.entry), std::forward_as_tuple(&bosses[door.bossId], door.Behavior));
+    while (data->entry)
+    {
+        if (data->bossId < bosses.size())
+            minions.insert(std::make_pair(data->entry, MinionInfo(&bosses[data->bossId])));
 
+        ++data;
+    }
+    TC_LOG_DEBUG("scripts", "InstanceScript::LoadMinionData: {} minions loaded.", uint64(minions.size()));
+}
+
+void InstanceScript::LoadDoorData(DoorData const* data)
+{
+    while (data->entry)
+    {
+        if (data->bossId < bosses.size())
+            doors.insert(std::make_pair(data->entry, DoorInfo(&bosses[data->bossId], data->type)));
+
+        ++data;
+    }
     TC_LOG_DEBUG("scripts", "InstanceScript::LoadDoorData: {} doors loaded.", uint64(doors.size()));
 }
 
-void InstanceScript::LoadObjectData(std::span<ObjectData const> creatureData, std::span<ObjectData const> gameObjectData)
+void InstanceScript::LoadObjectData(ObjectData const* creatureData, ObjectData const* gameObjectData)
 {
-    LoadObjectData(creatureData, _creatureInfo);
-    LoadObjectData(gameObjectData, _gameObjectInfo);
+    if (creatureData)
+        LoadObjectData(creatureData, _creatureInfo);
+
+    if (gameObjectData)
+        LoadObjectData(gameObjectData, _gameObjectInfo);
 
     TC_LOG_DEBUG("scripts", "InstanceScript::LoadObjectData: {} objects loaded.", _creatureInfo.size() + _gameObjectInfo.size());
 }
 
-void InstanceScript::LoadDungeonEncounterData(std::span<DungeonEncounterData const> encounters)
+void InstanceScript::LoadObjectData(ObjectData const* data, ObjectInfoMap& objectInfo)
 {
-    for (DungeonEncounterData const& encounter : encounters)
-        LoadDungeonEncounterData(encounter.BossId, encounter.DungeonEncounterId);
-}
-
-void InstanceScript::LoadMinionData(std::span<MinionData const> data)
-{
-    for (MinionData const& minion : data)
-        if (minion.bossId < bosses.size())
-            minions.emplace(minion.entry, &bosses[minion.bossId]);
-
-    TC_LOG_DEBUG("scripts", "InstanceScript::LoadMinionData: {} minions loaded.", uint64(minions.size()));
-}
-
-void InstanceScript::LoadObjectData(std::span<ObjectData const> data, ObjectInfoMap& objectInfo)
-{
-    for (ObjectData const& object : data)
+    while (data->entry)
     {
-        bool inserted = objectInfo.emplace(object.entry, object.type).second;
-        ASSERT(inserted);
+        ASSERT(objectInfo.find(data->entry) == objectInfo.end());
+        objectInfo[data->entry] = data->type;
+        ++data;
     }
-}
-
-void InstanceScript::LoadDungeonEncounterData(uint32 bossId, std::array<uint32, MAX_DUNGEON_ENCOUNTERS_PER_BOSS> const& dungeonEncounterIds)
-{
-    if (bossId < bosses.size())
-        for (std::size_t i = 0, j = 0; i < MAX_DUNGEON_ENCOUNTERS_PER_BOSS; ++i)
-            if (dungeonEncounterIds[i])
-                bosses[bossId].DungeonEncounters[j++] = sDungeonEncounterStore.AssertEntry(dungeonEncounterIds[i]);
 }
 
 void InstanceScript::UpdateDoorState(GameObject* door)
@@ -228,19 +195,16 @@ void InstanceScript::UpdateDoorState(GameObject* door)
     for (; range.first != range.second && open; ++range.first)
     {
         DoorInfo const& info = range.first->second;
-        switch (info.Behavior)
+        switch (info.type)
         {
-            case EncounterDoorBehavior::OpenWhenNotInProgress:
+            case DOOR_TYPE_ROOM:
                 open = (info.bossInfo->state != IN_PROGRESS);
                 break;
-            case EncounterDoorBehavior::OpenWhenDone:
+            case DOOR_TYPE_PASSAGE:
                 open = (info.bossInfo->state == DONE);
                 break;
-            case EncounterDoorBehavior::OpenWhenInProgress:
+            case DOOR_TYPE_SPAWN_HOLE:
                 open = (info.bossInfo->state == IN_PROGRESS);
-                break;
-            case EncounterDoorBehavior::OpenWhenNotDone:
-                open = (info.bossInfo->state != DONE);
                 break;
             default:
                 break;
@@ -350,9 +314,11 @@ void InstanceScript::AddDoor(GameObject* door, bool add)
         DoorInfo const& data = range.first->second;
 
         if (add)
-            data.bossInfo->door[AsUnderlyingType(data.Behavior)].insert(door->GetGUID());
+        {
+            data.bossInfo->door[data.type].insert(door->GetGUID());
+        }
         else
-            data.bossInfo->door[AsUnderlyingType(data.Behavior)].erase(door->GetGUID());
+            data.bossInfo->door[data.type].erase(door->GetGUID());
     }
 
     if (add)
@@ -399,71 +365,13 @@ bool InstanceScript::SetBossState(uint32 id, EncounterState state)
                         if (minion->isWorldBoss() && minion->IsAlive())
                             return false;
 
-            DungeonEncounterEntry const* dungeonEncounter = nullptr;
-            switch (state)
-            {
-                case IN_PROGRESS:
-                {
-                    uint32 resInterval = GetCombatResurrectionChargeInterval();
-                    InitializeCombatResurrections(1, resInterval);
-                    SendEncounterStart(1, 9, resInterval, resInterval);
-
-                    instance->DoOnPlayers([](Player* player)
-                    {
-                        player->AtStartOfEncounter(EncounterType::DungeonEncounter);
-                    });
-                    break;
-                }
-                case FAIL:
-                {
-                    ResetCombatResurrections();
-                    SendEncounterEnd();
-
-                    instance->DoOnPlayers([](Player* player)
-                    {
-                        player->AtEndOfEncounter(EncounterType::DungeonEncounter);
-                    });
-                    break;
-                }
-                case DONE:
-                {
-                    ResetCombatResurrections();
-                    SendEncounterEnd();
-                    dungeonEncounter = bossInfo->GetDungeonEncounterForDifficulty(instance->GetDifficultyID());
-                    if (dungeonEncounter)
-                    {
-                        instance->DoOnPlayers([&](Player* player)
-                        {
-                            if (!player->IsLockedToDungeonEncounter(dungeonEncounter->ID))
-                                player->UpdateCriteria(CriteriaType::DefeatDungeonEncounterWhileElegibleForLoot, dungeonEncounter->ID);
-                        });
-
-                        DoUpdateCriteria(CriteriaType::DefeatDungeonEncounter, dungeonEncounter->ID);
-                        SendBossKillCredit(dungeonEncounter->ID);
-                        if (dungeonEncounter->CompleteWorldStateID)
-                            DoUpdateWorldState(dungeonEncounter->CompleteWorldStateID, 1);
-
-                        UpdateLfgEncounterState(bossInfo);
-                    }
-
-                    instance->DoOnPlayers([](Player* player)
-                    {
-                        player->AtEndOfEncounter(EncounterType::DungeonEncounter);
-                    });
-                    break;
-                }
-                default:
-                    break;
-            }
-
             bossInfo->state = state;
-            if (dungeonEncounter)
-                instance->UpdateInstanceLock({ dungeonEncounter, id, state });
+            SaveToDB();
         }
 
-        for (GuidSet const& doorSet : bossInfo->door)
-            for (ObjectGuid const& doorGUID : doorSet)
-                if (GameObject* door = instance->GetGameObject(doorGUID))
+        for (uint32 type = 0; type < MAX_DOOR_TYPES; ++type)
+            for (GuidSet::iterator i = bossInfo->door[type].begin(); i != bossInfo->door[type].end(); ++i)
+                if (GameObject* door = instance->GetGameObject(*i))
                     UpdateDoorState(door);
 
         GuidSet minions = bossInfo->minion; // Copy to prevent iterator invalidation (minion might be unsummoned in UpdateMinionState)
@@ -499,23 +407,12 @@ void InstanceScript::Load(char const* data)
 
     OUT_LOAD_INST_DATA(data);
 
-    InstanceScriptDataReader reader(*this);
-    if (reader.Load(data) == InstanceScriptDataReader::Result::Ok)
+    std::istringstream loadStream(data);
+
+    if (ReadSaveDataHeaders(loadStream))
     {
-        // in loot-based lockouts instance can be loaded with later boss marked as killed without preceding bosses
-        // but we still need to have them alive
-        for (uint32 i = 0; i < bosses.size(); ++i)
-        {
-            if (bosses[i].state == DONE && !CheckRequiredBosses(i))
-                bosses[i].state = NOT_STARTED;
-
-            if (DungeonEncounterEntry const* dungeonEncounter = bosses[i].GetDungeonEncounterForDifficulty(instance->GetDifficultyID()))
-                if (dungeonEncounter->CompleteWorldStateID)
-                    DoUpdateWorldState(dungeonEncounter->CompleteWorldStateID, bosses[i].state == DONE ? 1 : 0);
-        }
-
-        UpdateSpawnGroups();
-        AfterDataLoad();
+        ReadSaveDataBossStates(loadStream);
+        ReadSaveDataMore(loadStream);
     }
     else
         OUT_LOAD_INST_DATA_FAIL;
@@ -523,52 +420,61 @@ void InstanceScript::Load(char const* data)
     OUT_LOAD_INST_DATA_COMPLETE;
 }
 
+bool InstanceScript::ReadSaveDataHeaders(std::istringstream& data)
+{
+    for (char header : headers)
+    {
+        char buff;
+        data >> buff;
+
+        if (header != buff)
+            return false;
+    }
+
+    return true;
+}
+
+void InstanceScript::ReadSaveDataBossStates(std::istringstream& data)
+{
+    uint32 bossId = 0;
+    for (std::vector<BossInfo>::iterator i = bosses.begin(); i != bosses.end(); ++i, ++bossId)
+    {
+        uint32 buff;
+        data >> buff;
+        if (buff == IN_PROGRESS || buff == FAIL || buff == SPECIAL)
+            buff = NOT_STARTED;
+
+        if (buff < TO_BE_DECIDED)
+            SetBossState(bossId, EncounterState(buff));
+    }
+    UpdateSpawnGroups();
+}
+
 std::string InstanceScript::GetSaveData()
 {
     OUT_SAVE_INST_DATA;
 
-    InstanceScriptDataWriter writer(*this);
+    std::ostringstream saveStream;
 
-    writer.FillData();
+    WriteSaveDataHeaders(saveStream);
+    WriteSaveDataBossStates(saveStream);
+    WriteSaveDataMore(saveStream);
 
     OUT_SAVE_INST_DATA_COMPLETE;
 
-    return writer.GetString();
+    return saveStream.str();
 }
 
-std::string InstanceScript::UpdateBossStateSaveData(std::string const& oldData, UpdateBossStateSaveDataEvent const& event)
+void InstanceScript::WriteSaveDataHeaders(std::ostringstream& data)
 {
-    if (!instance->GetMapDifficulty()->IsUsingEncounterLocks())
-        return GetSaveData();
-
-    InstanceScriptDataWriter writer(*this);
-    writer.FillDataFrom(oldData);
-    writer.SetBossState(event);
-    return writer.GetString();
+    for (char header : headers)
+        data << header << ' ';
 }
 
-std::string InstanceScript::UpdateAdditionalSaveData(std::string const& oldData, UpdateAdditionalSaveDataEvent const& event)
+void InstanceScript::WriteSaveDataBossStates(std::ostringstream& data)
 {
-    if (!instance->GetMapDifficulty()->IsUsingEncounterLocks())
-        return GetSaveData();
-
-    InstanceScriptDataWriter writer(*this);
-    writer.FillDataFrom(oldData);
-    writer.SetAdditionalData(event);
-    return writer.GetString();
-}
-
-Optional<uint32> InstanceScript::GetEntranceLocationForCompletedEncounters(uint32 completedEncountersMask) const
-{
-    if (!instance->GetMapDifficulty()->IsUsingEncounterLocks())
-        return _entranceId;
-
-    return ComputeEntranceLocationForCompletedEncounters(completedEncountersMask);
-}
-
-Optional<uint32> InstanceScript::ComputeEntranceLocationForCompletedEncounters(uint32 /*completedEncountersMask*/) const
-{
-    return { };
+    for (BossInfo const& bossInfo : bosses)
+        data << uint32(bossInfo.state) << ' ';
 }
 
 void InstanceScript::HandleGameObject(ObjectGuid guid, bool open, GameObject* go /*= nullptr*/)
@@ -647,41 +553,77 @@ void InstanceScript::DoRespawnGameObject(ObjectGuid guid, Seconds timeToDespawn 
         TC_LOG_DEBUG("scripts", "InstanceScript: DoRespawnGameObject failed");
 }
 
-void InstanceScript::DoUpdateWorldState(int32 worldStateId, int32 value)
+void InstanceScript::DoUpdateWorldState(uint32 uiStateId, uint32 uiStateData)
 {
-    WorldStateMgr::SetValue(worldStateId, value, false, instance);
+    Map::PlayerList const& lPlayers = instance->GetPlayers();
+
+    if (!lPlayers.isEmpty())
+    {
+        for (Map::PlayerList::const_iterator itr = lPlayers.begin(); itr != lPlayers.end(); ++itr)
+            if (Player* player = itr->GetSource())
+                player->SendUpdateWorldState(uiStateId, uiStateData);
+    }
+    else
+        TC_LOG_DEBUG("scripts", "DoUpdateWorldState attempt send data but no players in map.");
 }
 
 // Send Notify to all players in instance
 void InstanceScript::DoSendNotifyToInstance(char const* format, ...)
 {
-    va_list ap;
-    va_start(ap, format);
-    char buff[1024];
-    vsnprintf(buff, 1024, format, ap);
-    va_end(ap);
+    InstanceMap::PlayerList const& players = instance->GetPlayers();
 
-    instance->DoOnPlayers([&buff](Player const* player)
+    if (!players.isEmpty())
     {
-        player->GetSession()->SendNotification("%s", buff);
-    });
+        va_list ap;
+        va_start(ap, format);
+        char buff[1024];
+        vsnprintf(buff, 1024, format, ap);
+        va_end(ap);
+        for (Map::PlayerList::const_iterator i = players.begin(); i != players.end(); ++i)
+            if (Player* player = i->GetSource())
+                if (WorldSession* session = player->GetSession())
+                    session->SendNotification("%s", buff);
+    }
 }
 
 // Update Achievement Criteria for all players in instance
-void InstanceScript::DoUpdateCriteria(CriteriaType type, uint32 miscValue1 /*= 0*/, uint32 miscValue2 /*= 0*/, Unit* unit /*= nullptr*/)
+void InstanceScript::DoUpdateAchievementCriteria(AchievementCriteriaTypes type, uint32 miscValue1 /*= 0*/, uint32 miscValue2 /*= 0*/, Unit* unit /*= nullptr*/)
 {
-    instance->DoOnPlayers([type, miscValue1, miscValue2, unit](Player* player)
-    {
-        player->UpdateCriteria(type, miscValue1, miscValue2, 0, unit);
-    });
+    Map::PlayerList const& PlayerList = instance->GetPlayers();
+
+    if (!PlayerList.isEmpty())
+        for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+            if (Player* player = i->GetSource())
+                player->UpdateAchievementCriteria(type, miscValue1, miscValue2, unit);
+}
+
+// Start timed achievement for all players in instance
+void InstanceScript::DoStartTimedAchievement(AchievementCriteriaTimedTypes type, uint32 entry)
+{
+    Map::PlayerList const& PlayerList = instance->GetPlayers();
+
+    if (!PlayerList.isEmpty())
+        for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+            if (Player* player = i->GetSource())
+                player->StartTimedAchievement(type, entry);
+}
+
+// Stop timed achievement for all players in instance
+void InstanceScript::DoStopTimedAchievement(AchievementCriteriaTimedTypes type, uint32 entry)
+{
+    Map::PlayerList const& PlayerList = instance->GetPlayers();
+
+    if (!PlayerList.isEmpty())
+        for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+            if (Player* player = i->GetSource())
+                player->RemoveTimedAchievement(type, entry);
 }
 
 void InstanceScript::DoRemoveAurasDueToSpellOnPlayers(uint32 spell, bool includePets /*= false*/, bool includeControlled /*= false*/)
 {
-    instance->DoOnPlayers([this, spell, includePets, includeControlled](Player* player)
-    {
-        DoRemoveAurasDueToSpellOnPlayer(player, spell, includePets, includeControlled);
-    });
+    Map::PlayerList const& playerList = instance->GetPlayers();
+    for (auto itr = playerList.begin(); itr != playerList.end(); ++itr)
+        DoRemoveAurasDueToSpellOnPlayer(itr->GetSource(), spell, includePets, includeControlled);
 }
 
 void InstanceScript::DoRemoveAurasDueToSpellOnPlayer(Player* player, uint32 spell, bool includePets /*= false*/, bool includeControlled /*= false*/)
@@ -715,10 +657,9 @@ void InstanceScript::DoRemoveAurasDueToSpellOnPlayer(Player* player, uint32 spel
 
 void InstanceScript::DoCastSpellOnPlayers(uint32 spell, bool includePets /*= false*/, bool includeControlled /*= false*/)
 {
-    instance->DoOnPlayers([this, spell, includePets, includeControlled](Player* player)
-    {
-        DoCastSpellOnPlayer(player, spell, includePets, includeControlled);
-    });
+    Map::PlayerList const& playerList = instance->GetPlayers();
+    for (auto itr = playerList.begin(); itr != playerList.end(); ++itr)
+        DoCastSpellOnPlayer(itr->GetSource(), spell, includePets, includeControlled);
 }
 
 void InstanceScript::DoCastSpellOnPlayer(Player* player, uint32 spell, bool includePets /*= false*/, bool includeControlled /*= false*/)
@@ -736,7 +677,7 @@ void InstanceScript::DoCastSpellOnPlayer(Player* player, uint32 spell, bool incl
         ObjectGuid summonGUID = player->m_SummonSlot[itr2];
         if (!summonGUID.IsEmpty())
             if (Creature* summon = instance->GetCreature(summonGUID))
-                summon->CastSpell(player, spell, true);
+                summon->CastSpell(summon, spell, true);
     }
 
     if (!includeControlled)
@@ -746,26 +687,13 @@ void InstanceScript::DoCastSpellOnPlayer(Player* player, uint32 spell, bool incl
     {
         if (Unit* controlled = *itr2)
             if (controlled->IsInWorld() && controlled->GetTypeId() == TYPEID_UNIT)
-                controlled->CastSpell(player, spell, true);
+                controlled->CastSpell(controlled, spell, true);
     }
 }
 
 bool InstanceScript::ServerAllowsTwoSideGroups()
 {
     return sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GROUP);
-}
-
-DungeonEncounterEntry const* InstanceScript::GetBossDungeonEncounter(uint32 id) const
-{
-    return id < bosses.size() ? bosses[id].GetDungeonEncounterForDifficulty(instance->GetDifficultyID()) : nullptr;
-}
-
-DungeonEncounterEntry const* InstanceScript::GetBossDungeonEncounter(Creature const* creature) const
-{
-    if (BossAI const* bossAi = dynamic_cast<BossAI const*>(creature->GetAI()))
-        return GetBossDungeonEncounter(bossAi->GetBossId());
-
-    return nullptr;
 }
 
 bool InstanceScript::CheckAchievementCriteriaMeet(uint32 criteria_id, Player const* /*source*/, Unit const* /*target*/ /*= nullptr*/, uint32 /*miscvalue1*/ /*= 0*/)
@@ -775,236 +703,111 @@ bool InstanceScript::CheckAchievementCriteriaMeet(uint32 criteria_id, Player con
     return false;
 }
 
-bool InstanceScript::IsEncounterCompleted(uint32 dungeonEncounterId) const
+void InstanceScript::SendEncounterUnit(EncounterFrameType type, Unit const* unit /*= nullptr*/, uint8 param1 /*= 0*/, uint8 param2 /*= 0*/)
 {
-    for (BossInfo const& boss : bosses)
-        for (DungeonEncounterEntry const* dungeonEncounter : boss.DungeonEncounters)
-            if (dungeonEncounter && dungeonEncounter->ID == dungeonEncounterId)
-                return boss.state == DONE;
+    // size of this packet is at most 15 (usually less)
+    WorldPacket data(SMSG_UPDATE_INSTANCE_ENCOUNTER_UNIT, 15);
+    data << uint32(type);
 
-    return false;
-}
-
-bool InstanceScript::IsEncounterCompletedInMaskByBossId(uint32 completedEncountersMask, uint32 bossId) const
-{
-    if (DungeonEncounterEntry const* dungeonEncounter = GetBossDungeonEncounter(bossId))
-        if (completedEncountersMask & (1 << dungeonEncounter->Bit))
-            return bosses[bossId].state == DONE;
-
-    return false;
-}
-
-void InstanceScript::SetEntranceLocation(uint32 worldSafeLocationId)
-{
-    _entranceId = worldSafeLocationId;
-    _temporaryEntranceId = 0;
-}
-
-void InstanceScript::SendEncounterUnit(EncounterFrameType type, Unit const* unit, Optional<int32> param1 /*= {}*/, Optional<int32> param2 /*= {}*/)
-{
     switch (type)
     {
-        case ENCOUNTER_FRAME_ENGAGE:                    // SMSG_INSTANCE_ENCOUNTER_ENGAGE_UNIT
-        {
+        case ENCOUNTER_FRAME_ENGAGE:
+        case ENCOUNTER_FRAME_DISENGAGE:
+        case ENCOUNTER_FRAME_UPDATE_PRIORITY:
             if (!unit)
                 return;
-
-            WorldPackets::Instance::InstanceEncounterEngageUnit encounterEngageMessage;
-            encounterEngageMessage.Unit = unit->GetGUID();
-            encounterEngageMessage.TargetFramePriority = param1.value_or(0);
-            instance->SendToPlayers(encounterEngageMessage.Write());
+            data << unit->GetPackGUID();
+            data << uint8(param1);
             break;
-        }
-        case ENCOUNTER_FRAME_DISENGAGE:                 // SMSG_INSTANCE_ENCOUNTER_DISENGAGE_UNIT
-        {
-            if (!unit)
-                return;
-
-            WorldPackets::Instance::InstanceEncounterDisengageUnit encounterDisengageMessage;
-            encounterDisengageMessage.Unit = unit->GetGUID();
-            instance->SendToPlayers(encounterDisengageMessage.Write());
-            break;
-        }
-        case ENCOUNTER_FRAME_UPDATE_PRIORITY:           // SMSG_INSTANCE_ENCOUNTER_CHANGE_PRIORITY
-        {
-            if (!unit)
-                return;
-
-            WorldPackets::Instance::InstanceEncounterChangePriority encounterChangePriorityMessage;
-            encounterChangePriorityMessage.Unit = unit->GetGUID();
-            encounterChangePriorityMessage.TargetFramePriority = param1.value_or(0);
-            instance->SendToPlayers(encounterChangePriorityMessage.Write());
-            break;
-        }
         case ENCOUNTER_FRAME_ADD_TIMER:
-        {
-            WorldPackets::Instance::InstanceEncounterTimerStart instanceEncounterTimerStart;
-            instanceEncounterTimerStart.TimeRemaining = param1.value_or(0);
-            instance->SendToPlayers(instanceEncounterTimerStart.Write());
-            break;
-        }
         case ENCOUNTER_FRAME_ENABLE_OBJECTIVE:
-        {
-            WorldPackets::Instance::InstanceEncounterObjectiveStart instanceEncounterObjectiveStart;
-            instanceEncounterObjectiveStart.ObjectiveID = param1.value_or(0);
-            instance->SendToPlayers(instanceEncounterObjectiveStart.Write());
-            break;
-        }
-        case ENCOUNTER_FRAME_UPDATE_OBJECTIVE:
-        {
-            WorldPackets::Instance::InstanceEncounterObjectiveUpdate instanceEncounterObjectiveUpdate;
-            instanceEncounterObjectiveUpdate.ObjectiveID = param1.value_or(0);
-            instanceEncounterObjectiveUpdate.ProgressAmount = param2.value_or(0);
-            instance->SendToPlayers(instanceEncounterObjectiveUpdate.Write());
-            break;
-        }
         case ENCOUNTER_FRAME_DISABLE_OBJECTIVE:
-        {
-            WorldPackets::Instance::InstanceEncounterObjectiveComplete instanceEncounterObjectiveComplete;
-            instanceEncounterObjectiveComplete.ObjectiveID = param1.value_or(0);
-            instance->SendToPlayers(instanceEncounterObjectiveComplete.Write());
+            data << uint8(param1);
             break;
-        }
+        case ENCOUNTER_FRAME_UPDATE_OBJECTIVE:
+            data << uint8(param1);
+            data << uint8(param2);
+            break;
         case ENCOUNTER_FRAME_PHASE_SHIFT_CHANGED:
-        {
-            WorldPackets::Instance::InstanceEncounterPhaseShiftChanged instanceEncounterPhaseShiftChanged;
-            instance->SendToPlayers(instanceEncounterPhaseShiftChanged.Write());
-            break;
-        }
         default:
             break;
     }
+
+    instance->SendToPlayers(&data);
 }
 
-void InstanceScript::SendEncounterStart(uint32 inCombatResCount /*= 0*/, uint32 maxInCombatResCount /*= 0*/, uint32 inCombatResChargeRecovery /*= 0*/, uint32 nextCombatResChargeTime /*= 0*/)
+void InstanceScript::UpdateEncounterState(EncounterCreditType type, uint32 creditEntry, Unit* /*source*/)
 {
-    WorldPackets::Instance::InstanceEncounterStart encounterStartMessage;
-    encounterStartMessage.InCombatResCount = inCombatResCount;
-    encounterStartMessage.MaxInCombatResCount = maxInCombatResCount;
-    encounterStartMessage.CombatResChargeRecovery = inCombatResChargeRecovery;
-    encounterStartMessage.NextCombatResChargeTime = nextCombatResChargeTime;
+    DungeonEncounterList const* encounters = sObjectMgr->GetDungeonEncounterList(instance->GetId(), instance->GetDifficulty());
+    if (!encounters)
+        return;
 
-    instance->SendToPlayers(encounterStartMessage.Write());
-}
+    uint32 dungeonId = 0;
 
-void InstanceScript::SendEncounterEnd()
-{
-    WorldPackets::Instance::InstanceEncounterEnd encounterEndMessage;
-    instance->SendToPlayers(encounterEndMessage.Write());
-}
-
-void InstanceScript::SendBossKillCredit(uint32 encounterId)
-{
-    WorldPackets::Instance::BossKill bossKillCreditMessage;
-    bossKillCreditMessage.DungeonEncounterID = encounterId;
-
-    instance->SendToPlayers(bossKillCreditMessage.Write());
-}
-
-void InstanceScript::UpdateLfgEncounterState(BossInfo const* bossInfo)
-{
-    for (MapReference const& ref : instance->GetPlayers())
+    for (auto const& encounter : *encounters)
     {
-        if (Group* grp = ref.GetSource()->GetGroup())
+        if (encounter->creditType == type && encounter->creditEntry == creditEntry)
         {
-            if (grp->isLFGGroup())
+            completedEncounters |= 1 << encounter->dbcEntry->Bit;
+            if (encounter->lastEncounterDungeon)
             {
-                std::array<uint32, MAX_DUNGEON_ENCOUNTERS_PER_BOSS> dungeonEncounterIds;
-                auto itr = dungeonEncounterIds.begin();
-                for (DungeonEncounterEntry const* dungeonEncounter : bossInfo->DungeonEncounters)
-                {
-                    if (!dungeonEncounter)
-                        break;
-
-                    *itr = dungeonEncounter->ID;
-                    ++itr;
-                }
-                sLFGMgr->OnDungeonEncounterDone(grp->GetGUID(), std::span(dungeonEncounterIds.begin(), itr), instance);
+                dungeonId = encounter->lastEncounterDungeon;
+                TC_LOG_DEBUG("lfg", "UpdateEncounterState: Instance {} (instanceId {}) completed encounter {}. Credit Dungeon: {}", instance->GetMapName(), instance->GetInstanceId(), encounter->dbcEntry->Name[0], dungeonId);
                 break;
+            }
+        }
+    }
+
+    if (dungeonId)
+    {
+        Map::PlayerList const& players = instance->GetPlayers();
+        for (auto const& ref : players)
+        {
+            if (Player* player = ref.GetSource())
+            {
+                if (Group* grp = player->GetGroup())
+                {
+                    if (grp->isLFGGroup())
+                    {
+                        sLFGMgr->FinishDungeon(grp->GetGUID(), dungeonId, instance);
+                        return;
+                    }
+                }
             }
         }
     }
 }
 
-void InstanceScript::UpdatePhasing()
+void InstanceScript::UpdateEncounterStateForKilledCreature(uint32 creatureId, Unit* source)
 {
-    instance->DoOnPlayers([](Player const* player)
+    UpdateEncounterState(ENCOUNTER_CREDIT_KILL_CREATURE, creatureId, source);
+}
+
+void InstanceScript::UpdateEncounterStateForSpellCast(uint32 spellId, Unit* source)
+{
+    UpdateEncounterState(ENCOUNTER_CREDIT_CAST_SPELL, spellId, source);
+}
+
+/*static*/ char const* InstanceScript::GetBossStateName(uint8 state)
+{
+    // See enum EncounterState in InstanceScript.h
+    switch (state)
     {
-        PhasingHandler::SendToPlayer(player);
-    });
-}
-
-char const* InstanceScript::GetBossStateName(uint8 state)
-{
-    return EnumUtils::ToConstant(EncounterState(state));
-}
-
-void InstanceScript::UpdateCombatResurrection(uint32 diff)
-{
-    if (!_combatResurrectionTimerStarted)
-        return;
-
-    if (_combatResurrectionTimer <= diff)
-        AddCombatResurrectionCharge();
-    else
-        _combatResurrectionTimer -= diff;
-}
-
-void InstanceScript::InitializeCombatResurrections(uint8 charges /*= 1*/, uint32 interval /*= 0*/)
-{
-    _combatResurrectionCharges = charges;
-    if (!interval)
-        return;
-
-    _combatResurrectionTimer = interval;
-    _combatResurrectionTimerStarted = true;
-}
-
-void InstanceScript::AddCombatResurrectionCharge()
-{
-    ++_combatResurrectionCharges;
-    _combatResurrectionTimer = GetCombatResurrectionChargeInterval();
-
-    WorldPackets::Instance::InstanceEncounterGainCombatResurrectionCharge gainCombatResurrectionCharge;
-    gainCombatResurrectionCharge.InCombatResCount = _combatResurrectionCharges;
-    gainCombatResurrectionCharge.CombatResChargeRecovery = _combatResurrectionTimer;
-    instance->SendToPlayers(gainCombatResurrectionCharge.Write());
-}
-
-void InstanceScript::UseCombatResurrection()
-{
-    --_combatResurrectionCharges;
-
-    instance->SendToPlayers(WorldPackets::Instance::InstanceEncounterInCombatResurrection().Write());
-}
-
-void InstanceScript::ResetCombatResurrections()
-{
-    _combatResurrectionCharges = 0;
-    _combatResurrectionTimer = 0;
-    _combatResurrectionTimerStarted = false;
-}
-
-uint32 InstanceScript::GetCombatResurrectionChargeInterval() const
-{
-    uint32 interval = 0;
-    if (uint32 playerCount = instance->GetPlayers().size())
-        interval = 90 * MINUTE * IN_MILLISECONDS / playerCount;
-
-    return interval;
-}
-
-PersistentInstanceScriptValueBase::PersistentInstanceScriptValueBase(InstanceScript& instance, char const* name, std::variant<int64, double> value)
-    : _instance(instance), _name(name), _value(std::move(value))
-{
-    _instance.RegisterPersistentScriptValue(this);
-}
-
-PersistentInstanceScriptValueBase::~PersistentInstanceScriptValueBase() = default;
-
-void PersistentInstanceScriptValueBase::NotifyValueChanged()
-{
-    _instance.instance->UpdateInstanceLock(CreateEvent());
+        case NOT_STARTED:
+            return "NOT_STARTED";
+        case IN_PROGRESS:
+            return "IN_PROGRESS";
+        case FAIL:
+            return "FAIL";
+        case DONE:
+            return "DONE";
+        case SPECIAL:
+            return "SPECIAL";
+        case TO_BE_DECIDED:
+            return "TO_BE_DECIDED";
+        default:
+            return "INVALID";
+    }
 }
 
 bool InstanceHasScript(WorldObject const* obj, char const* scriptName)

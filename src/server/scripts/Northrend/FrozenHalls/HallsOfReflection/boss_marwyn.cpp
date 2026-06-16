@@ -121,6 +121,8 @@ class boss_marwyn : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -138,6 +140,8 @@ class spell_marwyn_shared_suffering : public SpellScriptLoader
 
         class spell_marwyn_shared_suffering_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_marwyn_shared_suffering_AuraScript);
+
             void HandleEffectRemove(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
             {
                 if (GetTargetApplication()->GetRemoveMode() != AURA_REMOVE_BY_ENEMY_SPELL)
@@ -145,7 +149,7 @@ class spell_marwyn_shared_suffering : public SpellScriptLoader
 
                 if (Unit* caster = GetCaster())
                 {
-                    SpellEffectValue remainingDamage = aurEff->GetAmount() * aurEff->GetRemainingTicks();
+                    int32 remainingDamage = aurEff->GetAmount() * aurEff->GetRemainingTicks();
                     if (remainingDamage > 0)
                     {
                         CastSpellExtraArgs args(TRIGGERED_FULL_MASK);

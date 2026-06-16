@@ -19,46 +19,24 @@
 #define TRINITY_GAMEOBJECTAI_H
 
 #include "Define.h"
-#include "LootItemType.h"
 #include "ObjectGuid.h"
 #include "Optional.h"
+#include "QuestDef.h"
 
 class Creature;
 class GameObject;
-class Player;
-class Quest;
-class SpellInfo;
 class Unit;
+class SpellInfo;
 class WorldObject;
-enum class QuestGiverStatus : uint64;
-
-namespace WorldPackets
-{
-    namespace Battleground
-    {
-        enum class BattlegroundCapturePointState : uint8;
-    }
-}
 
 class TC_GAME_API GameObjectAI
 {
-    private:
-        // Script Id
-        uint32 const _scriptId;
-
     protected:
         GameObject* const me;
 
     public:
-        explicit GameObjectAI(GameObject* go, uint32 scriptId = {}) noexcept;
-        GameObjectAI(GameObjectAI const&) = delete;
-        GameObjectAI(GameObjectAI&&) = delete;
-        GameObjectAI& operator=(GameObjectAI const&) = delete;
-        GameObjectAI& operator=(GameObjectAI&&) = delete;
-        virtual ~GameObjectAI();
-
-        // Gets the id of the AI (script id)
-        uint32 GetId() const { return _scriptId; }
+        explicit GameObjectAI(GameObject* go) : me(go) { }
+        virtual ~GameObjectAI() { }
 
         virtual void UpdateAI(uint32 /*diff*/) { }
 
@@ -67,14 +45,14 @@ class TC_GAME_API GameObjectAI
         virtual void Reset() { }
 
         // Pass parameters between AI
-        virtual void DoAction([[maybe_unused]] int32 param) { }
-        virtual void SetGUID([[maybe_unused]] ObjectGuid const& guid, [[maybe_unused]] int32 id) { }
-        virtual ObjectGuid GetGUID([[maybe_unused]] int32 id) const { return ObjectGuid::Empty; }
+        virtual void DoAction(int32 /*param = 0 */) { }
+        virtual void SetGUID(ObjectGuid const& /*guid*/, int32 /*id = 0 */) { }
+        virtual ObjectGuid GetGUID(int32 /*id = 0 */) const { return ObjectGuid::Empty; }
 
         static int32 Permissible(GameObject const* go);
 
         // Called when the dialog status between a player and the gameobject is requested.
-        virtual Optional<QuestGiverStatus> GetDialogStatus(Player const* player);
+        virtual Optional<QuestGiverStatus> GetDialogStatus(Player* /*player*/) { return {}; }
 
         // Called when a player opens a gossip dialog with the gameobject.
         virtual bool OnGossipHello(Player* /*player*/) { return false; }
@@ -89,7 +67,7 @@ class TC_GAME_API GameObjectAI
         virtual void OnQuestAccept(Player* /*player*/, Quest const* /*quest*/) { }
 
         // Called when a player completes a quest and is rewarded, opt is the selected item's index or 0
-        virtual void OnQuestReward(Player* /*player*/, Quest const* /*quest*/, LootItemType /*type*/, uint32 /*opt*/) { }
+        virtual void OnQuestReward(Player* /*player*/, Quest const* /*quest*/, uint32 /*opt*/) { }
 
         // Called when a Player clicks a GameObject, before GossipHello
         // prevents achievement tracking if returning true
@@ -119,17 +97,12 @@ class TC_GAME_API GameObjectAI
 
         virtual void SummonedCreatureDespawn(Creature* /*summon*/) { }
         virtual void SummonedCreatureDies(Creature* /*summon*/, Unit* /*killer*/) { }
-
-        // Called when the capture point gets assaulted by a player. Return true to disable default behaviour.
-        virtual bool OnCapturePointAssaulted(Player* /*player*/) { return false; }
-        // Called when the capture point state gets updated. Return true to disable default behaviour.
-        virtual bool OnCapturePointUpdated(WorldPackets::Battleground::BattlegroundCapturePointState /*state*/) { return false; }
 };
 
 class TC_GAME_API NullGameObjectAI : public GameObjectAI
 {
     public:
-        using GameObjectAI::GameObjectAI;
+        explicit NullGameObjectAI(GameObject* go);
 
         void UpdateAI(uint32 /*diff*/) override { }
 

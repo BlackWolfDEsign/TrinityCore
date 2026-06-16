@@ -23,7 +23,7 @@
 #include "SpellScript.h"
 
 #define ICCScriptName "instance_icecrown_citadel"
-#define DataHeader    "ICCv1"
+#define DataHeader "IC"
 
 uint32 const EncounterCount = 13;
 
@@ -103,6 +103,8 @@ enum ICDataTypes
     DATA_RIMEFANG                      = 25,
     DATA_COLDFLAME_JETS                = 26,
     DATA_TEAM_IN_INSTANCE              = 27,
+    DATA_BLOOD_QUICKENING_STATE        = 28,
+    DATA_HEROIC_ATTEMPTS               = 29,
     DATA_CROK_SCOURGEBANE              = 30,
     DATA_CAPTAIN_ARNATH                = 31,
     DATA_CAPTAIN_BRANDON               = 32,
@@ -352,7 +354,7 @@ enum ICGameObjectsIds
     GO_SPIRIT_ALARM_3                       = 201816,
     GO_SPIRIT_ALARM_4                       = 201817,
 
-    // Lord Marrowgar
+    // Lord Marrogar
     GO_DOODAD_ICECROWN_ICEWALL02            = 201910,
     GO_ICEWALL                              = 201911,
     GO_LORD_MARROWGAR_S_ENTRANCE            = 201857,
@@ -497,6 +499,9 @@ enum ICSharedActions
     ACTION_ROTFACE_DEATH        = -366272,
     ACTION_CHANGE_PHASE         = -366780,
 
+    // Blood-Queen Lana'thel
+    ACTION_KILL_MINCHAR         = -379550,
+
     // Frostwing Halls gauntlet event
     ACTION_VRYKUL_DEATH         = 37129,
 
@@ -555,6 +560,8 @@ uint32 const MaxHeroicAttempts = 50;
 
 class spell_trigger_spell_from_caster : public SpellScript
 {
+    PrepareSpellScript(spell_trigger_spell_from_caster);
+
 public:
     spell_trigger_spell_from_caster(uint32 triggerId, TriggerCastFlags triggerFlags = TRIGGERED_FULL_MASK);
 

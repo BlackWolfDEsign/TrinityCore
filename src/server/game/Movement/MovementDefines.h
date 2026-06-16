@@ -19,13 +19,6 @@
 #define TRINITY_MOVEMENTDEFINES_H
 
 #include "Common.h"
-#include "Duration.h"
-#include "ObjectGuid.h"
-#include "Optional.h"
-#include "Position.h"
-#include <variant>
-
-class Unit;
 
 #define SPEED_CHARGE 42.0f // assume it is 25 yard per 0.6 second
 
@@ -51,6 +44,7 @@ enum MovementGeneratorType : uint8
     EFFECT_MOTION_TYPE              = 16,
     SPLINE_CHAIN_MOTION_TYPE        = 17,    // SplineChainMovementGenerator.h
     FORMATION_MOTION_TYPE           = 18,    // FormationMovementGenerator.h
+    FACE_MOTION_TYPE                = 19,
     MAX_MOTION_TYPE                          // SKIP
 };
 
@@ -69,17 +63,11 @@ constexpr bool CanStopMovementForSpellCasting(MovementGeneratorType type)
     return true;
 }
 
-enum MovementGeneratorMode : uint8
-{
-    MOTION_MODE_DEFAULT = 0,
-    MOTION_MODE_OVERRIDE
-};
-
 enum MovementGeneratorPriority : uint8
 {
-    MOTION_PRIORITY_NONE = 0,
-    MOTION_PRIORITY_NORMAL,
-    MOTION_PRIORITY_HIGHEST
+    MOTION_PRIORITY_NONE    = 0,
+    MOTION_PRIORITY_NORMAL  = 64,
+    MOTION_PRIORITY_HIGHEST = 128
 };
 
 enum MovementSlot : uint8
@@ -87,19 +75,6 @@ enum MovementSlot : uint8
     MOTION_SLOT_DEFAULT = 0,
     MOTION_SLOT_ACTIVE,
     MAX_MOTION_SLOT
-};
-
-enum class MovementWalkRunSpeedSelectionMode : uint8
-{
-    Default,
-    ForceRun,
-    ForceWalk
-};
-
-enum class MovementStopReason : uint8
-{
-    Finished,       // Movement finished either by arriving at location or successfully continuing it for requested duration
-    Interrupted
 };
 
 enum RotateDirection : uint8
@@ -131,47 +106,6 @@ struct TC_GAME_API ChaseAngle
     float UpperBound() const;
     float LowerBound() const;
     bool IsAngleOkay(float relativeAngle) const;
-};
-
-struct JumpArrivalCastArgs
-{
-    uint32 SpellId = 0;
-    ObjectGuid Target;
-};
-
-struct JumpChargeParams
-{
-    union
-    {
-        float Speed;
-        float MoveTimeInSec;
-    };
-
-    bool TreatSpeedAsMoveTimeSeconds = false;
-    bool UnlimitedSpeed = false;
-
-    Optional<float> MinHeight;
-    Optional<float> MaxHeight;
-
-    Optional<uint32> SpellVisualId;
-    Optional<uint32> ProgressCurveId;
-    Optional<uint32> ParabolicCurveId;
-    Optional<uint32> TriggerSpellId;
-};
-
-using MovementFacingTarget = std::variant<std::monostate, Position, Unit const*, float>;
-
-struct MovementFadeObject
-{
-    constexpr MovementFadeObject() = default;
-
-    template <typename DurationRep, typename DurationPeriod>
-    constexpr MovementFadeObject(std::chrono::duration<DurationRep, DurationPeriod> duration) : Duration(duration) { }
-
-    template <typename DurationRep, typename DurationPeriod>
-    constexpr MovementFadeObject(Optional<std::chrono::duration<DurationRep, DurationPeriod>> duration) : Duration(duration) { }
-
-    Optional<Milliseconds> Duration;
 };
 
 inline bool IsInvalidMovementGeneratorType(uint8 const type) { return type == MAX_DB_MOTION_TYPE || type >= MAX_MOTION_TYPE; }

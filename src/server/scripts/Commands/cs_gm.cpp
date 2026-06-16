@@ -25,12 +25,12 @@ EndScriptData */
 #include "ScriptMgr.h"
 #include "AccountMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "DatabaseEnv.h"
 #include "Language.h"
 #include "ObjectAccessor.h"
+#include "Opcodes.h"
 #include "Player.h"
-#include "RealmList.h"
+#include "Realm.h"
 #include "World.h"
 #include "WorldSession.h"
 
@@ -41,7 +41,7 @@ class gm_commandscript : public CommandScript
 public:
     gm_commandscript() : CommandScript("gm_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable gmCommandTable =
         {
@@ -99,17 +99,15 @@ public:
         if (!target)
             target = handler->GetSession()->GetPlayer();
 
+        WorldPacket data(12);
         if (enable)
-        {
-            target->SetCanFly(true);
-            target->SetCanTransitionBetweenSwimAndFly(true);
-        }
+            data.SetOpcode(SMSG_MOVE_SET_CAN_FLY);
         else
-        {
-            target->SetCanFly(false);
-            target->SetCanTransitionBetweenSwimAndFly(false);
-        }
+            data.SetOpcode(SMSG_MOVE_UNSET_CAN_FLY);
 
+        data << target->GetPackGUID();
+        data << uint32(0);                                      // unknown
+        target->SendMessageToSet(&data, true);
         handler->PSendSysMessage(LANG_COMMAND_FLYMODE_STATUS, handler->GetNameLink(target).c_str(), enable ? "on" : "off");
         return true;
     }
@@ -120,7 +118,7 @@ public:
         bool footer = false;
 
         std::shared_lock<std::shared_mutex> lock(*HashMapHolder<Player>::GetLock());
-        for (auto&& [playerGuid, player] : ObjectAccessor::GetPlayers())
+        for (auto const& [playerGuid, player] : ObjectAccessor::GetPlayers())
         {
             AccountTypes playerSec = player->GetSession()->GetSecurity();
             if ((player->IsGameMaster() ||
@@ -161,7 +159,7 @@ public:
         ///- Get the accounts with GM Level >0
         LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_GM_ACCOUNTS);
         stmt->setUInt8(0, uint8(SEC_MODERATOR));
-        stmt->setInt32(1, int32(sRealmList->GetCurrentRealmId().Realm));
+        stmt->setInt32(1, int32(realm.Id.Realm));
         PreparedQueryResult result = LoginDatabase.Query(stmt);
 
         if (result)

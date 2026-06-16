@@ -22,6 +22,7 @@ SDComment:
 SDCategory: Caverns of Time, Mount Hyjal
 EndScriptData */
 
+#include "ScriptMgr.h"
 #include "CellImpl.h"
 #include "GridNotifiersImpl.h"
 #include "hyjal_trash.h"
@@ -433,7 +434,7 @@ void hyjalAI::EnterEvadeMode(EvadeReason /*why*/)
     if (me->IsAlive())
         me->GetMotionMaster()->MoveTargetedHome();
 
-    me->SetTappedBy(nullptr);
+    me->SetLootRecipient(nullptr);
 }
 
 void hyjalAI::JustEngagedWith(Unit* /*who*/)
@@ -520,10 +521,6 @@ void hyjalAI::SummonCreature(uint32 entry, float Base[4][3])
             case FROST_WYRM:
             case GIANT_INFERNAL:
             case FEL_STALKER:
-            case RAGE_WINTERCHILL:
-            case ANETHERON:
-            case KAZROGAL:
-            case AZGALOR:
                 ENSURE_AI(hyjal_trashAI, creature->AI())->IsEvent = true;
                 break;
         }
@@ -888,6 +885,8 @@ void hyjalAI::UpdateAI(uint32 diff)
             } else SpellTimer[i] -= diff;
         }
     }
+
+    DoMeleeAttackIfReady();
 }
 
 void hyjalAI::JustDied(Unit* /*killer*/)

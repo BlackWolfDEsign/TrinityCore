@@ -20,6 +20,7 @@
 #include "MotionMaster.h"
 #include "ScriptedCreature.h"
 #include "ScriptMgr.h"
+#include "SpellAuras.h"
 #include "SpellInfo.h"
 #include "Timer.h"
 
@@ -95,8 +96,7 @@ public:
         _killYellTimer.Reset(0s);
 
         DoCastSelf(SPELL_RETRIBUTION_AURA, true);
-        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-        me->SetUninteractible(false);
+        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_NON_ATTACKABLE);
         me->SetStandState(UNIT_STAND_STATE_STAND);
         me->SetReactState(REACT_AGGRESSIVE);
 
@@ -167,10 +167,10 @@ public:
             }
 
             me->InterruptNonMeleeSpells(true);
+            me->ClearComboPointHolders();
             me->RemoveAllAuras();
             me->ClearAllReactives();
-            me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-            me->SetUninteractible(true);
+            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_NON_ATTACKABLE);
             me->SetStandState(UNIT_STAND_STATE_DEAD);
             me->SetReactState(REACT_PASSIVE); // prevent Mograine from attacking while fake death
 
@@ -187,16 +187,16 @@ public:
         // Casted from Whitemane
         if (spellInfo->Id == SPELL_SCARLET_RESURRECTION)
         {
-            scheduler.Schedule(3s, [this](TaskContext const& /*context*/)
+            scheduler.Schedule(3s, [this](TaskContext /*context*/)
             {
                 // Say text
                 Talk(SAY_MO_RESURRECTED);
 
-                me->SetUninteractible(false);
+                me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 me->SetStandState(UNIT_STAND_STATE_STAND);
             });
 
-            scheduler.Schedule(5s, [this](TaskContext const& /*context*/)
+            scheduler.Schedule(5s, [this](TaskContext /*context*/)
             {
                 // Schedule events after ressurrect
                 events.ScheduleEvent(EVENT_CRUSADER_STRIKE, 10s, 15s);
@@ -228,6 +228,8 @@ public:
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -271,7 +273,7 @@ public:
         me->GetMotionMaster()->MoveIdle();
 
         // Start events after 5 seconds
-        _scheduler.Schedule(5s, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(5s, [this](TaskContext /*context*/)
         {
             _events.ScheduleEvent(EVENT_HEAL, 10s);
             _events.ScheduleEvent(EVENT_POWER_WORD_SHIELD, 15s);
@@ -341,6 +343,9 @@ public:
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        if (me->HasReactState(REACT_AGGRESSIVE))
+            DoMeleeAttackIfReady();
     }
 
     void DamageTaken(Unit* /*who*/, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
@@ -387,7 +392,7 @@ public:
             me->SetFacingToObject(mograine);
 
         // After 3 seconds cast scarlet ressurection
-        _scheduler.Schedule(3s, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(3s, [this](TaskContext /*context*/)
         {
             if (Creature* mograine = _instance->GetCreature(DATA_MOGRAINE))
                 DoCast(mograine, SPELL_SCARLET_RESURRECTION);

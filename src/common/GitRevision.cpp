@@ -77,11 +77,6 @@ char const* GitRevision::GetFullDatabase()
     return DATABASE_FULL_DATABASE;
 }
 
-char const* GitRevision::GetHotfixesDatabase()
-{
-    return DATABASE_HOTFIXES_DATABASE;
-}
-
 #ifndef TRINITY_API_USE_DYNAMIC_LINKING
 #  define TRINITY_LINKAGE_TYPE_STR "Static"
 #else

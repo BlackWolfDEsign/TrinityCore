@@ -21,7 +21,6 @@
 #include "Channel.h"
 #include "ChannelPackets.h"
 #include "CharacterCache.h"
-#include "GridNotifiers.h"
 #include "World.h"
 
 // initial packet data (notify type and channel name)
@@ -32,17 +31,18 @@ class ChannelNameBuilder
         ChannelNameBuilder(Channel const* source, PacketModifier const& modifier)
             : _source(source), _modifier(modifier){ }
 
-        Trinity::PacketSenderOwning<WorldPackets::Channel::ChannelNotify>* operator()(LocaleConstant locale) const
+        void operator()(WorldPacket& data, LocaleConstant locale) const
         {
             // LocalizedPacketDo sends client DBC locale, we need to get available to server locale
             LocaleConstant localeIdx = sWorld->GetAvailableDbcLocale(locale);
 
-            Trinity::PacketSenderOwning<WorldPackets::Channel::ChannelNotify>* sender = new Trinity::PacketSenderOwning<WorldPackets::Channel::ChannelNotify>();
-            sender->Data.Type = _modifier.NotificationType;
-            sender->Data._Channel = _source->GetName(localeIdx);
-            _modifier.Append(sender->Data);
-            sender->Data.Write();
-            return sender;
+            WorldPackets::Channel::ChannelNotify channelNotify;
+            channelNotify.Type = _modifier.NotificationType;
+            channelNotify._Channel = _source->GetName(localeIdx);
+            _modifier.Append(channelNotify);
+            channelNotify.Write();
+
+            data = channelNotify.Move();
         }
 
         private:
@@ -88,7 +88,9 @@ struct YouJoinedAppend
 
     void Append(WorldPackets::Channel::ChannelNotify& data) const
     {
+        data.NewFlags = _channel->GetFlags();
         data.ChatChannelID = _channel->GetChannelId();
+        data.InstanceID = 0;
     }
 
 private:
@@ -97,17 +99,19 @@ private:
 
 struct YouLeftAppend
 {
-    explicit YouLeftAppend(Channel const* channel) : _channel(channel) { }
+    explicit YouLeftAppend(Channel const* channel, bool suspend) : _channel(channel), _suspend(suspend) { }
 
     static uint8 const NotificationType = CHAT_YOU_LEFT_NOTICE;
 
     void Append(WorldPackets::Channel::ChannelNotify& data) const
     {
         data.ChatChannelID = _channel->GetChannelId();
+        data.Suspended = _suspend;
     }
 
 private:
     Channel const* _channel;
+    bool _suspend;
 };
 
 struct WrongPasswordAppend
@@ -445,15 +449,14 @@ struct NotInLFGAppend
 
 struct VoiceOnAppend
 {
-    explicit VoiceOnAppend(ObjectGuid const& guid, bool announce = true)
-        : NotificationType(announce ? CHAT_VOICE_ON_NOTICE : CHAT_VOICE_ON_NO_ANNOUNCE_NOTICE), _guid(guid) { }
+    explicit VoiceOnAppend(ObjectGuid const& guid) : _guid(guid) { }
+
+    static uint8 const NotificationType = CHAT_VOICE_ON_NOTICE;
 
     void Append(WorldPackets::Channel::ChannelNotify& data) const
     {
         data.SenderGuid = _guid;
     }
-
-    uint8 const NotificationType;
 
 private:
     ObjectGuid _guid;

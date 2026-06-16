@@ -24,7 +24,6 @@
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Language.h"
 #include "Player.h"
 #include "RBAC.h"
@@ -47,7 +46,7 @@ public:
     * @brief Returns the command structure for the system.
     */
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable deserterInstanceCommandTable =
         {

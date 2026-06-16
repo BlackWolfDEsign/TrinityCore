@@ -18,30 +18,34 @@
 #ifndef TRINITYCORE_CLIENT_CONFIG_PACKETS_H
 #define TRINITYCORE_CLIENT_CONFIG_PACKETS_H
 
+#include "ObjectGuid.h"
 #include "Packet.h"
-#include "PacketUtilities.h"
-#include "WorldSession.h"
+#include <span>
+
+struct BannedAddon;
+struct SecureAddonInfo;
 
 namespace WorldPackets
 {
     namespace ClientConfig
     {
-        class AccountDataTimes final : public ServerPacket
+        class AddonInfo final : public ServerPacket
         {
+            static std::array<uint8, 256> const PublicKey;
+
         public:
-            explicit AccountDataTimes() : ServerPacket(SMSG_ACCOUNT_DATA_TIMES, 16 + 8 + 8 * NUM_ACCOUNT_DATA_TYPES) { }
+            explicit AddonInfo() : ServerPacket(SMSG_ADDON_INFO) { }
 
             WorldPacket const* Write() override;
 
-            ObjectGuid PlayerGuid;
-            Timestamp<> ServerTime;
-            std::array<Timestamp<>, NUM_ACCOUNT_DATA_TYPES> AccountTimes = { };
+            std::span<SecureAddonInfo const> Addons;
+            std::span<BannedAddon const> BannedAddons;
         };
 
         class ClientCacheVersion final : public ServerPacket
         {
         public:
-            explicit ClientCacheVersion() : ServerPacket(SMSG_CACHE_VERSION, 4) { }
+            explicit ClientCacheVersion() : ServerPacket(SMSG_CLIENTCACHE_VERSION, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -55,7 +59,6 @@ namespace WorldPackets
 
             void Read() override;
 
-            ObjectGuid PlayerGuid;
             int32 DataType = 0; ///< @see enum AccountDataType
         };
 
@@ -67,7 +70,7 @@ namespace WorldPackets
             WorldPacket const* Write() override;
 
             ObjectGuid Player;
-            Timestamp<> Time;
+            uint32 Time    = 0; ///< UnixTime
             uint32 Size    = 0; ///< decompressed size
             int32 DataType = 0; ///< @see enum AccountDataType
             std::vector<uint8> CompressedData;
@@ -80,33 +83,21 @@ namespace WorldPackets
 
             void Read() override;
 
-            ObjectGuid PlayerGuid;
-            Timestamp<> Time;
+            uint32 Time    = 0; ///< UnixTime
             uint32 Size    = 0; ///< decompressed size
             int32 DataType = 0; ///< @see enum AccountDataType
-            std::span<uint8> CompressedData;
+            std::span<uint8 const> CompressedData;
         };
 
         class UpdateAccountDataComplete final : public ServerPacket
         {
         public:
-            explicit UpdateAccountDataComplete() : ServerPacket(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE, 16 + 4 + 4) { }
+            explicit UpdateAccountDataComplete() : ServerPacket(SMSG_UPDATE_ACCOUNT_DATA_COMPLETE, 4 + 4) { }
 
             WorldPacket const* Write() override;
 
-            ObjectGuid Player;
             int32 DataType = 0; ///< @see enum AccountDataType
             int32 Result = 0;
-        };
-
-        class SetAdvancedCombatLogging final : public ClientPacket
-        {
-        public:
-            explicit SetAdvancedCombatLogging(WorldPacket&& packet) : ClientPacket(CMSG_SET_ADVANCED_COMBAT_LOGGING, std::move(packet)) { }
-
-            void Read() override;
-
-            bool Enable = false;
         };
     }
 }

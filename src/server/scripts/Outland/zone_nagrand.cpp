@@ -27,11 +27,12 @@ npc_maghar_captive
 EndContentData */
 
 #include "ScriptMgr.h"
-#include "ConditionMgr.h"
+#include "GameObject.h"
 #include "GameObjectAI.h"
 #include "MotionMaster.h"
 #include "Player.h"
 #include "ScriptedEscortAI.h"
+#include "ScriptedGossip.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "TemporarySummon.h"
@@ -197,6 +198,8 @@ public:
             }
             else
                 FrostShockTimer -= diff;
+
+            DoMeleeAttackIfReady();
         }
 
         void OnQuestAccept(Player* player, Quest const* quest) override
@@ -390,6 +393,8 @@ public:
                 DoCastVictim(SPELL_KUR_FROST_SHOCK);
                 FrostShockTimer = urand(7500, 15000);
             } else FrostShockTimer -= diff;
+
+            DoMeleeAttackIfReady();
         }
 
         void OnQuestAccept(Player* player, Quest const* quest) override
@@ -425,9 +430,7 @@ enum PlantBannerQuests
     NPC_KIL_SORROW_DEATHSWORN        = 17148,
     NPC_GISELDA_THE_CRONE            = 18391,
     NPC_WARMAUL_REAVER               = 17138,
-    NPC_WARMAUL_SHAMAN               = 18064,
-
-    PATH_NAGRAND_BANNER              = 4816480,
+    NPC_WARMAUL_SHAMAN               = 18064
 };
 
 class npc_nagrand_banner : public CreatureScript
@@ -461,27 +464,15 @@ public:
             if (!UpdateVictim())
                 return;
 
-            scheduler.Update(diff);
+            scheduler.Update(diff, [this]
+            {
+                DoMeleeAttackIfReady();
+            });
         }
 
         bool IsBannered()
         {
             return bannered;
-        }
-
-        void WaypointReached(uint32 waypointId, uint32 pathId) override
-        {
-            if (pathId != PATH_NAGRAND_BANNER)
-                return;
-
-            if (waypointId == 11)
-                me->HandleEmoteCommand(EMOTE_ONESHOT_APPLAUD);
-            else if (waypointId == 4 || waypointId == 8)
-                me->HandleEmoteCommand(EMOTE_ONESHOT_TALK);
-            else if (waypointId == 10)
-                me->HandleEmoteCommand(EMOTE_ONESHOT_POINT);
-            else if (waypointId == 3 || waypointId == 7)
-                me->HandleEmoteCommand(EMOTE_STATE_USE_STANDING);
         }
 
     protected:
@@ -509,12 +500,12 @@ public:
             has_fled = false;
             interrupt_cooldown = 20000;
             scheduler
-                .Schedule(Seconds(0), [this](TaskContext& ArcaneMissiles)
+                .Schedule(Seconds(0), [this](TaskContext ArcaneMissiles)
                 {
                     DoCastVictim(SPELL_ARCANE_MISSILES);
                     ArcaneMissiles.Repeat(Milliseconds(2400), Milliseconds(3800));
                 })
-                .Schedule(Seconds(3), Seconds(6), [this](TaskContext& ChainsOfIce)
+                .Schedule(Seconds(3), Seconds(6), [this](TaskContext ChainsOfIce)
                 {
                     if (Unit* target = SelectTarget(SelectTargetMethod::Random))
                         DoCast(target, SPELL_CHAINS_OF_ICE, true);
@@ -537,7 +528,10 @@ public:
                 interrupt_cooldown = 0;
             }
 
-            scheduler.Update(diff);
+            scheduler.Update(diff, [this]
+            {
+                DoMeleeAttackIfReady();
+            });
         }
 
         void DamageTaken(Unit* /*attacker*/, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/) override
@@ -568,7 +562,7 @@ public:
         void JustEngagedWith(Unit* /*who*/) override
         {
             scheduler
-                .Schedule(Milliseconds(4500), [this](TaskContext& MindSear)
+                .Schedule(Milliseconds(4500), [this](TaskContext MindSear)
                 {
                     DoCastVictim(SPELL_MIND_SEAR);
                     MindSear.Repeat(Milliseconds(7000), Milliseconds(11000));
@@ -651,11 +645,11 @@ public:
         {
             used_healing = false;
             scheduler
-                .Schedule(Seconds(2), [this](TaskContext const& /*SearingTotem*/)
+                .Schedule(Seconds(2), [this](TaskContext /*SearingTotem*/)
                 {
                     DoCast(SPELL_SCORCHING_TOTEM);
                 })
-                .Schedule(Seconds(6), [this](TaskContext& FrostShock)
+                .Schedule(Seconds(6), [this](TaskContext FrostShock)
                 {
                     DoCastVictim(SPELL_FROST_SHOCK);
                     FrostShock.Repeat(Seconds(12));
@@ -702,8 +696,8 @@ public:
 
     bool OnConditionCheck(Condition const* condition, ConditionSourceInfo& sourceInfo) override
     {
-        WorldObject const* target = sourceInfo.mConditionTargets[condition->ConditionTarget];
-        if (Creature const* creature = target->ToCreature())
+        WorldObject* target = sourceInfo.mConditionTargets[condition->ConditionTarget];
+        if (Creature* creature = target->ToCreature())
         {
             if (npc_nagrand_banner::npc_nagrand_bannerAI *ai = CAST_AI(npc_nagrand_banner::npc_nagrand_bannerAI, creature->AI()))
                 return !ai->IsBannered();
@@ -723,6 +717,8 @@ enum FireBomb
 // 31959 - Fire Bomb Target Summon Trigger
 class spell_nagrand_fire_bomb_target_summon_trigger : public SpellScript
 {
+    PrepareSpellScript(spell_nagrand_fire_bomb_target_summon_trigger);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_FIRE_BOMB_TARGET_SUMMON_EFFECT });
@@ -744,6 +740,8 @@ class spell_nagrand_fire_bomb_target_summon_trigger : public SpellScript
 // 31960 - Fire Bomb Target Summon Effect
 class spell_nagrand_fire_bomb_target_summon_effect : public SpellScript
 {
+    PrepareSpellScript(spell_nagrand_fire_bomb_target_summon_effect);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_FIRE_BOMB_DAMAGE_MISSILE });
@@ -763,6 +761,8 @@ class spell_nagrand_fire_bomb_target_summon_effect : public SpellScript
 // 31961 - Fire Bomb
 class spell_nagrand_fire_bomb_damage_missile : public SpellScript
 {
+    PrepareSpellScript(spell_nagrand_fire_bomb_damage_missile);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_FIRE_BOMB_SUMMON_CATAPULT_BLAZE, SPELL_FIRE_BOMB_FLAMES });

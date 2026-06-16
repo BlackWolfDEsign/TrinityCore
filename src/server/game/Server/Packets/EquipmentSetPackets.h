@@ -20,7 +20,6 @@
 
 #include "Packet.h"
 #include "EquipmentSet.h"
-#include "ItemPacketsCommon.h"
 
 namespace WorldPackets
 {
@@ -29,19 +28,18 @@ namespace WorldPackets
         class EquipmentSetID final : public ServerPacket
         {
         public:
-            explicit EquipmentSetID() : ServerPacket(SMSG_EQUIPMENT_SET_ID, 8 + 4 + 4) { }
+            explicit EquipmentSetID() : ServerPacket(SMSG_EQUIPMENT_SET_SAVED, 8 + 4) { }
 
             WorldPacket const* Write() override;
 
-            uint64 GUID  = 0; ///< Set Identifier
-            int32 Type = 0;
+            uint64 GUID = 0; ///< Set Identifier
             uint32 SetID = 0; ///< Index
         };
 
         class LoadEquipmentSet final : public ServerPacket
         {
         public:
-            explicit LoadEquipmentSet() : ServerPacket(SMSG_LOAD_EQUIPMENT_SET, 4) { }
+            LoadEquipmentSet() : ServerPacket(SMSG_EQUIPMENT_SET_LIST, 1000) { }
 
             WorldPacket const* Write() override;
 
@@ -51,51 +49,11 @@ namespace WorldPackets
         class SaveEquipmentSet final : public ClientPacket
         {
         public:
-            explicit SaveEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_SAVE_EQUIPMENT_SET, std::move(packet)) { }
+            SaveEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_EQUIPMENT_SET_SAVE, std::move(packet)) { }
 
             void Read() override;
 
             EquipmentSetInfo::EquipmentSetData Set;
-        };
-
-        class DeleteEquipmentSet final : public ClientPacket
-        {
-        public:
-            explicit DeleteEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_DELETE_EQUIPMENT_SET, std::move(packet)) { }
-
-            void Read() override;
-
-            uint64 ID = 0;
-        };
-
-        class UseEquipmentSet final : public ClientPacket
-        {
-        public:
-            explicit UseEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_USE_EQUIPMENT_SET, std::move(packet)) { }
-
-            void Read() override;
-
-            struct EquipmentSetItem
-            {
-                ObjectGuid Item;
-                uint8 ContainerSlot     = 0;
-                uint8 Slot              = 0;
-            };
-
-            WorldPackets::Item::InvUpdate Inv;
-            EquipmentSetItem Items[EQUIPMENT_SET_SLOTS];
-            uint64 GUID = 0; ///< Set Identifier
-        };
-
-        class UseEquipmentSetResult final : public ServerPacket
-        {
-        public:
-            explicit UseEquipmentSetResult() : ServerPacket(SMSG_USE_EQUIPMENT_SET_RESULT, 8 + 1) { }
-
-            WorldPacket const* Write() override;
-
-            uint64 GUID = 0; ///< Set Identifier
-            int32 Reason = 0;
         };
     }
 }

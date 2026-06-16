@@ -20,8 +20,6 @@
 
 #include "Define.h"
 #include "Optional.h"
-#include <memory>
-#include <span>
 
 namespace G3D
 {
@@ -30,7 +28,6 @@ namespace G3D
 }
 
 class GameObjectModel;
-class PhaseShift;
 struct DynTreeImpl;
 
 namespace VMAP
@@ -40,19 +37,25 @@ namespace VMAP
 
 class TC_COMMON_API DynamicMapTree
 {
-    std::unique_ptr<DynTreeImpl> impl;
+    DynTreeImpl *impl;
 
 public:
 
     DynamicMapTree();
     ~DynamicMapTree();
 
-    bool isInLineOfSight(G3D::Vector3 const& startPos, G3D::Vector3 const& endPos, PhaseShift const& phaseShift) const;
-    bool getIntersectionTime(G3D::Ray const& ray, G3D::Vector3 const& endPos, PhaseShift const& phaseShift, float& maxDist) const;
-    bool getObjectHitPos(G3D::Vector3 const& startPos, G3D::Vector3 const& endPos, G3D::Vector3& resultHitPos, float modifyDist, PhaseShift const& phaseShift) const;
+    bool isInLineOfSight(float x1, float y1, float z1, float x2, float y2,
+                         float z2, uint32 phasemask) const;
 
-    float getHeight(float x, float y, float z, float maxSearchDist, PhaseShift const& phaseShift) const;
-    bool getAreaAndLiquidData(float x, float y, float z, PhaseShift const& phaseShift, Optional<uint8> reqLiquidType, VMAP::AreaAndLiquidData& data) const;
+    bool getIntersectionTime(uint32 phasemask, const G3D::Ray& ray,
+                             const G3D::Vector3& endPos, float& maxDist) const;
+    bool getAreaAndLiquidData(float x, float y, float z, uint32 phasemask, Optional<uint8> reqLiquidType, VMAP::AreaAndLiquidData& data) const;
+
+    bool getObjectHitPos(uint32 phasemask, const G3D::Vector3& pPos1,
+                         const G3D::Vector3& pPos2, G3D::Vector3& pResultHitPos,
+                         float pModifyDist) const;
+
+    float getHeight(float x, float y, float z, float maxSearchDist, uint32 phasemask) const;
 
     void insert(GameObjectModel const&);
     void remove(GameObjectModel const&);
@@ -60,8 +63,6 @@ public:
 
     void balance();
     void update(uint32 diff);
-
-    std::span<GameObjectModel const* const> getModelsInGrid(uint32 gx, uint32 gy) const;
 };
 
 #endif // _DYNTREE_H

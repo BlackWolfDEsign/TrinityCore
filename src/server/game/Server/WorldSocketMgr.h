@@ -19,45 +19,31 @@
 #define TRINITYCORE_WORLD_SOCKET_MGR_H
 
 #include "SocketMgr.h"
-#include "WorldSocket.h"
 
-class WorldSocketThread final : public Trinity::Net::NetworkThread<WorldSocket, WorldSocketThread>
-{
-public:
-    void SocketAdded(std::shared_ptr<WorldSocket> const& sock) override;
-
-    void SocketRemoved(std::shared_ptr<WorldSocket>const& sock) override;
-};
-
-class WorldSocketMgr;
-
-struct WorldSocketMgrTraits
-{
-    using Self = WorldSocketMgr;
-    using SocketType = WorldSocket;
-    using ThreadType = WorldSocketThread;
-};
+class WorldSocket;
 
 /// Manages all sockets connected to peers and network threads
-class TC_GAME_API WorldSocketMgr final : public Trinity::Net::SocketMgr<WorldSocketMgrTraits>
+class TC_GAME_API WorldSocketMgr : public Trinity::Net::SocketMgr<WorldSocket>
 {
-public:
-    ~WorldSocketMgr();
+    typedef SocketMgr<WorldSocket> BaseSocketMgr;
 
+public:
     static WorldSocketMgr& Instance();
 
     /// Start network, listen at address:port .
-    bool StartNetwork(Trinity::Asio::IoContext& ioContext, std::string const& bindIp, uint16 port, int threadCount) override;
+    bool StartWorldNetwork(Trinity::Asio::IoContext& ioContext, std::string const& bindIp, uint16 port, int networkThreads);
 
     /// Stops all network threads, It will wait for all running threads .
     void StopNetwork() override;
 
-    void OnSocketOpen(Trinity::Net::IoContextTcpSocket&& sock) override;
+    void OnSocketOpen(Trinity::Net::IoContextTcpSocket&& sock, uint32 threadIndex) override;
 
     std::size_t GetApplicationSendBufferSize() const { return _socketApplicationSendBufferSize; }
 
 protected:
     WorldSocketMgr();
+
+    Trinity::Net::NetworkThread<WorldSocket>* CreateThreads() const override;
 
 private:
     int32 _socketSystemSendBufferSize;

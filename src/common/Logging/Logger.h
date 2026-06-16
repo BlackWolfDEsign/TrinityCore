@@ -20,8 +20,8 @@
 
 #include "Define.h"
 #include "LogCommon.h"
+#include <unordered_map>
 #include <string>
-#include <vector>
 
 class Appender;
 struct LogMessage;
@@ -31,7 +31,8 @@ class TC_COMMON_API Logger
     public:
         Logger(std::string const& name, LogLevel level);
 
-        void addAppender(Appender* appender);
+        void addAppender(uint8 type, Appender* appender);
+        void delAppender(uint8 type);
 
         std::string const& getName() const;
         LogLevel getLogLevel() const;
@@ -41,7 +42,7 @@ class TC_COMMON_API Logger
     private:
         std::string name;
         LogLevel level;
-        std::vector<Appender*> appenders;
+        std::unordered_map<uint8, Appender*> appenders;
 };
 
 #endif

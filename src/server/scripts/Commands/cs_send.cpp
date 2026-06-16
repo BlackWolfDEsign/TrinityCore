@@ -17,17 +17,17 @@
 
 #include "ScriptMgr.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "DatabaseEnv.h"
 #include "Item.h"
 #include "Language.h"
 #include "Mail.h"
 #include "ObjectMgr.h"
+#include "Pet.h"
 #include "Player.h"
 #include "RBAC.h"
 #include "WorldSession.h"
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
@@ -38,7 +38,7 @@ class send_commandscript : public CommandScript
 public:
     send_commandscript() : CommandScript("send_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable sendCommandTable =
         {
@@ -86,7 +86,7 @@ public:
         std::string text    = msgText;
 
         // from console, use non-existing sender
-        MailSender sender(MAIL_NORMAL, handler->GetSession() ? handler->GetSession()->GetPlayer()->GetGUID().GetCounter() : UI64LIT(0), MAIL_STATIONERY_GM);
+        MailSender sender(MAIL_NORMAL, handler->GetSession() ? handler->GetSession()->GetPlayer()->GetGUID().GetCounter() : 0, MAIL_STATIONERY_GM);
 
         /// @todo Fix poor design
         CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
@@ -185,7 +185,7 @@ public:
         }
 
         // from console show nonexisting sender
-        MailSender sender(MAIL_NORMAL, handler->GetSession() ? handler->GetSession()->GetPlayer()->GetGUID().GetCounter() : UI64LIT(0), MAIL_STATIONERY_GM);
+        MailSender sender(MAIL_NORMAL, handler->GetSession() ? handler->GetSession()->GetPlayer()->GetGUID().GetCounter() : 0, MAIL_STATIONERY_GM);
 
         // fill mail
         MailDraft draft(subject, text);
@@ -194,7 +194,7 @@ public:
 
         for (ItemPairs::const_iterator itr = items.begin(); itr != items.end(); ++itr)
         {
-            if (Item* item = Item::CreateItem(itr->first, itr->second, ItemContext::NONE, handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr))
+            if (Item* item = Item::CreateItem(itr->first, itr->second, handler->GetSession() ? handler->GetSession()->GetPlayer() : 0))
             {
                 item->SaveToDB(trans);              // Save to prevent being lost at next mail load. If send fails, the item will be deleted.
                 draft.AddItem(item);
@@ -209,12 +209,12 @@ public:
         return true;
     }
     /// Send money by mail
-    static bool HandleSendMoneyCommand(ChatHandler* handler, PlayerIdentifier const& receiver, QuotedString const& subject, QuotedString const& text, int64 money)
+    static bool HandleSendMoneyCommand(ChatHandler* handler, PlayerIdentifier const& receiver, QuotedString const& subject, QuotedString const& text, uint32 money)
     {
         /// format: name "subject text" "mail text" money
 
         // from console show nonexisting sender
-        MailSender sender(MAIL_NORMAL, handler->GetSession() ? handler->GetSession()->GetPlayer()->GetGUID().GetCounter() : UI64LIT(0), MAIL_STATIONERY_GM);
+        MailSender sender(MAIL_NORMAL, handler->GetSession() ? handler->GetSession()->GetPlayer()->GetGUID().GetCounter() : 0, MAIL_STATIONERY_GM);
 
         CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
 
@@ -249,8 +249,9 @@ public:
         }
 
         /// - Send the message
-        player->GetSession()->SendNotification("%s", msgStr);
-        player->GetSession()->SendNotification("|cffff0000[Message from administrator]:|r");
+        // Use SendAreaTriggerMessage for fastest delivery.
+        player->GetSession()->SendAreaTriggerMessage("%s", msgStr);
+        player->GetSession()->SendAreaTriggerMessage("|cffff0000[Message from administrator]:|r");
 
         // Confirmation message
         std::string nameLink = handler->GetNameLink(player);

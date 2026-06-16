@@ -26,48 +26,20 @@ namespace WorldPackets
     {
         struct FactionData
         {
-            int32 FactionID = 0;
-            uint16 Flags = 0;
+            uint8 Flags = 0;
             int32 Standing = 0;
-        };
-
-        struct FactionBonusData
-        {
-            int32 FactionID = 0;
-            bool FactionHasBonus = false;
         };
 
         class InitializeFactions final : public ServerPacket
         {
+            static constexpr uint32 FactionCount = 128;
+
         public:
-            InitializeFactions() : ServerPacket(SMSG_INITIALIZE_FACTIONS, 0x1000) { }
+            explicit InitializeFactions() : ServerPacket(SMSG_INITIALIZE_FACTIONS, 4 + (1 + 4) * FactionCount) { }
 
             WorldPacket const* Write() override;
 
-            std::vector<FactionData> Factions;
-            std::vector<FactionBonusData> Bonuses;
-        };
-
-        struct FactionStandingData
-        {
-            FactionStandingData() { }
-            FactionStandingData(int32 index, int32 standing, int32 factionId) : Index(index), Standing(standing), FactionID(factionId) { }
-
-            int32 Index = 0;
-            int32 Standing = 0;
-            int32 FactionID = 0;
-        };
-
-        class SetFactionStanding final : public ServerPacket
-        {
-        public:
-            SetFactionStanding() : ServerPacket(SMSG_SET_FACTION_STANDING) { }
-
-            WorldPacket const* Write() override;
-
-            float BonusFromAchievementSystem = 0.0f;
-            std::vector<FactionStandingData> Faction;
-            bool ShowVisual = false;
+            std::array<FactionData, FactionCount> Factions = { };
         };
     }
 }

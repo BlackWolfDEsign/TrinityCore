@@ -16,16 +16,20 @@
  */
 
 #include "ScriptMgr.h"
+#include "Creature.h"
 #include "GameObject.h"
 #include "halls_of_stone.h"
 #include "InstanceScript.h"
+#include "Map.h"
+#include "Player.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_SJONNIR_DOOR, DATA_TRIBUNAL_OF_AGES, EncounterDoorBehavior::OpenWhenDone },
+    { GO_SJONNIR_DOOR, DATA_TRIBUNAL_OF_AGES, DOOR_TYPE_PASSAGE },
+    { 0,               0,                     DOOR_TYPE_ROOM    } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_KRYSTALLUS,               DATA_KRYSTALLUS             },
     { NPC_MAIDEN_OF_GRIEF,          DATA_MAIDEN_OF_GRIEF        },
@@ -33,9 +37,10 @@ static constexpr ObjectData creatureData[] =
     { NPC_KADDRAK,                  DATA_KADDRAK                },
     { NPC_MARNAK,                   DATA_MARNAK                 },
     { NPC_ABEDNEUM,                 DATA_ABEDNEUM               },
+    { 0,                            0                           } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_KADDRAK,               DATA_GO_KADDRAK             },
     { GO_MARNAK,                DATA_GO_MARNAK              },
@@ -44,14 +49,7 @@ static constexpr ObjectData gameObjectData[] =
     { GO_TRIBUNAL_SKY_FLOOR,    DATA_GO_SKY_FLOOR           },
     { GO_TRIBUNAL_CHEST,        DATA_GO_TRIBUNAL_CHEST      },
     { GO_TRIBUNAL_CHEST_HERO,   DATA_GO_TRIBUNAL_CHEST      },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_KRYSTALLUS, {{ 1994 }} },
-    { DATA_MAIDEN_OF_GRIEF, {{ 1996 }} },
-    { DATA_TRIBUNAL_OF_AGES, {{ 1995 }} },
-    { DATA_SJONNIR_THE_IRONSHAPER, {{ 1998 }} }
+    { 0,                        0                           } // END
 };
 
 class instance_halls_of_stone : public InstanceMapScript
@@ -67,7 +65,6 @@ class instance_halls_of_stone : public InstanceMapScript
                 SetBossNumber(EncounterCount);
                 LoadObjectData(creatureData, gameObjectData);
                 LoadDoorData(doorData);
-                LoadDungeonEncounterData(encounters);
             }
 
             void OnGameObjectCreate(GameObject* go) override

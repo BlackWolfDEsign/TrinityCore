@@ -120,6 +120,8 @@ public:
                         break;
                 }
             }
+
+            DoMeleeAttackIfReady();
         }
 
         private:
@@ -144,7 +146,7 @@ class at_twilight_grove : public AreaTriggerScript
     public:
         at_twilight_grove() : AreaTriggerScript("at_twilight_grove") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
         {
             if (player->GetQuestStatus(QUEST_NIGHTMARES_CORRUPTION) == QUEST_STATUS_INCOMPLETE)
                 if (!player->FindNearestCreature(NPC_TWILIGHT_CORRUPTER, 500.0f, true))
@@ -152,7 +154,7 @@ class at_twilight_grove : public AreaTriggerScript
                         corrupter->AI()->Talk(YELL_TWILIGHT_CORRUPTOR_RESPAWN, player);
 
             return false;
-        }
+        };
 };
 
 void AddSC_duskwood()

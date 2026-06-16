@@ -15,92 +15,99 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_BYTE_BUFFER_H
-#define TRINITYCORE_BYTE_BUFFER_H
+#ifndef _BYTEBUFFER_H
+#define _BYTEBUFFER_H
 
-#include "ByteConverter.h"
-#include "Concepts.h"
 #include "Define.h"
+#include "ByteConverter.h"
 #include <array>
-#include <span>
 #include <string>
 #include <vector>
 #include <cstring>
+
+class MessageBuffer;
 
 // Root of ByteBuffer exception hierarchy
 class TC_SHARED_API ByteBufferException : public std::exception
 {
 public:
-    explicit ByteBufferException() = default;
-    explicit ByteBufferException(std::string&& message) noexcept : msg_(std::move(message)) { }
+    ~ByteBufferException() noexcept = default;
 
     char const* what() const noexcept override { return msg_.c_str(); }
 
 protected:
+    std::string & message() noexcept { return msg_; }
+
+private:
     std::string msg_;
 };
 
 class TC_SHARED_API ByteBufferPositionException : public ByteBufferException
 {
 public:
-    ByteBufferPositionException(size_t pos, size_t size, size_t valueSize);
+    ByteBufferPositionException(bool add, size_t pos, size_t size, size_t valueSize);
+
+    ~ByteBufferPositionException() noexcept = default;
+};
+
+class TC_SHARED_API ByteBufferSourceException : public ByteBufferException
+{
+public:
+    ByteBufferSourceException(size_t pos, size_t size, size_t valueSize);
+
+    ~ByteBufferSourceException() noexcept = default;
 };
 
 class TC_SHARED_API ByteBufferInvalidValueException : public ByteBufferException
 {
 public:
-    ByteBufferInvalidValueException(char const* type, std::string_view value);
-};
+    ByteBufferInvalidValueException(char const* type, char const* value);
 
-template <typename T>
-concept ByteBufferNumeric = std::same_as<T, int8> || std::same_as<T, uint8>
-    || std::same_as<T, int16> || std::same_as<T, uint16>
-    || std::same_as<T, int32> || std::same_as<T, uint32>
-    || std::same_as<T, int64> || std::same_as<T, uint64>
-    || std::same_as<T, float> || std::same_as<T, double>
-    || std::same_as<T, char> || std::is_enum_v<T>;
+    ~ByteBufferInvalidValueException() noexcept = default;
+};
 
 class TC_SHARED_API ByteBuffer
 {
     public:
         constexpr static size_t DEFAULT_SIZE = 0x1000;
-        constexpr static uint8 InitialBitPos = 8;
-
-        // reserve/resize tag
-        struct Reserve { };
-        struct Resize { };
 
         // constructor
-        explicit ByteBuffer() : ByteBuffer(DEFAULT_SIZE, Reserve{}) { }
-
-        explicit ByteBuffer(size_t size, Reserve) : _rpos(0), _wpos(0), _bitpos(InitialBitPos), _curbitval(0)
+        ByteBuffer() : _rpos(0), _wpos(0)
         {
-            _storage.reserve(size);
+            _storage.reserve(DEFAULT_SIZE);
         }
 
-        explicit ByteBuffer(size_t size, Resize) : _rpos(0), _wpos(size), _bitpos(InitialBitPos), _curbitval(0)
+        ByteBuffer(size_t reserve) : _rpos(0), _wpos(0)
         {
-            _storage.resize(size);
+            _storage.reserve(reserve);
+        }
+
+        ByteBuffer(ByteBuffer&& buf) noexcept : _rpos(buf._rpos), _wpos(buf._wpos), _storage(buf.Move())
+        {
         }
 
         ByteBuffer(ByteBuffer const& right) = default;
 
-        ByteBuffer(ByteBuffer&& buf) noexcept : _rpos(buf._rpos), _wpos(buf._wpos),
-            _bitpos(buf._bitpos), _curbitval(buf._curbitval), _storage(std::move(buf).Release()) { }
+        ByteBuffer(MessageBuffer&& buffer);
 
-        explicit ByteBuffer(std::vector<uint8>&& buffer) noexcept : _rpos(0), _wpos(buffer.size()),
-            _bitpos(InitialBitPos), _curbitval(0), _storage(std::move(buffer)) { }
-
-        std::vector<uint8>&& Release() && noexcept
+        std::vector<uint8>&& Move()
         {
             _rpos = 0;
             _wpos = 0;
-            _bitpos = InitialBitPos;
-            _curbitval = 0;
             return std::move(_storage);
         }
 
-        ByteBuffer& operator=(ByteBuffer const& right) = default;
+        ByteBuffer& operator=(ByteBuffer const& right)
+        {
+            if (this != &right)
+            {
+                _rpos = right._rpos;
+                _wpos = right._wpos;
+                _storage = right._storage;
+            }
+
+            return *this;
+        }
 
         ByteBuffer& operator=(ByteBuffer&& right) noexcept
         {
@@ -108,9 +115,7 @@ class TC_SHARED_API ByteBuffer
             {
                 _rpos = right._rpos;
                 _wpos = right._wpos;
-                _bitpos = right._bitpos;
-                _curbitval = right._curbitval;
-                _storage = std::move(right).Release();
+                _storage = right.Move();
             }
 
             return *this;
@@ -122,233 +127,93 @@ class TC_SHARED_API ByteBuffer
         {
             _rpos = 0;
             _wpos = 0;
-            _bitpos = InitialBitPos;
-            _curbitval = 0;
             _storage.clear();
         }
 
-        template <ByteBufferNumeric T>
-        void append(T value)
+        template <typename T> void append(T value)
         {
+            static_assert(std::is_fundamental<T>::value, "append(compound)");
             EndianConvert(value);
-            append(reinterpret_cast<uint8 const*>(&value), sizeof(value));
+            append((uint8 *)&value, sizeof(value));
         }
 
-        bool HasUnfinishedBitPack() const
-        {
-            return _bitpos != 8;
-        }
-
-        void FlushBits()
-        {
-            if (_bitpos == 8)
-                return;
-
-            _bitpos = 8;
-
-            append(&_curbitval, sizeof(uint8));
-            _curbitval = 0;
-        }
-
-        void ResetBitPos()
-        {
-            _bitpos = 8;
-            _curbitval = 0;
-        }
-
-        bool WriteBit(bool bit)
-        {
-            --_bitpos;
-            if (bit)
-                _curbitval |= (1 << (_bitpos));
-
-            if (_bitpos == 0)
-            {
-                _bitpos = 8;
-                append(&_curbitval, sizeof(_curbitval));
-                _curbitval = 0;
-            }
-
-            return bit;
-        }
-
-        bool ReadBit()
-        {
-            if (_bitpos >= 8)
-            {
-                read(&_curbitval, 1);
-                _bitpos = 0;
-            }
-
-            return ((_curbitval >> (8 - ++_bitpos)) & 1) != 0;
-        }
-
-        void WriteBits(uint64 value, int32 bits)
-        {
-            // remove bits that don't fit
-            value &= (UI64LIT(1) << bits) - 1;
-
-            if (bits > int32(_bitpos))
-            {
-                // first write to fill bit buffer
-                _curbitval |= value >> (bits - _bitpos);
-                bits -= _bitpos;
-                _bitpos = 8; // required "unneccessary" write to avoid double flushing
-                append(&_curbitval, sizeof(_curbitval));
-
-                // then append as many full bytes as possible
-                while (bits >= 8)
-                {
-                    bits -= 8;
-                    append<uint8>(value >> bits);
-                }
-
-                // store remaining bits in the bit buffer
-                _bitpos = 8 - bits;
-                _curbitval = (value & ((UI64LIT(1) << bits) - 1)) << _bitpos;
-            }
-            else
-            {
-                // entire value fits in the bit buffer
-                _bitpos -= bits;
-                _curbitval |= value << _bitpos;
-
-                if (_bitpos == 0)
-                {
-                    _bitpos = 8;
-                    append(&_curbitval, sizeof(_curbitval));
-                    _curbitval = 0;
-                }
-            }
-        }
-
-        uint32 ReadBits(int32 bits)
-        {
-            uint32 value = 0;
-            if (bits > 8 - int32(_bitpos))
-            {
-                // first retrieve whatever is left in the bit buffer
-                int32 bitsInBuffer = 8 - _bitpos;
-                value = (_curbitval & ((UI64LIT(1) << bitsInBuffer) - 1)) << (bits - bitsInBuffer);
-                bits -= bitsInBuffer;
-
-                // then read as many full bytes as possible
-                while (bits >= 8)
-                {
-                    bits -= 8;
-                    value |= read<uint8>() << bits;
-                }
-
-                // and finally any remaining bits
-                if (bits)
-                {
-                    read(&_curbitval, 1);
-                    value |= (_curbitval >> (8 - bits)) & ((UI64LIT(1) << bits) - 1);
-                    _bitpos = bits;
-                }
-            }
-            else
-            {
-                // entire value is in the bit buffer
-                value = (_curbitval >> (8 - _bitpos - bits)) & ((UI64LIT(1) << bits) - 1);
-                _bitpos += bits;
-            }
-
-            return value;
-        }
-
-        template <ByteBufferNumeric T>
+        template <typename T>
         void put(std::size_t pos, T value)
         {
+            static_assert(std::is_fundamental<T>::value, "append(compound)");
             EndianConvert(value);
-            put(pos, reinterpret_cast<uint8 const*>(&value), sizeof(value));
+            put(pos, (uint8 *)&value, sizeof(value));
         }
 
-        /**
-          * @name   PutBits
-          * @brief  Places specified amount of bits of value at specified position in packet.
-          *         To ensure all bits are correctly written, only call this method after
-          *         bit flush has been performed
-
-          * @param  pos Position to place the value at, in bits. The entire value must fit in the packet
-          *             It is advised to obtain the position using bitwpos() function.
-
-          * @param  value Data to write.
-          * @param  bitCount Number of bits to store the value on.
-        */
-        void PutBits(std::size_t pos, std::size_t value, uint32 bitCount);
-
-        ByteBuffer& operator<<(bool) = delete;  // prevent implicit conversions to int32
-
-        ByteBuffer& operator<<(char value)
+        ByteBuffer& operator<<(bool value)
         {
-            append<char>(value);
+            append<uint8>(value ? 1 : 0);
             return *this;
         }
 
-        ByteBuffer& operator<<(uint8 value)
+        ByteBuffer &operator<<(uint8 value)
         {
             append<uint8>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(uint16 value)
+        ByteBuffer &operator<<(uint16 value)
         {
             append<uint16>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(uint32 value)
+        ByteBuffer &operator<<(uint32 value)
         {
             append<uint32>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(uint64 value)
+        ByteBuffer &operator<<(uint64 value)
         {
             append<uint64>(value);
             return *this;
         }
 
         // signed as in 2e complement
-        ByteBuffer& operator<<(int8 value)
+        ByteBuffer &operator<<(int8 value)
         {
             append<int8>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(int16 value)
+        ByteBuffer &operator<<(int16 value)
         {
             append<int16>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(int32 value)
+        ByteBuffer &operator<<(int32 value)
         {
             append<int32>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(int64 value)
+        ByteBuffer &operator<<(int64 value)
         {
             append<int64>(value);
             return *this;
         }
 
         // floating points
-        ByteBuffer& operator<<(float value)
+        ByteBuffer &operator<<(float value)
         {
             append<float>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(double value)
+        ByteBuffer &operator<<(double value)
         {
             append<double>(value);
             return *this;
         }
 
-        ByteBuffer& operator<<(std::string_view value)
+        ByteBuffer &operator<<(std::string_view value)
         {
             if (size_t len = value.length())
                 append(reinterpret_cast<uint8 const*>(value.data()), len);
@@ -361,70 +226,68 @@ class TC_SHARED_API ByteBuffer
             return operator<<(std::string_view(str));
         }
 
-        ByteBuffer& operator<<(char const* str)
+        ByteBuffer &operator<<(char const* str)
         {
             return operator<<(std::string_view(str ? str : ""));
         }
 
-        ByteBuffer& operator>>(bool&) = delete;
-
-        ByteBuffer& operator>>(char& value)
+        ByteBuffer &operator>>(bool &value)
         {
-            read(&value, 1);
+            value = read<char>() > 0 ? true : false;
             return *this;
         }
 
-        ByteBuffer& operator>>(uint8& value)
+        ByteBuffer &operator>>(uint8 &value)
         {
-            read(&value, 1);
+            value = read<uint8>();
             return *this;
         }
 
-        ByteBuffer& operator>>(uint16& value)
+        ByteBuffer &operator>>(uint16 &value)
         {
-            read(&value, 1);
+            value = read<uint16>();
             return *this;
         }
 
-        ByteBuffer& operator>>(uint32& value)
+        ByteBuffer &operator>>(uint32 &value)
         {
-            read(&value, 1);
+            value = read<uint32>();
             return *this;
         }
 
-        ByteBuffer& operator>>(uint64& value)
+        ByteBuffer &operator>>(uint64 &value)
         {
-            read(&value, 1);
+            value = read<uint64>();
             return *this;
         }
 
         //signed as in 2e complement
-        ByteBuffer& operator>>(int8& value)
+        ByteBuffer &operator>>(int8 &value)
         {
-            read(&value, 1);
+            value = read<int8>();
             return *this;
         }
 
-        ByteBuffer& operator>>(int16& value)
+        ByteBuffer &operator>>(int16 &value)
         {
-            read(&value, 1);
+            value = read<int16>();
             return *this;
         }
 
-        ByteBuffer& operator>>(int32& value)
+        ByteBuffer &operator>>(int32 &value)
         {
-            read(&value, 1);
+            value = read<int32>();
             return *this;
         }
 
-        ByteBuffer& operator>>(int64& value)
+        ByteBuffer &operator>>(int64 &value)
         {
-            read(&value, 1);
+            value = read<int64>();
             return *this;
         }
 
-        ByteBuffer& operator>>(float& value);
-        ByteBuffer& operator>>(double& value);
+        ByteBuffer &operator>>(float &value);
+        ByteBuffer &operator>>(double &value);
 
         ByteBuffer& operator>>(std::string& value)
         {
@@ -434,15 +297,15 @@ class TC_SHARED_API ByteBuffer
 
         uint8& operator[](size_t const pos)
         {
-            if (pos >= _storage.size())
-                OnInvalidPosition(pos, 1);
+            if (pos >= size())
+                throw ByteBufferPositionException(false, pos, 1, size());
             return _storage[pos];
         }
 
         uint8 const& operator[](size_t const pos) const
         {
-            if (pos >= _storage.size())
-                OnInvalidPosition(pos, 1);
+            if (pos >= size())
+                throw ByteBufferPositionException(false, pos, 1, size());
             return _storage[pos];
         }
 
@@ -467,115 +330,85 @@ class TC_SHARED_API ByteBuffer
             return _wpos;
         }
 
-        /// Returns position of last written bit
-        size_t bitwpos() const { return _wpos * 8 + 8 - _bitpos; }
-
-        size_t bitwpos(size_t newPos)
-        {
-            _wpos = newPos / 8;
-            _bitpos = 8 - (newPos % 8);
-            return _wpos * 8 + 8 - _bitpos;
-        }
-
-        template <ByteBufferNumeric T>
+        template<typename T>
         void read_skip() { read_skip(sizeof(T)); }
 
         void read_skip(size_t skip)
         {
-            if (_rpos + skip > _storage.size())
-                OnInvalidPosition(_rpos, skip);
-
-            ResetBitPos();
+            if (_rpos + skip > size())
+                throw ByteBufferPositionException(false, _rpos, skip, size());
             _rpos += skip;
         }
 
-        template <ByteBufferNumeric T>
-        T read()
+        template <typename T> T read()
         {
-            ResetBitPos();
             T r = read<T>(_rpos);
             _rpos += sizeof(T);
             return r;
         }
 
-        template <ByteBufferNumeric T>
-        T read(size_t pos) const
+        template <typename T> T read(size_t pos) const
         {
-            if (pos + sizeof(T) > _storage.size())
-                OnInvalidPosition(pos, sizeof(T));
-
-            T val;
-            std::memcpy(&val, &_storage[pos], sizeof(T));
+            if (pos + sizeof(T) > size())
+                throw ByteBufferPositionException(false, pos, sizeof(T), size());
+            T val = *((T const*)&_storage[pos]);
             EndianConvert(val);
             return val;
         }
 
-        template <ByteBufferNumeric T>
-        void read(T* dest, size_t count)
+        void read(uint8 *dest, size_t len)
         {
-            static_assert(std::is_trivially_copyable_v<T>, "read(T*, size_t) must be used with trivially copyable types");
-            read(reinterpret_cast<uint8*>(dest), count * sizeof(T));
-#if TRINITY_ENDIAN == TRINITY_BIGENDIAN
-            for (size_t i = 0; i < count; ++i)
-                EndianConvert(dest[i]);
-#endif
-        }
-
-        void read(uint8* dest, size_t len)
-        {
-            if (_rpos + len > _storage.size())
-                OnInvalidPosition(_rpos, len);
-
-            ResetBitPos();
+            if (_rpos + len > size())
+               throw ByteBufferPositionException(false, _rpos, len, size());
             std::memcpy(dest, &_storage[_rpos], len);
             _rpos += len;
         }
 
-        template <ByteBufferNumeric T, size_t Size>
-        void read(std::array<T, Size>& arr)
+        template <size_t Size>
+        void read(std::array<uint8, Size>& arr)
         {
             read(arr.data(), Size);
         }
 
-        //! Method for writing strings that have their length sent separately in packet
-        //! without null-terminating the string
-        void WriteString(std::string const& str)
+        void readPackGUID(uint64& guid)
         {
-            if (size_t len = str.length())
-                append(str.c_str(), len);
+            if (rpos() + 1 > size())
+                throw ByteBufferPositionException(false, _rpos, 1, size());
+
+            guid = 0;
+
+            uint8 guidmark = 0;
+            (*this) >> guidmark;
+
+            for (int i = 0; i < 8; ++i)
+            {
+                if (guidmark & (uint8(1) << i))
+                {
+                    if (rpos() + 1 > size())
+                        throw ByteBufferPositionException(false, _rpos, 1, size());
+
+                    uint8 bit;
+                    (*this) >> bit;
+                    guid |= (uint64(bit) << (i * 8));
+                }
+            }
         }
 
-        void WriteString(std::string_view str)
+        std::string ReadCString(bool requireValidUtf8 = true);
+
+        uint8* contents()
         {
-            if (size_t len = str.length())
-                append(str.data(), len);
+            if (_storage.empty())
+                throw ByteBufferException();
+            return _storage.data();
         }
 
-        void WriteString(char const* str, size_t len)
+        uint8 const* contents() const
         {
-            if (len)
-                append(str, len);
+            if (_storage.empty())
+                throw ByteBufferException();
+            return _storage.data();
         }
-
-        void ReadSkipCString(bool requireValidUtf8 = true) { (void)ReadCString(requireValidUtf8); }
-
-        std::string_view ReadCString(bool requireValidUtf8 = true);
-
-        std::string_view ReadString(uint32 length, bool requireValidUtf8 = true);
-
-        std::span<uint8> ReadBytes(size_t length)
-        {
-            if (_rpos + length > _storage.size())
-                OnInvalidPosition(_rpos, length);
-
-            ResetBitPos();
-            uint8* data = _storage.data() + _rpos;
-            _rpos += length;
-            return { data, length };
-        }
-
-        uint8* data() { return _storage.data(); }
-        uint8 const* data() const { return _storage.data(); }
 
         size_t size() const { return _storage.size(); }
         bool empty() const { return _storage.empty(); }
@@ -584,12 +417,12 @@ class TC_SHARED_API ByteBuffer
         {
             _storage.resize(newsize, 0);
             _rpos = 0;
-            _wpos = _storage.size();
+            _wpos = size();
         }
 
         void reserve(size_t ressize)
         {
-            if (ressize > _storage.size())
+            if (ressize > size())
                 _storage.reserve(ressize);
         }
 
@@ -598,32 +431,60 @@ class TC_SHARED_API ByteBuffer
             _storage.shrink_to_fit();
         }
 
-        template <ByteBufferNumeric T>
-        void append(T const* src, size_t cnt)
+        void append(const char *src, size_t cnt)
         {
-#if TRINITY_ENDIAN == TRINITY_LITTLEENDIAN
-            append(reinterpret_cast<uint8 const*>(src), cnt * sizeof(T));
-#else
-            for (size_t i = 0; i < cnt; ++i)
-                append<T>(src[i]);
-#endif
+            return append((const uint8 *)src, cnt);
+        }
+
+        template<class T> void append(const T *src, size_t cnt)
+        {
+            return append((const uint8 *)src, cnt * sizeof(T));
         }
 
         void append(uint8 const* src, size_t cnt);
 
         void append(ByteBuffer const& buffer)
         {
-            if (!buffer.empty())
-                append(buffer.data(), buffer.size());
+            if (buffer.wpos())
+                append(buffer.contents(), buffer.wpos());
         }
 
-        template <ByteBufferNumeric T, std::size_t Size>
-        void append(std::array<T, Size> const& arr)
+        template <size_t Size>
+        void append(std::array<uint8, Size> const& arr)
         {
             append(arr.data(), Size);
         }
 
-        void put(size_t pos, uint8 const* src, size_t cnt);
+        // can be used in SMSG_MONSTER_MOVE opcode
+        void appendPackXYZ(float x, float y, float z)
+        {
+            uint32 packed = 0;
+            packed |= ((int)(x / 0.25f) & 0x7FF);
+            packed |= ((int)(y / 0.25f) & 0x7FF) << 11;
+            packed |= ((int)(z / 0.25f) & 0x3FF) << 22;
+            *this << packed;
+        }
+
+        void appendPackGUID(uint64 guid)
+        {
+            uint8 packGUID[8+1];
+            packGUID[0] = 0;
+            size_t size = 1;
+            for (uint8 i = 0;guid != 0;++i)
+            {
+                if (guid & 0xFF)
+                {
+                    packGUID[0] |= uint8(1 << i);
+                    packGUID[size] =  uint8(guid & 0xFF);
+                    ++size;
+                }
+
+                guid >>= 8;
+            }
+            append(packGUID, size);
+        }
+
+        void put(size_t pos, const uint8 *src, size_t cnt);
 
         void print_storage() const;
 
@@ -631,29 +492,36 @@ class TC_SHARED_API ByteBuffer
 
         void hexlike() const;
 
-        [[noreturn]] void OnInvalidPosition(size_t pos, size_t valueSize) const;
-
     protected:
         size_t _rpos, _wpos;
-        uint8 _bitpos;
-        uint8 _curbitval;
         std::vector<uint8> _storage;
 };
 
-extern template char ByteBuffer::read<char>();
-extern template uint8 ByteBuffer::read<uint8>();
-extern template uint16 ByteBuffer::read<uint16>();
-extern template uint32 ByteBuffer::read<uint32>();
-extern template uint64 ByteBuffer::read<uint64>();
-extern template int8 ByteBuffer::read<int8>();
-extern template int16 ByteBuffer::read<int16>();
-extern template int32 ByteBuffer::read<int32>();
-extern template int64 ByteBuffer::read<int64>();
-extern template float ByteBuffer::read<float>();
-extern template double ByteBuffer::read<double>();
+/// @todo Make a ByteBuffer.cpp and move all this inlining to it.
+template<> inline std::string ByteBuffer::read<std::string>()
+{
+    std::string tmp;
+    *this >> tmp;
+    return tmp;
+}
 
-template <typename T>
-concept HasByteBufferShiftOperators = requires(ByteBuffer& data, T const& value) { { data << value } -> std::convertible_to<ByteBuffer&>; }
-                                   && requires(ByteBuffer& data, T& value)       { { data >> value } -> std::convertible_to<ByteBuffer&>; };
+template<>
+inline void ByteBuffer::read_skip<char*>()
+{
+    std::string temp;
+    *this >> temp;
+}
+
+template<>
+inline void ByteBuffer::read_skip<char const*>()
+{
+    read_skip<char*>();
+}
+
+template<>
+inline void ByteBuffer::read_skip<std::string>()
+{
+    read_skip<char*>();
+}
 
 #endif

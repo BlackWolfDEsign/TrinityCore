@@ -18,10 +18,10 @@
 #ifndef TRINITY_PRODUCER_CONSUMER_QUEUE_H
 #define TRINITY_PRODUCER_CONSUMER_QUEUE_H
 
-#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include <atomic>
 #include <type_traits>
 
 template <typename T>
@@ -39,7 +39,7 @@ public:
 
     void Push(T const& value)
     {
-        std::scoped_lock lock(_queueLock);
+        std::lock_guard<std::mutex> lock(_queueLock);
         _queue.push(value);
 
         _condition.notify_one();
@@ -47,7 +47,7 @@ public:
 
     void Push(T&& value)
     {
-        std::scoped_lock lock(_queueLock);
+        std::lock_guard<std::mutex> lock(_queueLock);
         _queue.push(std::move(value));
 
         _condition.notify_one();
@@ -55,21 +55,21 @@ public:
 
     bool Empty() const
     {
-        std::scoped_lock lock(_queueLock);
+        std::lock_guard<std::mutex> lock(_queueLock);
 
         return _queue.empty();
     }
 
     size_t Size() const
     {
-        std::scoped_lock lock(_queueLock);
+        std::lock_guard<std::mutex> lock(_queueLock);
 
         return _queue.size();
     }
 
     bool Pop(T& value)
     {
-        std::scoped_lock lock(_queueLock);
+        std::lock_guard<std::mutex> lock(_queueLock);
 
         if (_queue.empty() || _shutdown)
             return false;
@@ -83,9 +83,12 @@ public:
 
     void WaitAndPop(T& value)
     {
-        std::unique_lock lock(_queueLock);
+        std::unique_lock<std::mutex> lock(_queueLock);
 
-        _condition.wait(lock, [&] { return !_queue.empty() || _shutdown; });
+        // we could be using .wait(lock, predicate) overload here but it is broken
+        // https://connect.microsoft.com/VisualStudio/feedback/details/1098841
+        while (_queue.empty() && !_shutdown)
+            _condition.wait(lock);
 
         if (_queue.empty() || _shutdown)
             return;
@@ -97,7 +100,7 @@ public:
 
     void Cancel()
     {
-        std::scoped_lock lock(_queueLock);
+        std::unique_lock<std::mutex> lock(_queueLock);
 
         while (!_queue.empty())
         {

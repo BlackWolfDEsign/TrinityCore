@@ -22,13 +22,12 @@
 #include "Log.h"
 #include "ObjectAccessor.h"
 #include "Player.h"
-#include "RealmList.h"
+#include "Realm.h"
 #include "ScriptMgr.h"
 #include "SRP6.h"
 #include "Util.h"
+#include "World.h"
 #include "WorldSession.h"
-
-using AccountSRP6 = Trinity::Crypto::SRP::GruntSRP6;
 
 AccountMgr::AccountMgr() { }
 
@@ -43,7 +42,7 @@ AccountMgr* AccountMgr::instance()
     return &instance;
 }
 
-AccountOpResult AccountMgr::CreateAccount(std::string username, std::string password, std::string email /*= ""*/, uint32 bnetAccountId /*= 0*/, uint8 bnetIndex /*= 0*/)
+AccountOpResult AccountMgr::CreateAccount(std::string username, std::string password, std::string email /*= ""*/)
 {
     if (utf8length(username) > MAX_ACCOUNT_STR)
         return AccountOpResult::AOR_NAME_TOO_LONG;                           // username's too long
@@ -61,22 +60,11 @@ AccountOpResult AccountMgr::CreateAccount(std::string username, std::string pass
     LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_INS_ACCOUNT);
 
     stmt->setString(0, username);
-    auto [salt, verifier] = Trinity::Crypto::SRP6::MakeRegistrationData<AccountSRP6>(username, password);
+    auto [salt, verifier] = Trinity::Crypto::SRP6::MakeRegistrationData(username, password);
     stmt->setBinary(1, salt);
-    stmt->setBinary(2, std::move(verifier));
+    stmt->setBinary(2, verifier);
     stmt->setString(3, email);
     stmt->setString(4, email);
-
-    if (bnetAccountId && bnetIndex)
-    {
-        stmt->setUInt32(5, bnetAccountId);
-        stmt->setUInt8(6, bnetIndex);
-    }
-    else
-    {
-        stmt->setNull(5);
-        stmt->setNull(6);
-    }
 
     LoginDatabase.DirectExecute(stmt); // Enforce saving, otherwise AddGroup can fail
 
@@ -107,7 +95,7 @@ AccountOpResult AccountMgr::DeleteAccount(uint32 accountId)
     {
         do
         {
-            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((*result)[0].GetUInt64());
+            ObjectGuid guid = ObjectGuid::Create<HighGuid::Player>((*result)[0].GetUInt32());
 
             // Kick if player is online
             if (Player* p = ObjectAccessor::FindConnectedPlayer(guid))
@@ -189,10 +177,10 @@ AccountOpResult AccountMgr::ChangeUsername(uint32 accountId, std::string newUser
     stmt->setUInt32(1, accountId);
     LoginDatabase.Execute(stmt);
 
-    auto [salt, verifier] = Trinity::Crypto::SRP6::MakeRegistrationData<AccountSRP6>(newUsername, newPassword);
+    auto [salt, verifier] = Trinity::Crypto::SRP6::MakeRegistrationData(newUsername, newPassword);
     stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_LOGON);
     stmt->setBinary(0, salt);
-    stmt->setBinary(1, std::move(verifier));
+    stmt->setBinary(1, verifier);
     stmt->setUInt32(2, accountId);
     LoginDatabase.Execute(stmt);
 
@@ -217,12 +205,12 @@ AccountOpResult AccountMgr::ChangePassword(uint32 accountId, std::string newPass
 
     Utf8ToUpperOnlyLatin(username);
     Utf8ToUpperOnlyLatin(newPassword);
-    auto [salt, verifier] = Trinity::Crypto::SRP6::MakeRegistrationData<AccountSRP6>(username, newPassword);
+    auto [salt, verifier] = Trinity::Crypto::SRP6::MakeRegistrationData(username, newPassword);
 
     LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_LOGON);
     stmt->setBinary(0, salt);
-    stmt->setBinary(1, std::move(verifier));
-    stmt->setUInt32(2, accountId);
+    stmt->setBinary(1, verifier);
+    stmt->setUInt32(2, accountId);;
     LoginDatabase.Execute(stmt);
 
     sScriptMgr->OnPasswordChange(accountId);
@@ -292,7 +280,7 @@ AccountOpResult AccountMgr::ChangeRegEmail(uint32 accountId, std::string newEmai
 uint32 AccountMgr::GetId(std::string_view username)
 {
     LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_GET_ACCOUNT_ID_BY_USERNAME);
-    stmt->setString(0, username);
+    stmt->setStringView(0, username);
     PreparedQueryResult result = LoginDatabase.Query(stmt);
 
     return (result) ? (*result)[0].GetUInt32() : 0;
@@ -349,25 +337,6 @@ bool AccountMgr::GetEmail(uint32 accountId, std::string& email)
     return false;
 }
 
-bool AccountMgr::CheckPassword(std::string username, std::string password)
-{
-    Utf8ToUpperOnlyLatin(username);
-    Utf8ToUpperOnlyLatin(password);
-
-    LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_CHECK_PASSWORD_BY_NAME);
-    stmt->setString(0, username);
-
-    if (PreparedQueryResult result = LoginDatabase.Query(stmt))
-    {
-        Trinity::Crypto::SRP::Salt salt = (*result)[0].GetBinary<Trinity::Crypto::SRP::SALT_LENGTH>();
-        Trinity::Crypto::SRP::Verifier verifier = (*result)[1].GetBinary();
-        if (AccountSRP6(username, salt, verifier).CheckCredentials(username, password))
-            return true;
-    }
-
-    return false;
-}
-
 bool AccountMgr::CheckPassword(uint32 accountId, std::string password)
 {
     std::string username;
@@ -383,9 +352,9 @@ bool AccountMgr::CheckPassword(uint32 accountId, std::string password)
 
     if (PreparedQueryResult result = LoginDatabase.Query(stmt))
     {
-        Trinity::Crypto::SRP::Salt salt = (*result)[0].GetBinary<Trinity::Crypto::SRP::SALT_LENGTH>();
-        Trinity::Crypto::SRP::Verifier verifier = (*result)[1].GetBinary();
-        if (AccountSRP6(username, salt, verifier).CheckCredentials(username, password))
+        Trinity::Crypto::SRP6::Salt salt = (*result)[0].GetBinary<Trinity::Crypto::SRP6::SALT_LENGTH>();
+        Trinity::Crypto::SRP6::Verifier verifier = (*result)[1].GetBinary<Trinity::Crypto::SRP6::VERIFIER_LENGTH>();
+        if (Trinity::Crypto::SRP6::CheckLogin(username, password, salt, verifier))
             return true;
     }
 
@@ -506,7 +475,7 @@ void AccountMgr::LoadRBAC()
     while (result->NextRow());
 
     TC_LOG_DEBUG("rbac", "AccountMgr::LoadRBAC: Loading default permissions");
-    result = LoginDatabase.PQuery("SELECT secId, permissionId FROM rbac_default_permissions WHERE (realmId = {} OR realmId = -1) ORDER BY secId ASC", sRealmList->GetCurrentRealmId().Realm);
+    result = LoginDatabase.PQuery("SELECT secId, permissionId FROM rbac_default_permissions WHERE (realmId = {} OR realmId = -1) ORDER BY secId ASC", realm.Id.Realm);
     if (!result)
     {
         TC_LOG_INFO("server.loading", ">> Loaded 0 default permission definitions. DB table `rbac_default_permissions` is empty.");

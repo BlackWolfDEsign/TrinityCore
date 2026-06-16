@@ -1,4 +1,4 @@
- /*
+/*
  * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -20,6 +20,7 @@
 #include "InstanceScript.h"
 #include "Map.h"
 #include "MotionMaster.h"
+#include "Player.h"
 #include "TemporarySummon.h"
 #include "zulfarrak.h"
 
@@ -30,18 +31,6 @@ enum Misc
 
     // Paths
     PATH_ADDS           = 652424
-};
-
-static constexpr DungeonEncounterData Encounters[] =
-{
-    { BOSS_HYDROMANCER_VELRATHA, { { 593 } } },
-    { BOSS_GAHZ_RILLA, { { 594 } } },
-    { BOSS_ANTU_SUL, { { 595 } } },
-    { BOSS_THEKA_THE_MARTYR, { { 596 } } },
-    { BOSS_WITCH_DOCTOR_ZUM_RAH, { { 597 } } },
-    { BOSS_NEKRUM_GUTCHEWER, { { 598 } } },
-    { BOSS_SHADOWPRIEST_SEZZ_ZIZ, { { 599 } } },
-    { BOSS_CHIEF_UKORZ_SANDSCALP, { { 600 } } },
 };
 
 int const pyramidSpawnTotal = 54;
@@ -125,8 +114,6 @@ public:
         instance_zulfarrak_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
         {
             SetHeaders(DataHeader);
-            SetBossNumber(MAX_ENCOUNTER);
-            LoadDungeonEncounterData(Encounters);
             GahzRillaEncounter = NOT_STARTED;
             PyramidPhase = 0;
             major_wave_Timer = 0;
@@ -178,25 +165,10 @@ public:
                     break;
                 case NPC_GAHZRILLA:
                     if (GahzRillaEncounter >= IN_PROGRESS)
-                        creature->DespawnOrUnsummon();
+                        creature->DisappearAndDie();
                     else
                         GahzRillaEncounter = IN_PROGRESS;
                     break;
-            }
-        }
-
-        void OnUnitDeath(Unit* unit) override
-        {
-            switch (unit->GetEntry())
-            {
-                case ENTRY_VELRTHA:     SetBossState(BOSS_HYDROMANCER_VELRATHA, DONE); break;
-                case ENTRY_GAHZRILLA:   SetBossState(BOSS_GAHZ_RILLA, DONE); break;
-                case ENTRY_ANTUSUL:     SetBossState(BOSS_ANTU_SUL, DONE); break;
-                case ENTRY_THEKA:       SetBossState(BOSS_THEKA_THE_MARTYR, DONE); break;
-                case ENTRY_NEKRUM:      SetBossState(BOSS_NEKRUM_GUTCHEWER, DONE); break;
-                case ENTRY_SEZZZIZ:     SetBossState(BOSS_SHADOWPRIEST_SEZZ_ZIZ, DONE); break;
-                case ENTRY_SANDSCALP:   SetBossState(BOSS_CHIEF_UKORZ_SANDSCALP, DONE); break;
-                default: break;
             }
         }
 
@@ -359,11 +331,9 @@ public:
                 if (pyramidSpawns[i][0] == (float)wave)
                 {
                     Position pos = {pyramidSpawns[i][2], pyramidSpawns[i][3], 8.87f, 0};
-                    if (TempSummon* ts = instance->SummonCreature(uint32(pyramidSpawns[i][1]), pos))
-                    {
-                        ts->GetMotionMaster()->MoveRandom(10);
-                        addsAtBase.push_back(ts->GetGUID());
-                    }
+                    TempSummon* ts = instance->SummonCreature(uint32(pyramidSpawns[i][1]), pos);
+                    ts->GetMotionMaster()->MoveRandom(10);
+                    addsAtBase.push_back(ts->GetGUID());
                 }
             }
         }
@@ -392,7 +362,7 @@ public:
         void SendAddsUpStairs(uint32 count)
         {
             //pop a add from list, send him up the stairs...
-            for (uint32 addCount = 0; addCount < count && !addsAtBase.empty(); addCount++)
+            for (uint32 addCount = 0; addCount<count && !addsAtBase.empty(); addCount++)
             {
                 if (Creature* add = instance->GetCreature(*addsAtBase.begin()))
                 {

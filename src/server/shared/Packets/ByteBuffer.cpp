@@ -17,25 +17,48 @@
 
 #include "ByteBuffer.h"
 #include "Errors.h"
+#include "MessageBuffer.h"
+#include "Common.h"
 #include "Log.h"
+#include "Util.h"
 #include <utf8.h>
-#include <algorithm>
 #include <sstream>
 #include <cmath>
 
-ByteBufferPositionException::ByteBufferPositionException(size_t pos, size_t size, size_t valueSize)
-    : ByteBufferException(Trinity::StringFormat("Attempted to get value with size: {} in ByteBuffer (pos: {} size: {})", valueSize, pos, size))
+ByteBuffer::ByteBuffer(MessageBuffer&& buffer) : _rpos(0), _wpos(0), _storage(buffer.Move())
 {
 }
 
-ByteBufferInvalidValueException::ByteBufferInvalidValueException(char const* type, std::string_view value)
-    : ByteBufferException(Trinity::StringFormat("Invalid {} value ({}) found in ByteBuffer", type, value))
+ByteBufferPositionException::ByteBufferPositionException(bool add, size_t pos, size_t size, size_t valueSize)
 {
+    std::ostringstream ss;
+
+    ss << "Attempted to " << (add ? "put" : "get") << " value with size: "
+       << valueSize << " in ByteBuffer (pos: " << pos << " size: " << size
+       << ")";
+
+    message().assign(ss.str());
+}
+
+ByteBufferSourceException::ByteBufferSourceException(size_t pos, size_t size, size_t valueSize)
+{
+    std::ostringstream ss;
+
+    ss << "Attempted to put a "
+       << (valueSize > 0 ? "NULL-pointer" : "zero-sized value")
+       << " in ByteBuffer (pos: " << pos << " size: " << size << ")";
+
+    message().assign(ss.str());
+}
+
+ByteBufferInvalidValueException::ByteBufferInvalidValueException(char const* type, char const* value)
+{
+    message().assign(Trinity::StringFormat("Invalid {} value ({}) found in ByteBuffer", type, value));
 }
 
 ByteBuffer& ByteBuffer::operator>>(float& value)
 {
-    read(&value, 1);
+    value = read<float>();
     if (!std::isfinite(value))
         throw ByteBufferInvalidValueException("float", "infinity");
     return *this;
@@ -43,45 +66,24 @@ ByteBuffer& ByteBuffer::operator>>(float& value)
 
 ByteBuffer& ByteBuffer::operator>>(double& value)
 {
-    read(&value, 1);
+    value = read<double>();
     if (!std::isfinite(value))
         throw ByteBufferInvalidValueException("double", "infinity");
     return *this;
 }
 
-std::string_view ByteBuffer::ReadCString(bool requireValidUtf8 /*= true*/)
+std::string ByteBuffer::ReadCString(bool requireValidUtf8 /*= true*/)
 {
-    if (_rpos >= size())
-        throw ByteBufferPositionException(_rpos, 1, size());
-
-    ResetBitPos();
-
-    char const* begin = reinterpret_cast<char const*>(_storage.data()) + _rpos;
-    char const* end = reinterpret_cast<char const*>(_storage.data()) + size();
-    char const* stringEnd = std::ranges::find(begin, end, '\0');
-    if (stringEnd == end)
-        throw ByteBufferPositionException(size(), 1, size());
-
-    std::string_view value(begin, stringEnd);
-    _rpos += value.length() + 1;
+    std::string value;
+    while (rpos() < size())                         // prevent crash at wrong string format in packet
+    {
+        char c = read<char>();
+        if (c == 0)
+            break;
+        value += c;
+    }
     if (requireValidUtf8 && !utf8::is_valid(value.begin(), value.end()))
-        throw ByteBufferInvalidValueException("utf8 string", value);
-    return value;
-}
-
-std::string_view ByteBuffer::ReadString(uint32 length, bool requireValidUtf8 /*= true*/)
-{
-    if (_rpos + length > size())
-        throw ByteBufferPositionException(_rpos, length, size());
-
-    ResetBitPos();
-    if (!length)
-        return {};
-
-    std::string_view value(reinterpret_cast<char const*>(&_storage[_rpos]), length);
-    _rpos += length;
-    if (requireValidUtf8 && !utf8::is_valid(value.begin(), value.end()))
-        throw ByteBufferInvalidValueException("utf8 string", value);
+        throw ByteBufferInvalidValueException("string", value.c_str());
     return value;
 }
 
@@ -89,9 +91,7 @@ void ByteBuffer::append(uint8 const* src, size_t cnt)
 {
     ASSERT(src, "Attempted to put a NULL-pointer in ByteBuffer (pos: " SZFMTD " size: " SZFMTD ")", _wpos, size());
     ASSERT(cnt, "Attempted to put a zero-sized value in ByteBuffer (pos: " SZFMTD " size: " SZFMTD ")", _wpos, size());
-    ASSERT((size() + cnt) < 100000000);
-
-    FlushBits();
+    ASSERT(size() < 10000000);
 
     size_t const newSize = _wpos + cnt;
     if (_storage.capacity() < newSize) // custom memory allocation rules
@@ -121,91 +121,65 @@ void ByteBuffer::put(size_t pos, uint8 const* src, size_t cnt)
     std::memcpy(&_storage[pos], src, cnt);
 }
 
-void ByteBuffer::PutBits(std::size_t pos, std::size_t value, uint32 bitCount)
-{
-    ASSERT(pos + bitCount <= size() * 8, "Attempted to put %u bits in ByteBuffer (bitpos: " SZFMTD " size: " SZFMTD ")", bitCount, pos, size());
-    ASSERT(bitCount, "Attempted to put a zero bits in ByteBuffer");
-
-    for (uint32 i = 0; i < bitCount; ++i)
-    {
-        std::size_t wp = (pos + i) / 8;
-        std::size_t bit = (pos + i) % 8;
-        if ((value >> (bitCount - i - 1)) & 1)
-            _storage[wp] |= 1 << (7 - bit);
-        else
-            _storage[wp] &= ~(1 << (7 - bit));
-    }
-}
-
 void ByteBuffer::print_storage() const
 {
-    Logger const* networkLogger = sLog->GetEnabledLogger("network", LOG_LEVEL_TRACE);
-    if (!networkLogger) // optimize disabled trace output
+    if (!sLog->ShouldLog("network", LOG_LEVEL_TRACE)) // optimize disabled trace output
         return;
 
     std::ostringstream o;
+    o << "STORAGE_SIZE: " << size();
     for (uint32 i = 0; i < size(); ++i)
-        o << uint32(_storage[i]) << " - ";
+        o << read<uint8>(i) << " - ";
+    o << " ";
 
-    TC_LOG_TRACE("network", "STORAGE_SIZE: {} {}", size(), o.view());
+    TC_LOG_TRACE("network", "{}", o.str());
 }
 
 void ByteBuffer::textlike() const
 {
-    Logger const* networkLogger = sLog->GetEnabledLogger("network", LOG_LEVEL_TRACE);
-    if (networkLogger) // optimize disabled trace output
+    if (!sLog->ShouldLog("network", LOG_LEVEL_TRACE)) // optimize disabled trace output
         return;
 
     std::ostringstream o;
+    o << "STORAGE_SIZE: " << size();
     for (uint32 i = 0; i < size(); ++i)
-        o << char(_storage[i]);
-
-    sLog->OutMessageTo(networkLogger, "network", LOG_LEVEL_TRACE, "STORAGE_SIZE: {} {}", size(), o.view());
+    {
+        char buf[2];
+        snprintf(buf, 2, "%c", read<uint8>(i));
+        o << buf;
+    }
+    o << " ";
+    TC_LOG_TRACE("network", "{}", o.str());
 }
 
 void ByteBuffer::hexlike() const
 {
-    Logger const* networkLogger = sLog->GetEnabledLogger("network", LOG_LEVEL_TRACE);
-    if (!networkLogger) // optimize disabled trace output
+    if (!sLog->ShouldLog("network", LOG_LEVEL_TRACE)) // optimize disabled trace output
         return;
 
+    uint32 j = 1, k = 1;
+
     std::ostringstream o;
-    o.setf(std::ios_base::hex, std::ios_base::basefield);
-    o.fill('0');
+    o << "STORAGE_SIZE: " << size();
 
-    for (uint32 i = 0; i < size(); )
+    for (uint32 i = 0; i < size(); ++i)
     {
-        char const* sep = " | ";
-        for (uint32 j = 0; j < 2; ++j)
+        char buf[4];
+        snprintf(buf, 4, "%2X ", read<uint8>(i));
+        if ((i == (j * 8)) && ((i != (k * 16))))
         {
-            for (uint32 k = 0; k < 8; ++k)
-            {
-                o.width(2);
-                o << _storage[i];
-                ++i;
-            }
-
-            o << sep;
-            sep = "\n";
+            o << "| ";
+            ++j;
         }
+        else if (i == (k * 16))
+        {
+            o << "\n";
+            ++k;
+            ++j;
+        }
+
+        o << buf;
     }
-
-    sLog->OutMessageTo(networkLogger, "network", LOG_LEVEL_TRACE, "STORAGE_SIZE: {} {}", size(), o.view());
+    o << " ";
+    TC_LOG_TRACE("network", "{}", o.str());
 }
-
-void ByteBuffer::OnInvalidPosition(size_t pos, size_t valueSize) const
-{
-    throw ByteBufferPositionException(pos, _storage.size(), valueSize);
-}
-
-template TC_SHARED_API char ByteBuffer::read<char>();
-template TC_SHARED_API uint8 ByteBuffer::read<uint8>();
-template TC_SHARED_API uint16 ByteBuffer::read<uint16>();
-template TC_SHARED_API uint32 ByteBuffer::read<uint32>();
-template TC_SHARED_API uint64 ByteBuffer::read<uint64>();
-template TC_SHARED_API int8 ByteBuffer::read<int8>();
-template TC_SHARED_API int16 ByteBuffer::read<int16>();
-template TC_SHARED_API int32 ByteBuffer::read<int32>();
-template TC_SHARED_API int64 ByteBuffer::read<int64>();
-template TC_SHARED_API float ByteBuffer::read<float>();
-template TC_SHARED_API double ByteBuffer::read<double>();

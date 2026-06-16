@@ -29,6 +29,12 @@ EndScriptData */
 #include "Map.h"
 #include "sunken_temple.h"
 
+static constexpr DoorData doorData[] =
+{
+    { GO_FORCEFIELD, BOSS_EVENT_ELITE_TROLLS, DOOR_TYPE_PASSAGE },
+    { 0,             0,                       DOOR_TYPE_ROOM }  // END
+};
+
 static constexpr ObjectData gameObjects[] =
 {
     { GO_ATALAI_STATUE1, GO_ATALAI_STATUE1 },
@@ -36,18 +42,8 @@ static constexpr ObjectData gameObjects[] =
     { GO_ATALAI_STATUE3, GO_ATALAI_STATUE3 },
     { GO_ATALAI_STATUE4, GO_ATALAI_STATUE4 },
     { GO_ATALAI_STATUE5, GO_ATALAI_STATUE5 },
-    { GO_ATALAI_STATUE6, GO_ATALAI_STATUE6 }
-};
-
-static constexpr DungeonEncounterData Encounters[]
-{
-    { BOSS_AVATAR_OF_HAKKAR, { { 492 } } },
-    { BOSS_JAMMALAN_THE_PROPHET, { { 488 } } },
-    { BOSS_DREAMSCYTHE, { { 486 } } },
-    { BOSS_WEAVER, { { 487 } } },
-    { BOSS_MORPHAZ, { { 490 } } },
-    { BOSS_HAZZAS, { { 491 } } },
-    { BOSS_SHADE_OF_ERANIKUS, { { 493 } } },
+    { GO_ATALAI_STATUE6, GO_ATALAI_STATUE6 },
+    { 0,                 0 }
 };
 
 static Position const atalalarianPos = { -466.5134f, 95.19822f, -189.6463f, 0.03490658f };
@@ -78,8 +74,8 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(MAX_ENCOUNTER);
-            LoadObjectData({}, gameObjects);
-            LoadDungeonEncounterData(Encounters);
+            LoadDoorData(doorData);
+            LoadObjectData(nullptr, gameObjects);
             State = 0;
 
             s1 = false;
@@ -88,9 +84,12 @@ public:
             s4 = false;
             s5 = false;
             s6 = false;
+            EliteTrollsKilled = 0;
         }
 
+        ObjectGuid JammalAnTheProphetGUID;
         ObjectGuid ShadeOfEranikusGUID;
+        uint32 EliteTrollsKilled;
 
         uint32 State;
 
@@ -112,6 +111,13 @@ public:
                 case NPC_MORPHAZ:               SetBossState(BOSS_MORPHAZ, DONE); break;
                 case NPC_HAZZAS:                SetBossState(BOSS_HAZZAS, DONE); break;
                 case NPC_SHADE_OF_ERANIKUS:     SetBossState(BOSS_SHADE_OF_ERANIKUS, DONE); break;
+                case NPC_ATALALARION:           SetBossState(BOSS_ATALALARION, DONE); break;
+                case NPC_ZOLO:
+                case NPC_GASHER:
+                case NPC_LORO:
+                case NPC_HUKKU:
+                case NPC_ZUL_LOR:
+                case NPC_MIJAN:                 SetData(BOSS_EVENT_ELITE_TROLLS, EliteTrollsKilled + 1); break;
                 default:                        break;
             }
         }
@@ -122,6 +128,14 @@ public:
 
             switch (creature->GetEntry())
             {
+                case NPC_JAMMALAN_THE_PROPHET:
+                    JammalAnTheProphetGUID = creature->GetGUID();
+                    if (GetBossState(BOSS_EVENT_ELITE_TROLLS) != DONE)
+                    {
+                        creature->SetImmuneToPC(true);
+                        creature->CastSpell(creature, SPELL_GREEN_CHANNELING);
+                    }
+                    break;
                 case NPC_SHADE_OF_ERANIKUS:
                     ShadeOfEranikusGUID = creature->GetGUID();
                     if (GetBossState(BOSS_JAMMALAN_THE_PROPHET) != DONE)
@@ -198,7 +212,7 @@ public:
 
         void UseStatue(GameObject* go)
         {
-            go->SummonGameObject(GO_ATALAI_LIGHT1, *go, QuaternionData::fromEulerAnglesZYX(go->GetOrientation(), 0.0f, 0.0f), 0s);
+            go->SummonGameObject(GO_ATALAI_LIGHT1, *go, QuaternionData(), 0s);
             go->SetFlag(GO_FLAG_INTERACT_COND);
         }
 
@@ -235,6 +249,16 @@ public:
                 case EVENT_STATE:
                     State = data;
                     break;
+                case BOSS_EVENT_ELITE_TROLLS:
+                    EliteTrollsKilled = data;
+                    if (EliteTrollsKilled == 6)
+                    {
+                        if (Creature* jammal = instance->GetCreature(JammalAnTheProphetGUID))
+                            jammal->SetImmuneToPC(false);
+                        SetBossState(BOSS_EVENT_ELITE_TROLLS, DONE);
+                    }
+                    SaveToDB();
+                    break;
                 default:
                     break;
             }
@@ -246,11 +270,23 @@ public:
             {
                 case EVENT_STATE:
                     return State;
+                case BOSS_EVENT_ELITE_TROLLS:
+                    return EliteTrollsKilled;
                 default:
                     break;
             }
             return 0;
          }
+
+        void ReadSaveDataMore(std::istringstream& data) override
+        {
+            data >> EliteTrollsKilled;
+        }
+
+        void WriteSaveDataMore(std::ostringstream& data) override
+        {
+            data << EliteTrollsKilled;
+        }
     };
 };
 

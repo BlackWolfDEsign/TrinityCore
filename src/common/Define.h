@@ -20,7 +20,7 @@
 
 #include "CompilerDefs.h"
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #  if !defined(__STDC_FORMAT_MACROS)
 #    define __STDC_FORMAT_MACROS
 #  endif
@@ -36,9 +36,6 @@
 #    undef _GLIBCXX_SYNCHRONIZATION_HAPPENS_AFTER
 #    define _GLIBCXX_SYNCHRONIZATION_HAPPENS_BEFORE(A) ANNOTATE_HAPPENS_BEFORE(A)
 #    define _GLIBCXX_SYNCHRONIZATION_HAPPENS_AFTER(A)  ANNOTATE_HAPPENS_AFTER(A)
-#  endif
-#  if defined(VALGRIND)
-#    include <valgrind/memcheck.h>
 #  endif
 #endif
 
@@ -72,17 +69,17 @@
 #  define TRINITY_INLINE
 #endif //!COREDEBUG
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #  define ATTR_PRINTF(F, V) __attribute__ ((__format__ (__printf__, F, V)))
-#else //TRINITY_COMPILER_IS_GCC
+#else //TRINITY_COMPILER != TRINITY_COMPILER_GNU
 #  define ATTR_PRINTF(F, V)
-#endif //TRINITY_COMPILER_IS_GCC
+#endif //TRINITY_COMPILER == TRINITY_COMPILER_GNU
 
 #ifdef TRINITY_API_USE_DYNAMIC_LINKING
-#  if TRINITY_COMPILER_IS_MICROSOFT
+#  if TRINITY_COMPILER == TRINITY_COMPILER_MICROSOFT
 #    define TC_API_EXPORT __declspec(dllexport)
 #    define TC_API_IMPORT __declspec(dllimport)
-#  elif TRINITY_COMPILER_IS_GCC
+#  elif TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #    define TC_API_EXPORT __attribute__((visibility("default")))
 #    define TC_API_IMPORT
 #  else
@@ -99,22 +96,10 @@
 #  define TC_COMMON_API TC_API_IMPORT
 #endif
 
-#ifdef TRINITY_API_EXPORT_PROTO
-#  define TC_PROTO_API TC_API_EXPORT
-#else
-#  define TC_PROTO_API TC_API_IMPORT
-#endif
-
 #ifdef TRINITY_API_EXPORT_DATABASE
 #  define TC_DATABASE_API TC_API_EXPORT
 #else
 #  define TC_DATABASE_API TC_API_IMPORT
-#endif
-
-#ifdef TRINITY_API_EXPORT_NETWORK
-#  define TC_NETWORK_API TC_API_EXPORT
-#else
-#  define TC_NETWORK_API TC_API_IMPORT
 #endif
 
 #ifdef TRINITY_API_EXPORT_SHARED
@@ -127,12 +112,6 @@
 #  define TC_GAME_API TC_API_EXPORT
 #else
 #  define TC_GAME_API TC_API_IMPORT
-#endif
-
-#ifdef TRINITY_API_EXPORT_MMAPS_COMMON
-#  define TC_MMAPS_COMMON_API TC_API_EXPORT
-#else
-#  define TC_MMAPS_COMMON_API TC_API_IMPORT
 #endif
 
 #define UI64FMTD "%" PRIu64
@@ -154,16 +133,5 @@ typedef uint64_t uint64;
 typedef uint32_t uint32;
 typedef uint16_t uint16;
 typedef uint8_t uint8;
-
-enum DBCFormer
-{
-    FT_STRING = 's',                                        // LocalizedString*
-    FT_STRING_NOT_LOCALIZED = 'S',                          // char*
-    FT_FLOAT = 'f',                                         // float
-    FT_INT = 'i',                                           // uint32
-    FT_BYTE = 'b',                                          // uint8
-    FT_SHORT = 'h',                                         // uint16
-    FT_LONG = 'l'                                           // uint64
-};
 
 #endif //TRINITY_DEFINE_H

@@ -16,60 +16,29 @@
  */
 
 #include "ItemTemplate.h"
-#include "DB2Stores.h"
-#include "Player.h"
+#include "ObjectMgr.h"
+#include "QueryPackets.h"
+#include "SpellInfo.h"
+#include "SpellMgr.h"
 #include "World.h"
 
-int32 const SocketColorToGemTypeMask[31] =
+std::string const& ItemTemplate::GetName(LocaleConstant locale) const
 {
-    0,
-    SOCKET_COLOR_META,
-    SOCKET_COLOR_RED,
-    SOCKET_COLOR_YELLOW,
-    SOCKET_COLOR_BLUE,
-    SOCKET_COLOR_HYDRAULIC,
-    SOCKET_COLOR_COGWHEEL,
-    SOCKET_COLOR_RED | SOCKET_COLOR_YELLOW | SOCKET_COLOR_BLUE,
-    SOCKET_COLOR_RELIC_IRON,
-    SOCKET_COLOR_RELIC_BLOOD,
-    SOCKET_COLOR_RELIC_SHADOW,
-    SOCKET_COLOR_RELIC_FEL,
-    SOCKET_COLOR_RELIC_ARCANE,
-    SOCKET_COLOR_RELIC_FROST,
-    SOCKET_COLOR_RELIC_FIRE,
-    SOCKET_COLOR_RELIC_WATER,
-    SOCKET_COLOR_RELIC_LIFE,
-    SOCKET_COLOR_RELIC_WIND,
-    SOCKET_COLOR_RELIC_HOLY,
-    SOCKET_COLOR_PUNCHCARD_RED,
-    SOCKET_COLOR_PUNCHCARD_YELLOW,
-    SOCKET_COLOR_PUNCHCARD_BLUE,
-    SOCKET_COLOR_DOMINATION_BLOOD | SOCKET_COLOR_DOMINATION_FROST | SOCKET_COLOR_DOMINATION_UNHOLY,
-    SOCKET_COLOR_CYPHER,
-    SOCKET_COLOR_TINKER,
-    SOCKET_COLOR_PRIMORDIAL,
-    SOCKET_COLOR_FRAGRANCE,
-    SOCKET_COLOR_SINGING_THUNDER,
-    SOCKET_COLOR_SINGING_SEA,
-    SOCKET_COLOR_SINGING_WIND,
-    SOCKET_COLOR_FIBER
-};
+    if (locale != DEFAULT_LOCALE)
+        if (ItemLocale const* itemLocale = sObjectMgr->GetItemLocale(GetId()))
+            if (locale < itemLocale->Name.size() && !itemLocale->Name[locale].empty())
+                return itemLocale->Name[locale];
 
-char const* ItemTemplate::GetName(LocaleConstant locale) const
-{
-    if (ExtendedData->Display[locale][0] == '\0')
-        return GetDefaultLocaleName();
-
-    return ExtendedData->Display[locale];
+    return Name1;
 }
 
 bool ItemTemplate::HasSignature() const
 {
     return GetMaxStackSize() == 1 &&
-        GetClass() != ITEM_CLASS_CONSUMABLE &&
-        GetClass() != ITEM_CLASS_QUEST &&
+        Class != ITEM_CLASS_CONSUMABLE &&
+        Class != ITEM_CLASS_QUEST &&
         !HasFlag(ITEM_FLAG_NO_CREATOR) &&
-        GetId() != ITEM_HEARTHSTONE;
+        ItemId != 6948; /*Hearthstone*/
 }
 
 bool ItemTemplate::CanChangeEquipStateInCombat() const
@@ -84,262 +53,244 @@ bool ItemTemplate::CanChangeEquipStateInCombat() const
             break;
     }
 
-    switch (GetClass())
+    switch (Class)
     {
         case ITEM_CLASS_WEAPON:
         case ITEM_CLASS_PROJECTILE:
             return true;
+        default:
+            break;
     }
 
     return false;
 }
 
+float ItemTemplate::GetDPS() const
+{
+    if (!Delay)
+        return 0.f;
+
+    float temp = 0.f;
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
+        temp += Damage[i].DamageMin + Damage[i].DamageMax;
+
+    return temp * 500.f / Delay;
+}
+
+int32 ItemTemplate::getFeralBonus(int32 extraDPS /*= 0*/) const
+{
+    constexpr uint32 feralApEnabledInventoryTypeMaks = 1 << INVTYPE_WEAPON | 1 << INVTYPE_2HWEAPON | 1 << INVTYPE_WEAPONMAINHAND | 1 << INVTYPE_WEAPONOFFHAND;
+
+    // 0x02A5F3 - is mask for Melee weapon from ItemSubClassMask.dbc
+    if (Class == ITEM_CLASS_WEAPON && (1 << InventoryType) & feralApEnabledInventoryTypeMaks)
+    {
+        int32 bonus = int32((extraDPS + GetDPS()) * 14.0f) - 767;
+        if (bonus < 0)
+            return 0;
+        return bonus;
+    }
+
+    return 0;
+}
+
+float ItemTemplate::GetItemLevelIncludingQuality() const
+{
+    float itemLevel(ItemLevel);
+    switch (Quality)
+    {
+        case ITEM_QUALITY_POOR:
+        case ITEM_QUALITY_NORMAL:
+        case ITEM_QUALITY_UNCOMMON:
+        case ITEM_QUALITY_ARTIFACT:
+        case ITEM_QUALITY_HEIRLOOM:
+            itemLevel -= 13.f; // leaving this as a separate statement since we do not know the real behavior in this case
+            break;
+        case ITEM_QUALITY_RARE:
+            itemLevel -= 13.f;
+            break;
+        case ITEM_QUALITY_EPIC:
+        case ITEM_QUALITY_LEGENDARY:
+        default:
+            break;
+    }
+
+    return std::max<float>(0.f, itemLevel);
+}
+
 uint32 ItemTemplate::GetSkill() const
 {
-    static constexpr uint32 ItemWeaponSkills[MAX_ITEM_SUBCLASS_WEAPON] =
+    static uint32 const itemWeaponSkills[MAX_ITEM_SUBCLASS_WEAPON] =
     {
-        SKILL_AXES,             SKILL_TWO_HANDED_AXES, SKILL_BOWS,   SKILL_GUNS,              SKILL_MACES,
-        SKILL_TWO_HANDED_MACES, SKILL_POLEARMS,        SKILL_SWORDS, SKILL_TWO_HANDED_SWORDS, SKILL_WARGLAIVES,
-        SKILL_STAVES,           0,                     0,            SKILL_FIST_WEAPONS,      0,
-        SKILL_DAGGERS,          0,                     0,            SKILL_CROSSBOWS,         SKILL_WANDS,
+        SKILL_AXES,     SKILL_2H_AXES,  SKILL_BOWS,          SKILL_GUNS,         SKILL_MACES,
+        SKILL_2H_MACES, SKILL_POLEARMS, SKILL_SWORDS,        SKILL_2H_SWORDS,    0,
+        SKILL_STAVES,   0,              0,                   SKILL_FIST_WEAPONS, 0,
+        SKILL_DAGGERS,  SKILL_THROWN,   SKILL_ASSASSINATION, SKILL_CROSSBOWS,    SKILL_WANDS,
         SKILL_FISHING
     };
 
-    static constexpr uint32 ItemArmorSkills[MAX_ITEM_SUBCLASS_ARMOR] =
+    static uint32 const itemArmorSkills[MAX_ITEM_SUBCLASS_ARMOR] =
     {
-        0, SKILL_CLOTH, SKILL_LEATHER, SKILL_MAIL, SKILL_PLATE_MAIL, 0, SKILL_SHIELD, 0, 0, 0, 0, 0
+        0, SKILL_CLOTH, SKILL_LEATHER, SKILL_MAIL, SKILL_PLATE_MAIL, 0, SKILL_SHIELD, 0, 0, 0, 0
     };
 
-    static constexpr uint32 ItemProfessionSkills[MAX_ITEM_SUBCLASS_PROFESSION] =
-    {
-        SKILL_BLACKSMITHING, SKILL_LEATHERWORKING, SKILL_ALCHEMY,     SKILL_HERBALISM,  SKILL_COOKING,
-        SKILL_MINING,        SKILL_TAILORING,      SKILL_ENGINEERING, SKILL_ENCHANTING, SKILL_FISHING,
-        SKILL_SKINNING,      SKILL_JEWELCRAFTING,  SKILL_INSCRIPTION, SKILL_ARCHAEOLOGY
-    };
-
-    switch (GetClass())
+    switch (Class)
     {
         case ITEM_CLASS_WEAPON:
-            if (GetSubClass() >= MAX_ITEM_SUBCLASS_WEAPON)
+            if (SubClass >= MAX_ITEM_SUBCLASS_WEAPON)
                 return 0;
             else
-                return ItemWeaponSkills[GetSubClass()];
+                return itemWeaponSkills[SubClass];
+
         case ITEM_CLASS_ARMOR:
-            if (GetSubClass() >= MAX_ITEM_SUBCLASS_ARMOR)
+            if (SubClass >= MAX_ITEM_SUBCLASS_ARMOR)
                 return 0;
             else
-                return ItemArmorSkills[GetSubClass()];
-        case ITEM_CLASS_PROFESSION:
-            if (GetSubClass() >= MAX_ITEM_SUBCLASS_PROFESSION)
-                return 0;
-            else
-                return ItemProfessionSkills[GetSubClass()];
+                return itemArmorSkills[SubClass];
+
         default:
             return 0;
     }
 }
 
-char const* ItemTemplate::GetDefaultLocaleName() const
+std::string const& ItemTemplate::GetDefaultLocaleName() const
 {
-    return ExtendedData->Display[sWorld->GetDefaultDbcLocale()];
+    return GetName(sWorld->GetDefaultDbcLocale());
 }
 
-uint32 ItemTemplate::GetArmor(uint32 itemLevel) const
+void ItemTemplate::_LoadTotalAP()
 {
-    uint32 quality = ItemQualities(GetQuality()) != ITEM_QUALITY_HEIRLOOM ? ItemQualities(GetQuality()) : ITEM_QUALITY_RARE;
-    if (quality > ITEM_QUALITY_ARTIFACT)
-        return 0;
+    int32 totalAP = 0;
+    for (uint32 i = 0; i < StatsCount; ++i)
+        if (ItemStat[i].ItemStatType == ITEM_MOD_ATTACK_POWER)
+            totalAP += ItemStat[i].ItemStatValue;
 
-    // all items but shields
-    if (GetClass() != ITEM_CLASS_ARMOR || GetSubClass() != ITEM_SUBCLASS_ARMOR_SHIELD)
+    // some items can have equip spells with +AP
+    for (ItemEffect const& itemEffect : Effects)
+        if (itemEffect.SpellID > 0 && itemEffect.TriggerType == ITEM_SPELLTRIGGER_ON_EQUIP)
+            if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(itemEffect.SpellID))
+                for (SpellEffectInfo const& effect : spellInfo->GetEffects())
+                    if (effect.IsAura(SPELL_AURA_MOD_ATTACK_POWER))
+                        totalAP += effect.CalcValue();
+
+    _totalAP = totalAP;
+}
+
+void ItemTemplate::InitializeQueryData()
+{
+    for (uint8 loc = LOCALE_enUS; loc < TOTAL_LOCALES; ++loc)
+        QueryData[loc] = BuildQueryData(static_cast<LocaleConstant>(loc));
+}
+
+WorldPacket ItemTemplate::BuildQueryData(LocaleConstant loc) const
+{
+    WorldPackets::Query::QueryItemSingleResponse response;
+
+    response.ItemID = ItemId;
+    response.Allow = true;
+
+    response.Stats.Class = Class;
+    response.Stats.SubClass = SubClass;
+    response.Stats.SoundOverrideSubclass = SoundOverrideSubclass;
+    response.Stats.Name = Name1;
+    response.Stats.DisplayInfoID = DisplayInfoID;
+    response.Stats.Quality = Quality;
+    response.Stats.Flags = Flags;
+    response.Stats.BuyPrice = BuyPrice;
+    response.Stats.SellPrice = SellPrice;
+    response.Stats.InventoryType = InventoryType;
+    response.Stats.AllowableClass = AllowableClass;
+    response.Stats.AllowableRace = AllowableRace;
+    response.Stats.ItemLevel = ItemLevel;
+    response.Stats.RequiredLevel = RequiredLevel;
+    response.Stats.RequiredSkill = RequiredSkill;
+    response.Stats.RequiredSkillRank = RequiredSkillRank;
+    response.Stats.RequiredSpell = RequiredSpell;
+    response.Stats.RequiredHonorRank = RequiredHonorRank;
+    response.Stats.RequiredCityRank = RequiredCityRank;
+    response.Stats.RequiredReputationFaction = RequiredReputationFaction;
+    response.Stats.RequiredReputationRank = RequiredReputationRank;
+    response.Stats.MaxCount = MaxCount;
+    response.Stats.Stackable = Stackable;
+    response.Stats.ContainerSlots = ContainerSlots;
+    response.Stats.StatsCount = StatsCount;
+    for (uint32 i = 0; i < StatsCount; ++i)
     {
-        ItemArmorQualityEntry const* armorQuality = sItemArmorQualityStore.LookupEntry(itemLevel);
-        ItemArmorTotalEntry const* armorTotal = sItemArmorTotalStore.LookupEntry(itemLevel);
-        if (!armorQuality || !armorTotal)
-            return 0;
-
-        uint32 inventoryType = GetInventoryType();
-        if (inventoryType == INVTYPE_ROBE)
-            inventoryType = INVTYPE_CHEST;
-
-        ArmorLocationEntry const* location = sArmorLocationStore.LookupEntry(inventoryType);
-        if (!location)
-            return 0;
-
-        if (GetSubClass() < ITEM_SUBCLASS_ARMOR_CLOTH || GetSubClass() > ITEM_SUBCLASS_ARMOR_PLATE)
-            return 0;
-
-        float total = 1.0f;
-        float locationModifier = 1.0f;
-        switch (GetSubClass())
-        {
-            case ITEM_SUBCLASS_ARMOR_CLOTH:
-                total = armorTotal->Cloth;
-                locationModifier = location->Clothmodifier;
-                break;
-            case ITEM_SUBCLASS_ARMOR_LEATHER:
-                total = armorTotal->Leather;
-                locationModifier = location->Leathermodifier;
-                break;
-            case ITEM_SUBCLASS_ARMOR_MAIL:
-                total = armorTotal->Mail;
-                locationModifier = location->Chainmodifier;
-                break;
-            case ITEM_SUBCLASS_ARMOR_PLATE:
-                total = armorTotal->Plate;
-                locationModifier = location->Platemodifier;
-                break;
-            default:
-                break;
-        }
-
-        return uint32(armorQuality->Qualitymod[quality] * total * locationModifier + 0.5f);
+        response.Stats.ItemStat[i].ItemStatType = ItemStat[i].ItemStatType;
+        response.Stats.ItemStat[i].ItemStatValue = ItemStat[i].ItemStatValue;
     }
 
-    // shields
-    ItemArmorShieldEntry const* shield = sItemArmorShieldStore.LookupEntry(itemLevel);
-    if (!shield)
-        return 0;
+    response.Stats.ScalingStatDistribution = ScalingStatDistribution;
+    response.Stats.ScalingStatValue = ScalingStatValue;
 
-    return uint32(shield->Quality[quality] + 0.5f);
-}
-
-float ItemTemplate::GetDPS(uint32 itemLevel) const
-{
-    uint32 quality = ItemQualities(GetQuality()) != ITEM_QUALITY_HEIRLOOM ? ItemQualities(GetQuality()) : ITEM_QUALITY_RARE;
-    if (GetClass() != ITEM_CLASS_WEAPON || quality > ITEM_QUALITY_ARTIFACT)
-        return 0.0f;
-
-    float dps = 0.0f;
-    switch (GetInventoryType())
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_DAMAGES; ++i)
     {
-        case INVTYPE_AMMO:
-            dps = sItemDamageAmmoStore.AssertEntry(itemLevel)->Quality[quality];
-            break;
-        case INVTYPE_2HWEAPON:
-            if (HasFlag(ITEM_FLAG2_CASTER_WEAPON))
-                dps = sItemDamageTwoHandCasterStore.AssertEntry(itemLevel)->Quality[quality];
-            else
-                dps = sItemDamageTwoHandStore.AssertEntry(itemLevel)->Quality[quality];
-            break;
-        case INVTYPE_RANGED:
-        case INVTYPE_THROWN:
-        case INVTYPE_RANGEDRIGHT:
-            switch (GetSubClass())
-            {
-                case ITEM_SUBCLASS_WEAPON_WAND:
-                    dps = sItemDamageOneHandCasterStore.AssertEntry(itemLevel)->Quality[quality];
-                    break;
-                case ITEM_SUBCLASS_WEAPON_BOW:
-                case ITEM_SUBCLASS_WEAPON_GUN:
-                case ITEM_SUBCLASS_WEAPON_CROSSBOW:
-                    if (HasFlag(ITEM_FLAG2_CASTER_WEAPON))
-                        dps = sItemDamageTwoHandCasterStore.AssertEntry(itemLevel)->Quality[quality];
-                    else
-                        dps = sItemDamageTwoHandStore.AssertEntry(itemLevel)->Quality[quality];
-                    break;
-                default:
-                    break;
-            }
-            break;
-        case INVTYPE_WEAPON:
-        case INVTYPE_WEAPONMAINHAND:
-        case INVTYPE_WEAPONOFFHAND:
-            if (HasFlag(ITEM_FLAG2_CASTER_WEAPON))
-                dps = sItemDamageOneHandCasterStore.AssertEntry(itemLevel)->Quality[quality];
-            else
-                dps = sItemDamageOneHandStore.AssertEntry(itemLevel)->Quality[quality];
-            break;
-        default:
-            break;
+        response.Stats.Damage[i].DamageMin = Damage[i].DamageMin;
+        response.Stats.Damage[i].DamageMax = Damage[i].DamageMax;
+        response.Stats.Damage[i].DamageType = Damage[i].DamageType;
     }
 
-    return dps;
-}
+    response.Stats.Resistance[SPELL_SCHOOL_NORMAL] = Armor;
+    response.Stats.Resistance[SPELL_SCHOOL_HOLY] = HolyRes;
+    response.Stats.Resistance[SPELL_SCHOOL_FIRE] = FireRes;
+    response.Stats.Resistance[SPELL_SCHOOL_NATURE] = NatureRes;
+    response.Stats.Resistance[SPELL_SCHOOL_FROST] = FrostRes;
+    response.Stats.Resistance[SPELL_SCHOOL_SHADOW] = ShadowRes;
+    response.Stats.Resistance[SPELL_SCHOOL_ARCANE] = ArcaneRes;
 
-void ItemTemplate::GetDamage(uint32 itemLevel, float& minDamage, float& maxDamage) const
-{
-    minDamage = maxDamage = 0.0f;
-    float dps = GetDPS(itemLevel);
-    if (dps > 0.0f)
+    response.Stats.Delay = Delay;
+    response.Stats.AmmoType = AmmoType;
+    response.Stats.RangedModRange = RangedModRange;
+
+    for (uint8 s = 0; s < MAX_ITEM_PROTO_SPELLS; ++s)
     {
-        float avgDamage = dps * GetDelay() * 0.001f;
-        minDamage = (GetDmgVariance() * -0.5f + 1.0f) * avgDamage;
-        maxDamage = floor(float(avgDamage * (GetDmgVariance() * 0.5f + 1.0f) + 0.5f));
-    }
-}
-
-bool ItemTemplate::IsUsableByLootSpecialization(Player const* player, bool alwaysAllowBoundToAccount) const
-{
-    if (HasFlag(ITEM_FLAG_IS_BOUND_TO_ACCOUNT) && alwaysAllowBoundToAccount)
-        return true;
-
-    uint32 spec = player->GetLootSpecId();
-    if (!spec)
-        spec = AsUnderlyingType(player->GetPrimarySpecialization());
-    if (!spec)
-        spec = player->GetDefaultSpecId();
-
-    ChrSpecializationEntry const* chrSpecialization = sChrSpecializationStore.LookupEntry(spec);
-    if (!chrSpecialization)
-        return false;
-
-    std::size_t levelIndex = 0;
-    if (player->GetLevel() >= 110)
-        levelIndex = 2;
-    else if (player->GetLevel() > 40)
-        levelIndex = 1;
-
-    return Specializations[levelIndex].test(CalculateItemSpecBit(chrSpecialization));
-}
-
-std::size_t ItemTemplate::CalculateItemSpecBit(ChrSpecializationEntry const* spec)
-{
-    return (spec->ClassID - 1) * MAX_SPECIALIZATIONS + spec->OrderIndex;
-}
-
-TransmogOutfitSlotOption ItemTemplate::GetWeaponTransmogOutfitSlotOption() const
-{
-    switch (GetClass())
-    {
-        case ITEM_CLASS_WEAPON:
-            switch (GetSubClass())
-            {
-                case ITEM_SUBCLASS_WEAPON_AXE2:
-                case ITEM_SUBCLASS_WEAPON_MACE2:
-                case ITEM_SUBCLASS_WEAPON_SWORD2:
-                case ITEM_SUBCLASS_WEAPON_STAFF:
-                case ITEM_SUBCLASS_WEAPON_POLEARM:
-                    return TransmogOutfitSlotOption::TwoHandedWeapon;
-                case ITEM_SUBCLASS_WEAPON_BOW:
-                case ITEM_SUBCLASS_WEAPON_GUN:
-                case ITEM_SUBCLASS_WEAPON_CROSSBOW:
-                    return TransmogOutfitSlotOption::RangedWeapon;
-                case ITEM_SUBCLASS_WEAPON_AXE:
-                case ITEM_SUBCLASS_WEAPON_MACE:
-                case ITEM_SUBCLASS_WEAPON_SWORD:
-                case ITEM_SUBCLASS_WEAPON_WARGLAIVES:
-                case ITEM_SUBCLASS_WEAPON_FIST_WEAPON:
-                case ITEM_SUBCLASS_WEAPON_DAGGER:
-                    return TransmogOutfitSlotOption::OneHandedWeapon;
-                default:
-                    break;
-            }
-            break;
-        case ITEM_CLASS_ARMOR:
-            switch (GetInventoryType())
-            {
-                case INVTYPE_SHIELD:
-                    return TransmogOutfitSlotOption::Shield;
-                case INVTYPE_HOLDABLE:
-                    return TransmogOutfitSlotOption::OffHand;
-                default:
-                    break;
-            }
-            break;
-        default:
-            break;
+        response.Stats.Spells[s].SpellId = Effects[s].SpellID;
+        response.Stats.Spells[s].SpellTrigger = Effects[s].TriggerType;
+        response.Stats.Spells[s].SpellCharges = Effects[s].Charges;
+        response.Stats.Spells[s].SpellCooldown = Effects[s].CoolDownMSec;
+        response.Stats.Spells[s].SpellCategory = Effects[s].SpellCategoryID;
+        response.Stats.Spells[s].SpellCategoryCooldown = Effects[s].CategoryCoolDownMSec;
     }
 
-    return TransmogOutfitSlotOption::None;
+    response.Stats.Bonding = Bonding;
+    response.Stats.Description = Description;
+    response.Stats.PageText = PageText;
+    response.Stats.LanguageID = LanguageID;
+    response.Stats.PageMaterial = PageMaterial;
+    response.Stats.StartQuest = StartQuest;
+    response.Stats.LockID = LockID;
+    response.Stats.Material = Material;
+    response.Stats.Sheath = Sheath;
+    response.Stats.RandomProperty = RandomProperty;
+    response.Stats.RandomSuffix = RandomSuffix;
+    response.Stats.Block = Block;
+    response.Stats.ItemSet = ItemSet;
+    response.Stats.MaxDurability = MaxDurability;
+    response.Stats.Area = Area;
+    response.Stats.Map = Map;
+    response.Stats.BagFamily = BagFamily;
+    response.Stats.TotemCategory = TotemCategory;
+
+    for (uint8 s = 0; s < MAX_ITEM_PROTO_SOCKETS; ++s)
+    {
+        response.Stats.Socket[s].Color = Socket[s].Color;
+        response.Stats.Socket[s].Content = Socket[s].Content;
+    }
+
+    response.Stats.SocketBonus = socketBonus;
+    response.Stats.GemProperties = GemProperties;
+    response.Stats.RequiredDisenchantSkill = RequiredDisenchantSkill;
+    response.Stats.ArmorDamageModifier = ArmorDamageModifier;
+    response.Stats.Duration = Duration;
+    response.Stats.ItemLimitCategory = ItemLimitCategory;
+    response.Stats.HolidayId = HolidayId;
+
+    if (ItemLocale const* il = sObjectMgr->GetItemLocale(ItemId))
+    {
+        ObjectMgr::GetLocaleString(il->Name, loc, response.Stats.Name);
+        ObjectMgr::GetLocaleString(il->Description, loc, response.Stats.Description);
+    }
+
+    response.Write();
+    response.ShrinkToFit();
+    return response.Move();
 }

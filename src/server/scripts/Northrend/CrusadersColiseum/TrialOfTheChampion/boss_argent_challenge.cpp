@@ -133,6 +133,8 @@ class spell_eadric_radiance : public SpellScriptLoader
         spell_eadric_radiance() : SpellScriptLoader("spell_eadric_radiance") { }
         class spell_eadric_radiance_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_eadric_radiance_SpellScript);
+
             void FilterTargets(std::list<WorldObject*>& unitList)
             {
                 unitList.remove_if(OrientationCheck(GetCaster()));
@@ -249,6 +251,8 @@ public:
 
                 uiRadianceTimer = 16000;
             } else uiRadianceTimer -= uiDiff;
+
+            DoMeleeAttackIfReady();
         }
     };
 
@@ -404,6 +408,8 @@ public:
 
                 bHealth = true;
             }
+
+            DoMeleeAttackIfReady();
         }
 
         void JustSummoned(Creature* summon) override
@@ -476,6 +482,8 @@ public:
                 }
                 uiShadowPastTimer = 5000;
             }else uiShadowPastTimer -= uiDiff;
+
+            DoMeleeAttackIfReady();
         }
 
         void JustDied(Unit* /*killer*/) override
@@ -584,6 +592,16 @@ public:
             uiWaypoint = uiType;
         }
 
+        void UpdateAI(uint32 uiDiff) override
+        {
+            EscortAI::UpdateAI(uiDiff);
+
+            if (!UpdateVictim())
+                return;
+
+            DoMeleeAttackIfReady();
+        }
+
         void JustDied(Unit* /*killer*/) override
         {
             instance->SetData(DATA_ARGENT_SOLDIER_DEFEATED, instance->GetData(DATA_ARGENT_SOLDIER_DEFEATED) + 1);
@@ -596,7 +614,7 @@ public:
     }
 };
 
-uint32 constexpr memorySpellId[25] =
+uint32 const memorySpellId[25] =
 {
     SPELL_MEMORY_ALGALON,
     SPELL_MEMORY_ARCHIMONDE,
@@ -633,6 +651,8 @@ class spell_paletress_summon_memory : public SpellScriptLoader
 
         class spell_paletress_summon_memory_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_paletress_summon_memory_SpellScript);
+
             bool Validate(SpellInfo const* /*spellInfo*/) override
             {
                 return ValidateSpellInfo(memorySpellId);
@@ -650,8 +670,7 @@ class spell_paletress_summon_memory : public SpellScriptLoader
 
             void HandleScript(SpellEffIndex /*effIndex*/)
             {
-                GetHitUnit()->CastSpell(GetHitUnit(), memorySpellId[urand(0, 24)], CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                    .SetOriginalCaster(GetCaster()->GetGUID()));
+                GetHitUnit()->CastSpell(GetHitUnit(), memorySpellId[urand(0, 24)], GetCaster()->GetGUID());
             }
 
             void Register() override

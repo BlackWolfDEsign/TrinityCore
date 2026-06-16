@@ -18,110 +18,130 @@
 #include "FleeingMovementGenerator.h"
 #include "Creature.h"
 #include "CreatureAI.h"
+#include "MovementDefines.h"
 #include "MoveSpline.h"
 #include "MoveSplineInit.h"
 #include "ObjectAccessor.h"
 #include "PathGenerator.h"
+#include "Player.h"
+#include "Unit.h"
 
 #define MIN_QUIET_DISTANCE 28.0f
 #define MAX_QUIET_DISTANCE 43.0f
 
-FleeingMovementGenerator::FleeingMovementGenerator(ObjectGuid fleeTargetGUID,
-    Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult /*= {}*/) : _fleeTargetGUID(fleeTargetGUID), _timer(0)
+template<class T>
+FleeingMovementGenerator<T>::FleeingMovementGenerator(ObjectGuid fleeTargetGUID) : _fleeTargetGUID(fleeTargetGUID), _timer(0)
 {
-    Mode = MOTION_MODE_DEFAULT;
-    Priority = MOTION_PRIORITY_HIGHEST;
-    Flags = MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING;
-    BaseUnitState = UNIT_STATE_FLEEING;
-    ScriptResult = std::move(scriptResult);
+    this->Priority = MOTION_PRIORITY_HIGHEST;
+    this->Flags = MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING;
+    this->BaseUnitState = UNIT_STATE_FLEEING;
 }
 
-FleeingMovementGenerator::~FleeingMovementGenerator() = default;
-
-MovementGeneratorType FleeingMovementGenerator::GetMovementGeneratorType() const
+template<class T>
+MovementGeneratorType FleeingMovementGenerator<T>::GetMovementGeneratorType() const
 {
     return FLEEING_MOTION_TYPE;
 }
 
-void FleeingMovementGenerator::Initialize(Unit* owner)
+template<class T>
+bool FleeingMovementGenerator<T>::DoInitialize(T* owner)
 {
-    RemoveFlag(MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING | MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
-    AddFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED);
+    MovementGenerator::RemoveFlag(MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING | MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+    MovementGenerator::AddFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED);
 
     if (!owner || !owner->IsAlive())
-        return;
+        return false;
+
+    // TODO: UNIT_FIELD_FLAGS should not be handled by generators
+    owner->SetUnitFlag(UNIT_FLAG_FLEEING);
 
     _path = nullptr;
     SetTargetLocation(owner);
+    return true;
 }
 
-void FleeingMovementGenerator::Reset(Unit* owner)
+template<class T>
+bool FleeingMovementGenerator<T>::DoReset(T* owner)
 {
-    RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+    MovementGenerator::RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
 
-    Initialize(owner);
+    return DoInitialize(owner);
 }
 
-bool FleeingMovementGenerator::Update(Unit* owner, uint32 diff)
+template<class T>
+bool FleeingMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
 {
     if (!owner || !owner->IsAlive())
         return false;
 
     if (owner->HasUnitState(UNIT_STATE_NOT_MOVE) || owner->IsMovementPreventedByCasting())
     {
-        AddFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
+        MovementGenerator::AddFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
         owner->StopMoving();
         _path = nullptr;
         return true;
     }
     else
-        RemoveFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
+        MovementGenerator::RemoveFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
 
     _timer.Update(diff);
-    if ((HasFlag(MOVEMENTGENERATOR_FLAG_SPEED_UPDATE_PENDING) && !owner->movespline->Finalized()) || (_timer.Passed() && owner->movespline->Finalized()))
+    if ((MovementGenerator::HasFlag(MOVEMENTGENERATOR_FLAG_SPEED_UPDATE_PENDING) && !owner->movespline->Finalized()) || (_timer.Passed() && owner->movespline->Finalized()))
     {
-        RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY);
+        MovementGenerator::RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY);
         SetTargetLocation(owner);
     }
 
     return true;
 }
 
-void FleeingMovementGenerator::Deactivate(Unit* owner)
+template<class T>
+void FleeingMovementGenerator<T>::DoDeactivate(T* owner)
 {
-    AddFlag(MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+    MovementGenerator::AddFlag(MOVEMENTGENERATOR_FLAG_DEACTIVATED);
     owner->ClearUnitState(UNIT_STATE_FLEEING_MOVE);
 }
 
-void FleeingMovementGenerator::Finalize(Unit* owner, bool active, bool movementInform)
+template<class T>
+void FleeingMovementGenerator<T>::DoFinalize(T*, bool, bool)
+{
+}
+
+template<>
+void FleeingMovementGenerator<Player>::DoFinalize(Player* owner, bool active, bool/* movementInform*/)
 {
     AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
 
     if (active)
     {
+        owner->RemoveUnitFlag(UNIT_FLAG_FLEEING);
         owner->ClearUnitState(UNIT_STATE_FLEEING_MOVE);
-
-        if (owner->IsCreature())
-        {
-            if (Unit const* victim = owner->GetVictim())
-                owner->SetTarget(victim->GetGUID());
-        }
-        else if (owner->IsPlayer())
-            owner->StopMoving();
+        owner->StopMoving();
     }
-
-    if (movementInform)
-        SetScriptResult(MovementStopReason::Finished);
 }
 
-void FleeingMovementGenerator::SetTargetLocation(Unit* owner)
+template<>
+void FleeingMovementGenerator<Creature>::DoFinalize(Creature* owner, bool active, bool/* movementInform*/)
+{
+    AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
+
+    if (active)
+    {
+        owner->RemoveUnitFlag(UNIT_FLAG_FLEEING);
+        owner->ClearUnitState(UNIT_STATE_FLEEING_MOVE);
+        if (owner->GetVictim())
+            owner->SetTarget(owner->EnsureVictim()->GetGUID());
+    }
+}
+
+template<class T>
+void FleeingMovementGenerator<T>::SetTargetLocation(T* owner)
 {
     if (!owner || !owner->IsAlive())
         return;
 
     if (owner->HasUnitState(UNIT_STATE_NOT_MOVE) || owner->IsMovementPreventedByCasting())
     {
-        AddFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
+        MovementGenerator::AddFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
         owner->StopMoving();
         _path = nullptr;
         return;
@@ -161,7 +181,8 @@ void FleeingMovementGenerator::SetTargetLocation(Unit* owner)
     _timer.Reset(traveltime + urand(800, 1500));
 }
 
-void FleeingMovementGenerator::GetPoint(Unit* owner, Position& position) const
+template<class T>
+void FleeingMovementGenerator<T>::GetPoint(T* owner, Position &position)
 {
     float casterDistance, casterAngle;
     if (Unit* fleeTarget = ObjectAccessor::GetUnit(*owner, _fleeTargetGUID))
@@ -198,6 +219,23 @@ void FleeingMovementGenerator::GetPoint(Unit* owner, Position& position) const
     owner->MovePositionToFirstCollision(position, distance, angle);
 }
 
+template FleeingMovementGenerator<Player>::FleeingMovementGenerator(ObjectGuid);
+template FleeingMovementGenerator<Creature>::FleeingMovementGenerator(ObjectGuid);
+template MovementGeneratorType FleeingMovementGenerator<Player>::GetMovementGeneratorType() const;
+template MovementGeneratorType FleeingMovementGenerator<Creature>::GetMovementGeneratorType() const;
+template bool FleeingMovementGenerator<Player>::DoInitialize(Player*);
+template bool FleeingMovementGenerator<Creature>::DoInitialize(Creature*);
+template bool FleeingMovementGenerator<Player>::DoReset(Player*);
+template bool FleeingMovementGenerator<Creature>::DoReset(Creature*);
+template bool FleeingMovementGenerator<Player>::DoUpdate(Player*, uint32);
+template bool FleeingMovementGenerator<Creature>::DoUpdate(Creature*, uint32);
+template void FleeingMovementGenerator<Player>::DoDeactivate(Player*);
+template void FleeingMovementGenerator<Creature>::DoDeactivate(Creature*);
+template void FleeingMovementGenerator<Player>::SetTargetLocation(Player*);
+template void FleeingMovementGenerator<Creature>::SetTargetLocation(Creature*);
+template void FleeingMovementGenerator<Player>::GetPoint(Player*, Position &);
+template void FleeingMovementGenerator<Creature>::GetPoint(Creature*, Position &);
+
 //---- TimedFleeingMovementGenerator
 
 bool TimedFleeingMovementGenerator::Update(Unit* owner, uint32 diff)
@@ -209,29 +247,18 @@ bool TimedFleeingMovementGenerator::Update(Unit* owner, uint32 diff)
     if (_totalFleeTime.Passed())
         return false;
 
-    return FleeingMovementGenerator::Update(owner, diff);
+    return FleeingMovementGenerator<Creature>::DoUpdate(owner->ToCreature(), diff);
 }
 
 void TimedFleeingMovementGenerator::Finalize(Unit* owner, bool active, bool movementInform)
 {
-    AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
-    if (!active)
-        return;
+    FleeingMovementGenerator<Creature>::DoFinalize(static_cast<Creature*>(owner), active, movementInform);
 
-    owner->StopMoving();
-    if (owner->IsCreature() && owner->IsAlive())
-    {
-        if (Unit* victim = owner->GetVictim())
-        {
-            owner->AttackStop();
-            owner->GetAI()->AttackStart(victim);
-        }
-    }
+    if (active)
+        owner->StopMoving();
 
     if (movementInform)
     {
-        SetScriptResult(MovementStopReason::Finished);
-
         Creature* ownerCreature = owner->ToCreature();
         if (CreatureAI* AI = ownerCreature ? ownerCreature->AI() : nullptr)
             AI->MovementInform(TIMED_FLEEING_MOTION_TYPE, 0);

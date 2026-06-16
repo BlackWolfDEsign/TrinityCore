@@ -21,6 +21,7 @@
 #include "Map.h"
 #include "naxxramas.h"
 #include "ObjectAccessor.h"
+#include "Player.h"
 #include "ScriptedCreature.h"
 #include "SpellScript.h"
 
@@ -116,7 +117,7 @@ struct boss_heigan : public BossAI
         _safetyDance = true;
 
         // figure out the current GUIDs of our eruption tiles and which segment they belong in
-        std::unordered_multimap<ObjectGuid::LowType, GameObject*> const& mapGOs = me->GetMap()->GetGameObjectBySpawnIdStore();
+        std::unordered_multimap<uint32, GameObject*> const& mapGOs = me->GetMap()->GetGameObjectBySpawnIdStore();
         uint32 spawnId = firstEruptionDBGUID;
         for (uint8 section = 0; section < numSections; ++section)
         {
@@ -184,7 +185,7 @@ struct boss_heigan : public BossAI
                                     tile->SendCustomAnim(0);
                                     CastSpellExtraArgs args;
                                     args.OriginalCaster = me->GetGUID();
-                                    tile->CastSpell(tile, tile->GetGOInfo()->trap.spell, args);
+                                    tile->CastSpell(tile, tile->GetGOInfo()->trap.spellId, args);
                                 }
 
                     if (_safeSection == 0)
@@ -198,6 +199,8 @@ struct boss_heigan : public BossAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
     private:
@@ -211,6 +214,8 @@ struct boss_heigan : public BossAI
 // 29371 - Eruption
 class spell_heigan_eruption : public SpellScript
 {
+    PrepareSpellScript(spell_heigan_eruption);
+
     void HandleScript(SpellEffIndex /*eff*/)
     {
         Unit* caster = GetCaster();

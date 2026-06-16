@@ -1,4 +1,4 @@
- /*
+/*
  * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -39,12 +39,7 @@ EndScriptData */
 4 - Archimonde event
 */
 
-enum Yells
-{
-    YELL_ARCHIMONDE_INTRO = 8
-};
-
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { RAGE_WINTERCHILL,   DATA_RAGEWINTERCHILL    },
     { ANETHERON,          DATA_ANETHERON          },
@@ -54,16 +49,7 @@ static constexpr ObjectData creatureData[] =
     { JAINA,              DATA_JAINAPROUDMOORE    },
     { THRALL,             DATA_THRALL             },
     { TYRANDE,            DATA_TYRANDEWHISPERWIND },
-    { NPC_CHANNEL_TARGET, DATA_CHANNEL_TARGET     },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_RAGEWINTERCHILL, {{ 618 }} },
-    { DATA_ANETHERON, {{ 619 }} },
-    { DATA_KAZROGAL, {{ 620 }} },
-    { DATA_AZGALOR, {{ 621 }} },
-    { DATA_ARCHIMONDE, {{ 622 }} }
+    { 0,                  0                       } // END
 };
 
 class instance_hyjal : public InstanceMapScript
@@ -82,15 +68,12 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
-            LoadDungeonEncounterData(encounters);
+            LoadObjectData(creatureData, nullptr);
 
             RaidDamage = 0;
             Trash = 0;
             hordeRetreat = 0;
             allianceRetreat = 0;
-
-            ArchiYell = false;
         }
 
         void OnGameObjectCreate(GameObject* go) override
@@ -165,10 +148,12 @@ public:
                 case DATA_ALLIANCE_RETREAT:
                     allianceRetreat = data;
                     HandleGameObject(HordeGate, true);
+                    SaveToDB();
                     break;
                 case DATA_HORDE_RETREAT:
                     hordeRetreat = data;
                     HandleGameObject(ElfGate, true);
+                    SaveToDB();
                     break;
                 case DATA_RAIDDAMAGE:
                     RaidDamage += data;
@@ -198,18 +183,23 @@ public:
                         {
                             archimonde->SetVisible(true);
                             archimonde->SetReactState(REACT_AGGRESSIVE);
-
-                            if (!ArchiYell)
-                            {
-                                ArchiYell = true;
-                                archimonde->AI()->Talk(YELL_ARCHIMONDE_INTRO);
-                            }
+                            archimonde->AI()->DoAction(ACTION_ARCHIMONDE_INTRO);
                         }
                     }
                     break;
             }
 
             return true;
+        }
+
+        void ReadSaveDataMore(std::istringstream& loadStream) override
+        {
+            loadStream >> allianceRetreat >> hordeRetreat >> RaidDamage;
+        }
+
+        void WriteSaveDataMore(std::ostringstream& saveStream) override
+        {
+            saveStream << allianceRetreat << ' ' << hordeRetreat << ' ' << RaidDamage;
         }
 
         uint32 GetData(uint32 type) const override
@@ -224,14 +214,6 @@ public:
             return 0;
         }
 
-        void AfterDataLoad() override
-        {
-            if (GetBossState(DATA_ANETHERON) == DONE)
-                allianceRetreat = 1;
-            if (GetBossState(DATA_AZGALOR) == DONE)
-                hordeRetreat = 1;
-        }
-
         protected:
             GuidList m_uiAncientGemGUID;
             ObjectGuid HordeGate;
@@ -240,7 +222,6 @@ public:
             uint32 hordeRetreat;
             uint32 allianceRetreat;
             uint32 RaidDamage;
-            bool ArchiYell;
     };
 };
 

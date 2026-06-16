@@ -16,114 +16,46 @@
  */
 
 #include "EquipmentSetPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::EquipmentSet
+WorldPacket const* WorldPackets::EquipmentSet::EquipmentSetID::Write()
 {
-WorldPacket const* EquipmentSetID::Write()
-{
-    _worldPacket << int32(Type);
     _worldPacket << uint32(SetID);
-    _worldPacket << uint64(GUID);
+    _worldPacket.appendPackGUID(GUID);
 
     return &_worldPacket;
 }
 
-WorldPacket const* LoadEquipmentSet::Write()
+WorldPacket const* WorldPackets::EquipmentSet::LoadEquipmentSet::Write()
 {
-    _worldPacket << Size<uint32>(SetData);
+    _worldPacket << uint32(SetData.size());
 
     for (EquipmentSetInfo::EquipmentSetData const* equipSet : SetData)
     {
-        _worldPacket << int32(equipSet->Type);
-        _worldPacket << uint64(equipSet->Guid);
+        _worldPacket.appendPackGUID(equipSet->Guid);
         _worldPacket << uint32(equipSet->SetID);
-        _worldPacket << uint32(equipSet->IgnoreMask);
+        _worldPacket << equipSet->SetName;
+        _worldPacket << equipSet->SetIcon;
 
-        for (std::size_t i = 0; i < EQUIPMENT_SET_SLOTS; ++i)
+        for (uint32 i = 0; i < EQUIPMENT_SET_SLOTS; ++i)
         {
-            _worldPacket << equipSet->Pieces[i];
-            _worldPacket << int32(equipSet->Appearances[i]);
+            // ignored slots stored in IgnoreMask, client wants "1" as raw GUID, so no HighGuid::Item
+            if (equipSet->IgnoreMask & (1 << i))
+                _worldPacket << EquipmentSetInfo::IgnoredSlot.WriteAsPacked();
+            else
+                _worldPacket << equipSet->Pieces[i].WriteAsPacked();
         }
-
-        _worldPacket.append(equipSet->Enchants.data(), equipSet->Enchants.size());
-
-        _worldPacket << int32(equipSet->SecondaryShoulderApparanceID);
-        _worldPacket << int32(equipSet->SecondaryShoulderSlot);
-        _worldPacket << int32(equipSet->SecondaryWeaponAppearanceID);
-        _worldPacket << int32(equipSet->SecondaryWeaponSlot);
-
-        _worldPacket << OptionalInit(equipSet->AssignedSpecIndex);
-        _worldPacket << SizedString::BitsSize<8>(equipSet->SetName);
-        _worldPacket << SizedString::BitsSize<9>(equipSet->SetIcon);
-        _worldPacket.FlushBits();
-
-        if (equipSet->AssignedSpecIndex)
-            _worldPacket << int32(*equipSet->AssignedSpecIndex);
-
-        _worldPacket << SizedString::Data(equipSet->SetName);
-        _worldPacket << SizedString::Data(equipSet->SetIcon);
     }
 
     return &_worldPacket;
 }
 
-void SaveEquipmentSet::Read()
+void WorldPackets::EquipmentSet::SaveEquipmentSet::Read()
 {
-    _worldPacket >> As<int32>(Set.Type);
-    _worldPacket >> Set.Guid;
+    _worldPacket.readPackGUID(Set.Guid);
     _worldPacket >> Set.SetID;
-    _worldPacket >> Set.IgnoreMask;
+    _worldPacket >> Set.SetName;
+    _worldPacket >> Set.SetIcon;
 
     for (uint8 i = 0; i < EQUIPMENT_SET_SLOTS; ++i)
-    {
-        _worldPacket >> Set.Pieces[i];
-        _worldPacket >> Set.Appearances[i];
-    }
-
-    _worldPacket >> Set.Enchants[0];
-    _worldPacket >> Set.Enchants[1];
-
-    _worldPacket >> Set.SecondaryShoulderApparanceID;
-    _worldPacket >> Set.SecondaryShoulderSlot;
-    _worldPacket >> Set.SecondaryWeaponAppearanceID;
-    _worldPacket >> Set.SecondaryWeaponSlot;
-
-    _worldPacket >> OptionalInit(Set.AssignedSpecIndex);
-    _worldPacket >> SizedString::BitsSize<8>(Set.SetName);
-    _worldPacket >> SizedString::BitsSize<9>(Set.SetIcon);
-
-    if (Set.AssignedSpecIndex)
-        _worldPacket >> *Set.AssignedSpecIndex;
-
-    _worldPacket >> SizedString::Data(Set.SetName);
-    _worldPacket >> SizedString::Data(Set.SetIcon);
-}
-
-void DeleteEquipmentSet::Read()
-{
-    _worldPacket >> ID;
-}
-
-void UseEquipmentSet::Read()
-{
-    _worldPacket >> Inv;
-
-    for (uint8 i = 0; i < EQUIPMENT_SET_SLOTS; ++i)
-    {
-        _worldPacket >> Items[i].Item;
-        _worldPacket >> Items[i].ContainerSlot;
-        _worldPacket >> Items[i].Slot;
-    }
-
-    _worldPacket >> GUID;
-}
-
-WorldPacket const* UseEquipmentSetResult::Write()
-{
-    _worldPacket << int32(Reason);
-    _worldPacket << uint64(GUID);
-
-    return &_worldPacket;
-}
+        _worldPacket >> Set.Pieces[i].ReadAsPacked();
 }

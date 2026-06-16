@@ -2,7 +2,7 @@ version: 2
 jobs:
   codestyle_and_sql:
     docker:
-      - image: trinitycore/circle-ci:debian-13-builder
+      - image: trinitycore/circle-ci:debian-12-builder
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
@@ -31,20 +31,14 @@ jobs:
             dockerize -wait tcp://127.0.0.1:3306 -timeout 120s
             mysql -h 127.0.0.1 -uroot < sql/create/create_mysql.sql
             mysql -h 127.0.0.1 -uroot auth < sql/base/auth_database.sql
-            ./contrib/check_updates.sh auth master auth 127.0.0.1
+            ./contrib/check_updates.sh auth 3.3.5 auth 127.0.0.1
             mysql -h 127.0.0.1 -uroot characters < sql/base/characters_database.sql
-            ./contrib/check_updates.sh characters master characters 127.0.0.1
-            echo "Importing world database structure"
+            ./contrib/check_updates.sh characters 3.3.5 characters 127.0.0.1
             mysql -h 127.0.0.1 -uroot world < sql/base/dev/world_database.sql
-            echo "Importing hotfixes database structure"
-            mysql -h 127.0.0.1 -uroot hotfixes < sql/base/dev/hotfixes_database.sql
-            echo "Importing world database updates"
-            cat sql/updates/world/master/*.sql | mysql -h 127.0.0.1 -uroot world
-            echo "Importing hotfixes database updates"
-            cat sql/updates/hotfixes/master/*.sql | mysql -h 127.0.0.1 -uroot hotfixes
+            cat sql/updates/world/3.3.5/*.sql | mysql -h 127.0.0.1 -uroot world
   pch:
     docker:
-      - image: trinitycore/circle-ci:debian-13-builder
+      - image: trinitycore/circle-ci:debian-12-builder
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
@@ -56,12 +50,14 @@ jobs:
       - run:
           name: Setup
           command: |
+            mkdir bin
+            cd bin
             if [ "$DOCKERHUB_PUSH_IMAGES" == "TRUE" ]; then
-              export CMAKE_BUILD_TYPE=Release
+              cmake ../ -DWITH_WARNINGS=1 -DWITH_COREDEBUG=0 -DUSE_COREPCH=1 -DUSE_SCRIPTPCH=1 -DTOOLS=1 -DSCRIPTS=static -DSERVERS=1 -DNOJEM=0 -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS="-Werror" -DCMAKE_CXX_FLAGS="-Werror" -DCMAKE_INSTALL_PREFIX=check_install -DCMAKE_INSTALL_RPATH=\$ORIGIN/../lib -DBUILD_TESTING=1
             else
-              export CMAKE_BUILD_TYPE=Debug
+              cmake ../ -DWITH_WARNINGS=1 -DWITH_COREDEBUG=0 -DUSE_COREPCH=1 -DUSE_SCRIPTPCH=1 -DTOOLS=1 -DSCRIPTS=static -DSERVERS=1 -DNOJEM=0 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-Werror" -DCMAKE_CXX_FLAGS="-Werror" -DCMAKE_C_FLAGS_DEBUG="-DNDEBUG" -DCMAKE_CXX_FLAGS_DEBUG="-DNDEBUG" -DCMAKE_INSTALL_PREFIX=check_install -DCMAKE_INSTALL_RPATH=\$ORIGIN/../lib -DBUILD_TESTING=1
             fi
-            cmake -S . -B ./bin -DWITH_WARNINGS=1 -DWITH_WARNINGS_AS_ERRORS=1 -DWITH_COREDEBUG=0 -DUSE_COREPCH=1 -DUSE_SCRIPTPCH=1 -DTOOLS=1 -DSCRIPTS=static -DSERVERS=1 -DNOJEM=0 -DCMAKE_C_FLAGS_DEBUG="-DNDEBUG" -DCMAKE_CXX_FLAGS_DEBUG="-DNDEBUG" -DCMAKE_INSTALL_PREFIX=bin/check_install -DCMAKE_INSTALL_RPATH=\$ORIGIN/../lib -DBUILD_TESTING=1
+            cd ..
       - run:
           name: Build
           command: |
@@ -76,7 +72,7 @@ jobs:
           name: Check executables
           command: |
             cd bin/check_install/bin
-            ./bnetserver --version
+            ./authserver --version
             ./worldserver --version
       - setup_remote_docker:
           version: default
@@ -91,7 +87,7 @@ jobs:
             docker build --file Dockerfile --force-rm --tag $image_prefix:$CIRCLE_SHA1 --tag $image_prefix:$(echo $CIRCLE_BRANCH | tr '/' '-' | tr '[:upper:]' '[:lower:]') .
             docker save $image_prefix | gzip > ../../docker.tar.gz
             if [ "$DOCKERHUB_PUSH_IMAGES" == "TRUE" ]; then
-              if [ "$CIRCLE_BRANCH" == "3.3.5" ] || [ "$CIRCLE_BRANCH" == "master" ]; then
+              if [ "$CIRCLE_BRANCH" == "3.3.5" ] || [ "$CIRCLE_BRANCH" == "master" ] || [ "$CIRCLE_BRANCH" == "wotlk_classic" ]; then
                 docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD
                 echo "Pushing docker image to dockerhub"
                 docker push --all-tags $image_prefix
@@ -101,7 +97,7 @@ jobs:
           path: docker.tar.gz
   nopch:
     docker:
-      - image: trinitycore/circle-ci:debian-13-builder
+      - image: trinitycore/circle-ci:debian-12-builder
         auth:
           username: $DOCKERHUB_USERNAME
           password: $DOCKERHUB_PASSWORD
@@ -117,16 +113,15 @@ jobs:
             /scripts/checkout.sh
       - restore_cache:
           keys:
-            - master-nopch-{{ .Branch }}-{{ .Revision }}
-            - master-nopch-{{ .Branch }}
-            - master-nopch-master
+            - 3.3.5-nopch-{{ .Branch }}-{{ .Revision }}
+            - 3.3.5-nopch-{{ .Branch }}
+            - 3.3.5-nopch-3.3.5
       - run:
           name: Setup
           command: |
             export CCACHE_MAXSIZE="1G"
             export CC="ccache clang"
             export CXX="ccache clang++"
-            export CMAKE_BUILD_TYPE=Debug
             export CCACHE_CPP2=yes
             export USE_CCACHE=1
             export PATH=/usr/lib/ccache:$PATH
@@ -135,7 +130,10 @@ jobs:
             ccache -s
             git config user.email "circleci@build.bot" && git config user.name "Circle CI"
             $CXX --version
-            cmake -S . -B ./bin -DWITH_WARNINGS=1 -DWITH_WARNINGS_AS_ERRORS=1 -DWITH_COREDEBUG=0 -DUSE_COREPCH=0 -DUSE_SCRIPTPCH=0 -DTOOLS=1 -DSCRIPTS=dynamic -DSERVERS=1 -DNOJEM=0 -DCMAKE_C_FLAGS_DEBUG="-DNDEBUG -g0" -DCMAKE_CXX_FLAGS_DEBUG="-DNDEBUG -g0" -DCMAKE_INSTALL_PREFIX=bin/check_install
+            mkdir bin
+            cd bin
+            cmake ../ -DWITH_WARNINGS=1 -DWITH_COREDEBUG=0 -DUSE_COREPCH=0 -DUSE_SCRIPTPCH=0 -DTOOLS=1 -DSCRIPTS=dynamic -DSERVERS=1 -DNOJEM=0 -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_FLAGS="-Werror" -DCMAKE_CXX_FLAGS="-Werror" -DCMAKE_C_FLAGS_DEBUG="-DNDEBUG" -DCMAKE_CXX_FLAGS_DEBUG="-DNDEBUG" -DCMAKE_INSTALL_PREFIX=check_install
+            cd ..
       - run:
           name: Build
           command: |
@@ -143,10 +141,10 @@ jobs:
             make -j 4 -k && make install
             ccache -s
             cd check_install/bin
-            ./bnetserver --version
+            ./authserver --version
             ./worldserver --version
       - save_cache:
-          key: master-nopch-{{ .Branch }}-{{ .Revision }}
+          key: 3.3.5-nopch-{{ .Branch }}-{{ .Revision }}
           paths:
             - /home/circleci/.ccache
 workflows:
@@ -155,3 +153,4 @@ workflows:
     jobs:
       - codestyle_and_sql
       - pch
+      - nopch

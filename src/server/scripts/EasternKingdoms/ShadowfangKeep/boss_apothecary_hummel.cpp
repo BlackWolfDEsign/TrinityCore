@@ -71,7 +71,9 @@ enum ApothecaryEvents
     EVENT_PERFUME_SPRAY,
     EVENT_COLOGNE_SPRAY,
     EVENT_CALL_BAXTER,
-    EVENT_CALL_FRYE
+    EVENT_CALL_FRYE,
+    EVENT_CALL_CRAZED_APOTHECARY,
+    EVENT_CRAZED_APOTHECARY
 };
 
 enum ApothecaryMisc
@@ -94,7 +96,7 @@ Position const FryeMovePos = { -196.2483f, 2197.224f, 79.9315f, 0.0f };
 
 struct boss_apothecary_hummel : public BossAI
 {
-    boss_apothecary_hummel(Creature* creature) : BossAI(creature, BOSS_APOTHECARY_HUMMEL), _deadCount(0), _isDead(false) { }
+    boss_apothecary_hummel(Creature* creature) : BossAI(creature, DATA_APOTHECARY_HUMMEL), _deadCount(0), _isDead(false) { }
 
     bool OnGossipSelect(Player* player, uint32 menuId, uint32 gossipListId) override
     {
@@ -149,7 +151,7 @@ struct boss_apothecary_hummel : public BossAI
                     _isDead = true;
                     me->RemoveAurasDueToSpell(SPELL_ALLURING_PERFUME);
                     DoCastSelf(SPELL_PERMANENT_FEIGN_DEATH, true);
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     Talk(SAY_HUMMEL_DEATH);
                 }
             }
@@ -170,11 +172,11 @@ struct boss_apothecary_hummel : public BossAI
             Talk(SAY_HUMMEL_DEATH);
 
         events.Reset();
-        me->SetUninteractible(false);
-        instance->SetBossState(BOSS_APOTHECARY_HUMMEL, DONE);
+        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
+        instance->SetBossState(DATA_APOTHECARY_HUMMEL, DONE);
 
         Map::PlayerList const& players = me->GetMap()->GetPlayers();
-        if (!players.empty())
+        if (!players.isEmpty())
         {
             if (Group* group = players.begin()->GetSource()->GetGroup())
                 if (group->isLFGGroup())
@@ -216,8 +218,9 @@ struct boss_apothecary_hummel : public BossAI
                     events.ScheduleEvent(EVENT_CALL_FRYE, 14s);
                     events.ScheduleEvent(EVENT_PERFUME_SPRAY, Milliseconds(3640));
                     events.ScheduleEvent(EVENT_CHAIN_REACTION, 15s);
+                    events.ScheduleEvent(EVENT_CALL_CRAZED_APOTHECARY, 15s);
+                    events.ScheduleEvent(EVENT_CRAZED_APOTHECARY, 15s);
 
-                    Talk(SAY_SUMMON_ADDS);
                     std::vector<Creature*> trashs;
                     me->GetCreatureListWithEntryInGrid(trashs, NPC_CROWN_APOTHECARY);
                     for (Creature* crea : trashs)
@@ -240,6 +243,13 @@ struct boss_apothecary_hummel : public BossAI
                     summons.DoAction(ACTION_START_FIGHT, pred);
                     break;
                 }
+                case EVENT_CALL_CRAZED_APOTHECARY:
+                    Talk(SAY_SUMMON_ADDS);
+                    break;
+                case EVENT_CRAZED_APOTHECARY:
+                    instance->SetData(DATA_SPAWN_VALENTINE_ADDS, 0);
+                    events.Repeat(Seconds(4), Seconds(6));
+                    break;
                 case EVENT_PERFUME_SPRAY:
                     DoCastVictim(SPELL_PERFUME_SPRAY);
                     events.Repeat(Milliseconds(3640));
@@ -256,9 +266,11 @@ struct boss_apothecary_hummel : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
-    void OnQuestReward(Player* /*player*/, Quest const* quest, LootItemType /*type*/, uint32 /*opt*/) override
+    void OnQuestReward(Player* /*player*/, Quest const* quest, uint32 /*opt*/) override
     {
         if (quest->GetQuestId() == QUEST_YOUVE_BEEN_SERVED)
             DoAction(ACTION_START_EVENT);
@@ -352,6 +364,8 @@ struct npc_apothecary_baxter : public npc_apothecary_genericAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -361,10 +375,12 @@ private:
 // 68965 - [DND] Lingering Fumes Targetting (starter)
 class spell_apothecary_lingering_fumes : public SpellScript
 {
+    PrepareSpellScript(spell_apothecary_lingering_fumes);
+
     void HandleAfterCast()
     {
         Unit* caster = GetCaster();
-        if (!caster->IsInCombat() || roll_chance(50))
+        if (!caster->IsInCombat() || roll_chance_i(50))
             return;
 
         std::list<Creature*> triggers;
@@ -393,6 +409,8 @@ class spell_apothecary_lingering_fumes : public SpellScript
 // 68644 - [DND] Valentine Boss Validate Area
 class spell_apothecary_validate_area : public SpellScript
 {
+    PrepareSpellScript(spell_apothecary_validate_area);
+
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         targets.remove_if(Trinity::UnitAuraCheck(true, SPELL_BUNNY_LOCKDOWN));
@@ -420,6 +438,8 @@ class spell_apothecary_validate_area : public SpellScript
 // 69038 - Throw Cologne
 class spell_apothecary_throw_cologne : public SpellScript
 {
+    PrepareSpellScript(spell_apothecary_throw_cologne);
+
     void HandleScript(SpellEffIndex /*effindex*/)
     {
         GetHitUnit()->CastSpell(GetHitUnit(), SPELL_COLOGNE_SPILL, true);
@@ -434,6 +454,8 @@ class spell_apothecary_throw_cologne : public SpellScript
 // 68966 - Throw Perfume
 class spell_apothecary_throw_perfume : public SpellScript
 {
+    PrepareSpellScript(spell_apothecary_throw_perfume);
+
     void HandleScript(SpellEffIndex /*effindex*/)
     {
         GetHitUnit()->CastSpell(GetHitUnit(), SPELL_PERFUME_SPILL, true);
@@ -448,6 +470,8 @@ class spell_apothecary_throw_perfume : public SpellScript
 // 68798 - Concentrated Alluring Perfume Spill
 class spell_apothecary_perfume_spill : public AuraScript
 {
+    PrepareAuraScript(spell_apothecary_perfume_spill);
+
     void OnPeriodic(AuraEffect const* /*aurEff*/)
     {
         GetTarget()->CastSpell(GetTarget(), SPELL_PERFUME_SPILL_DAMAGE, true);
@@ -462,6 +486,8 @@ class spell_apothecary_perfume_spill : public AuraScript
 // 68614 - Concentrated Irresistible Cologne Spill
 class spell_apothecary_cologne_spill : public AuraScript
 {
+    PrepareAuraScript(spell_apothecary_cologne_spill);
+
     void OnPeriodic(AuraEffect const* /*aurEff*/)
     {
         GetTarget()->CastSpell(GetTarget(), SPELL_COLOGNE_SPILL_DAMAGE, true);

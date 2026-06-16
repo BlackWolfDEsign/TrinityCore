@@ -20,8 +20,11 @@
 
 #include "GridNotifiers.h"
 #include "Corpse.h"
+#include "CreatureAI.h"
 #include "Player.h"
+#include "SpellAuras.h"
 #include "UpdateData.h"
+#include "WorldPacket.h"
 #include "WorldSession.h"
 
 template<class T>
@@ -34,162 +37,43 @@ inline void Trinity::VisibleNotifier::Visit(GridRefManager<T> &m)
     }
 }
 
-template<typename PacketSender>
-void Trinity::MessageDistDeliverer<PacketSender>::Visit(PlayerMapType& m) const
-{
-    for (PlayerMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
-    {
-        Player* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
-            continue;
-
-        if ((!required3dDist ? target->GetExactDist2dSq(i_source) : target->GetExactDistSq(i_source)) > i_distSq)
-            continue;
-
-        // Send packet to all who are sharing the player's vision
-        if (target->HasSharedVision())
-        {
-            SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-            for (; i != target->GetSharedVisionList().end(); ++i)
-                if ((*i)->m_seer == target)
-                    SendPacket(*i);
-        }
-
-        if (target->m_seer == target || target->GetVehicle())
-            SendPacket(target);
-    }
-}
-
-template<typename PacketSender>
-void Trinity::MessageDistDeliverer<PacketSender>::Visit(CreatureMapType& m) const
-{
-    for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
-    {
-        Creature* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
-            continue;
-
-        if ((!required3dDist ? target->GetExactDist2dSq(i_source) : target->GetExactDistSq(i_source)) > i_distSq)
-            continue;
-
-        // Send packet to all who are sharing the creature's vision
-        if (target->HasSharedVision())
-        {
-            SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-            for (; i != target->GetSharedVisionList().end(); ++i)
-                if ((*i)->m_seer == target)
-                    SendPacket(*i);
-        }
-    }
-}
-
-template<typename PacketSender>
-void Trinity::MessageDistDeliverer<PacketSender>::Visit(DynamicObjectMapType& m) const
-{
-    for (DynamicObjectMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
-    {
-        DynamicObject* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
-            continue;
-
-        if ((!required3dDist ? target->GetExactDist2dSq(i_source) : target->GetExactDistSq(i_source)) > i_distSq)
-            continue;
-
-        if (Unit* caster = target->GetCaster())
-        {
-            // Send packet back to the caster if the caster has vision of dynamic object
-            Player* player = caster->ToPlayer();
-            if (player && player->m_seer == target)
-                SendPacket(player);
-        }
-    }
-}
-
-template<typename PacketSender>
-void Trinity::MessageDistDelivererToHostile<PacketSender>::Visit(PlayerMapType& m) const
-{
-    for (PlayerMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
-    {
-        Player* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
-            continue;
-
-        if (target->GetExactDist2dSq(i_source) > i_distSq)
-            continue;
-
-        // Send packet to all who are sharing the player's vision
-        if (target->HasSharedVision())
-        {
-            SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-            for (; i != target->GetSharedVisionList().end(); ++i)
-                if ((*i)->m_seer == target)
-                    SendPacket(*i);
-        }
-
-        if (target->m_seer == target || target->GetVehicle())
-            SendPacket(target);
-    }
-}
-
-template<typename PacketSender>
-void Trinity::MessageDistDelivererToHostile<PacketSender>::Visit(CreatureMapType& m) const
-{
-    for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
-    {
-        Creature* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
-            continue;
-
-        if (target->GetExactDist2dSq(i_source) > i_distSq)
-            continue;
-
-        // Send packet to all who are sharing the creature's vision
-        if (target->HasSharedVision())
-        {
-            SharedVisionList::const_iterator i = target->GetSharedVisionList().begin();
-            for (; i != target->GetSharedVisionList().end(); ++i)
-                if ((*i)->m_seer == target)
-                    SendPacket(*i);
-        }
-    }
-}
-
-template<typename PacketSender>
-void Trinity::MessageDistDelivererToHostile<PacketSender>::Visit(DynamicObjectMapType& m) const
-{
-    for (DynamicObjectMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
-    {
-        DynamicObject* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
-            continue;
-
-        if (target->GetExactDist2dSq(i_source) > i_distSq)
-            continue;
-
-        if (Unit* caster = target->GetCaster())
-        {
-            // Send packet back to the caster if the caster has vision of dynamic object
-            Player* player = caster->ToPlayer();
-            if (player && player->m_seer == target)
-                SendPacket(player);
-        }
-    }
-}
-
 // SEARCHERS & LIST SEARCHERS & WORKERS
 
 // WorldObject searchers & workers
 
-template <class Check, class Result, class MapTypeMaskCheck>
+template <class Check, class Result>
 template <class T>
-inline void Trinity::WorldObjectSearcherBase<Check, Result, MapTypeMaskCheck>::VisitImpl(GridRefManager<T>& m)
+void Trinity::WorldObjectSearcherBase<Check, Result>::Visit(GridRefManager<T>& m)
 {
+    if (!(i_mapTypeMask & GridMapTypeMaskForType<T>::value))
+        return;
+
     if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
         return;
 
     for (GridReference<T> const& ref : m)
     {
-        if (!ref.GetSource()->InSamePhase(*i_phaseShift))
+        if (i_check(ref.GetSource()))
+        {
+            this->Insert(ref.GetSource());
+
+            if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+                return;
+        }
+    }
+}
+
+// Gameobject searchers
+
+template <class Check, class Result>
+void Trinity::GameObjectSearcherBase<Check, Result>::Visit(GameObjectMapType& m)
+{
+    if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+        return;
+
+    for (GridReference<GameObject> const& ref : m)
+    {
+        if (!ref.GetSource()->InSamePhase(i_phaseMask))
             continue;
 
         if (i_check(ref.GetSource()))
@@ -202,26 +86,123 @@ inline void Trinity::WorldObjectSearcherBase<Check, Result, MapTypeMaskCheck>::V
     }
 }
 
-template<typename Localizer>
-void Trinity::LocalizedDo<Localizer>::operator()(Player const* p)
+// Unit searchers
+
+template <class Check, class Result>
+template <class T>
+void Trinity::UnitSearcherBase<Check, Result>::VisitImpl(GridRefManager<T>& m)
+{
+    if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+        return;
+
+    for (GridReference<T> const& ref : m)
+    {
+        if (!ref.GetSource()->InSamePhase(i_phaseMask))
+            continue;
+
+        if (i_check(ref.GetSource()))
+        {
+            this->Insert(ref.GetSource());
+
+            if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+                return;
+        }
+    }
+}
+
+// Creature searchers
+
+template <class Check, class Result>
+void Trinity::CreatureSearcherBase<Check, Result>::Visit(CreatureMapType& m)
+{
+    if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+        return;
+
+    for (GridReference<Creature> const& ref : m)
+    {
+        if (!ref.GetSource()->InSamePhase(i_phaseMask))
+            continue;
+
+        if (i_check(ref.GetSource()))
+        {
+            this->Insert(ref.GetSource());
+
+            if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+                return;
+        }
+    }
+}
+
+// Player searchers
+
+template <class Check, class Result>
+void Trinity::PlayerSearcherBase<Check, Result>::Visit(PlayerMapType& m)
+{
+    if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+        return;
+
+    for (GridReference<Player> const& ref : m)
+    {
+        if (!ref.GetSource()->InSamePhase(i_phaseMask))
+            continue;
+
+        if (i_check(ref.GetSource()))
+        {
+            this->Insert(ref.GetSource());
+
+            if (this->ShouldContinue() == WorldObjectSearcherContinuation::Return)
+                return;
+        }
+    }
+}
+
+template<class Builder>
+void Trinity::LocalizedPacketDo<Builder>::operator()(Player* p)
 {
     LocaleConstant loc_idx = p->GetSession()->GetSessionDbLocaleIndex();
-    uint32 cache_idx = loc_idx + 1;
-    LocalizedAction* action;
+    uint32 cache_idx = loc_idx+1;
+    WorldPacket* data;
 
     // create if not cached yet
-    if (_localizedCache.size() < cache_idx + 1 || !_localizedCache[cache_idx])
+    if (i_data_cache.size() < cache_idx + 1 || !i_data_cache[cache_idx])
     {
-        if (_localizedCache.size() < cache_idx + 1)
-            _localizedCache.resize(cache_idx + 1);
+        if (i_data_cache.size() < cache_idx + 1)
+            i_data_cache.resize(cache_idx + 1);
 
-        action = _localizer(loc_idx);
-        _localizedCache[cache_idx].reset(action);
+        data = new WorldPacket();
+
+        i_builder(*data, loc_idx);
+
+        i_data_cache[cache_idx] = data;
     }
     else
-        action = _localizedCache[cache_idx].get();
+        data = i_data_cache[cache_idx];
 
-    (*action)(p);
+    p->SendDirectMessage(data);
+}
+
+template<class Builder>
+void Trinity::LocalizedPacketListDo<Builder>::operator()(Player* p)
+{
+    LocaleConstant loc_idx = p->GetSession()->GetSessionDbLocaleIndex();
+    uint32 cache_idx = loc_idx+1;
+    WorldPacketList* data_list;
+
+    // create if not cached yet
+    if (i_data_cache.size() < cache_idx+1 || i_data_cache[cache_idx].empty())
+    {
+        if (i_data_cache.size() < cache_idx+1)
+            i_data_cache.resize(cache_idx+1);
+
+        data_list = &i_data_cache[cache_idx];
+
+        i_builder(*data_list, loc_idx);
+    }
+    else
+        data_list = &i_data_cache[cache_idx];
+
+    for (size_t i = 0; i < data_list->size(); ++i)
+        p->SendDirectMessage((*data_list)[i]);
 }
 
 #endif                                                      // TRINITY_GRIDNOTIFIERSIMPL_H

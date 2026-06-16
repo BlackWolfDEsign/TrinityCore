@@ -86,7 +86,6 @@ enum Spells
     // Leviathan MK II
     SPELL_FLAME_SUPPRESSANT_MK                  = 64570,
     SPELL_NAPALM_SHELL                          = 63666,
-    SPELL_NAPALM_SHELL_25                       = 65026,
     SPELL_FORCE_CAST_NAPALM_SHELL               = 64539,
     SPELL_PLASMA_BLAST                          = 62997,
     SPELL_SCRIPT_EFFECT_PLASMA_BLAST            = 64542,
@@ -451,7 +450,7 @@ class boss_mimiron : public CreatureScript
                 DoCastAOE(SPELL_DESPAWN_ASSAULT_BOTS);
                 me->ExitVehicle();
                 // ExitVehicle() offset position is not implemented, so we make up for that with MoveJump()...
-                me->GetMotionMaster()->MoveJump(EVENT_JUMP, me->GetPositionWithOffset({ 10.0f, 0.0f }), 10.f);
+                me->GetMotionMaster()->MoveJump(me->GetPositionX() + (10.f * std::cos(me->GetOrientation())), me->GetPositionY() + (10.f * std::sin(me->GetOrientation())), me->GetPositionZ(), me->GetOrientation(), 10.f, 5.f);
                 events.ScheduleEvent(EVENT_OUTTRO_1, 7s);
             }
 
@@ -502,9 +501,7 @@ class boss_mimiron : public CreatureScript
                     {
                         case EVENT_SUMMON_FLAMES:
                             if (Creature* worldtrigger = instance->GetCreature(DATA_MIMIRON_WORLD_TRIGGER))
-                                worldtrigger->CastSpell(nullptr, SPELL_SCRIPT_EFFECT_SUMMON_FLAMES_INITIAL, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                                    .SetOriginalCaster(me->GetGUID())
-                                    .AddSpellMod(SPELLVALUE_MAX_TARGETS, 3));
+                                worldtrigger->CastSpell(nullptr, SPELL_SCRIPT_EFFECT_SUMMON_FLAMES_INITIAL, CastSpellExtraArgs(me->GetGUID()).AddSpellMod(SPELLVALUE_MAX_TARGETS, 3));
                             events.RescheduleEvent(EVENT_SUMMON_FLAMES, 28s);
                             break;
                         case EVENT_INTRO_1:
@@ -516,8 +513,7 @@ class boss_mimiron : public CreatureScript
                             {
                                 DoCast(mkii, SPELL_SEAT_7);
                                 mkii->RemoveAurasDueToSpell(SPELL_FREEZE_ANIM);
-                                mkii->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                                mkii->SetUninteractible(false);
+                                mkii->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                             }
                             events.ScheduleEvent(EVENT_INTRO_3, 2s);
                             break;
@@ -663,7 +659,7 @@ class boss_mimiron : public CreatureScript
                             break;
                         case EVENT_OUTTRO_3:
                             DoCast(me, SPELL_TELEPORT_VISUAL);
-                            me->SetUninteractible(true);
+                            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                             me->DespawnOrUnsummon(1s); // sniffs say 6 sec after, but it doesnt matter.
                             break;
                         default:
@@ -756,8 +752,7 @@ class boss_leviathan_mk_ii : public CreatureScript
                         break;
                     case DO_ASSEMBLED_COMBAT:
                         me->SetStandState(UNIT_STAND_STATE_STAND);
-                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetUninteractible(false);
+                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                         me->SetReactState(REACT_AGGRESSIVE);
 
                         events.SetPhase(PHASE_VOL7RON);
@@ -806,7 +801,7 @@ class boss_leviathan_mk_ii : public CreatureScript
                 switch (point)
                 {
                     case WP_MKII_P1_IDLE:
-                        me->SetUninteractible(true);
+                        me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                         DoCast(me, SPELL_HALF_HEAL);
 
                         if (Creature* mimiron = instance->GetCreature(DATA_MIMIRON))
@@ -833,8 +828,7 @@ class boss_leviathan_mk_ii : public CreatureScript
             void Reset() override
             {
                 _Reset();
-                me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                me->SetUninteractible(true);
+                me->SetUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                 me->SetReactState(REACT_PASSIVE);
                 _fireFighter = false;
                 _setupMine = true;
@@ -917,6 +911,7 @@ class boss_leviathan_mk_ii : public CreatureScript
                     if (me->HasUnitState(UNIT_STATE_CASTING))
                         return;
                 }
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -993,9 +988,8 @@ class boss_vx_001 : public CreatureScript
                         events.ScheduleEvent(EVENT_FLAME_SUPPRESSANT_VX, 6s);
                         [[fallthrough]];
                     case DO_START_VX001:
-                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                         me->SetImmuneToPC(false);
-                        me->SetUninteractible(false);
                         me->RemoveAurasDueToSpell(SPELL_FREEZE_ANIM);
                         me->SetEmoteState(EMOTE_ONESHOT_NONE); // Remove emotestate.
                         //me->SetHover(true); // Blizzard handles hover animation like this it seems.
@@ -1008,8 +1002,7 @@ class boss_vx_001 : public CreatureScript
                         break;
                     case DO_ASSEMBLED_COMBAT:
                         me->SetStandState(UNIT_STAND_STATE_STAND);
-                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetUninteractible(false);
+                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
 
                         events.SetPhase(PHASE_VOL7RON);
                         events.ScheduleEvent(EVENT_ROCKET_STRIKE, 20s);
@@ -1058,8 +1051,7 @@ class boss_vx_001 : public CreatureScript
                 // Handle rotation during SPELL_SPINNING_UP, SPELL_P3WX2_LASER_BARRAGE, SPELL_RAPID_BURST, and SPELL_HAND_PULSE_LEFT/RIGHT
                 if (me->HasUnitState(UNIT_STATE_CASTING))
                 {
-                    auto const& channelObjects = me->m_unitData->ChannelObjects;
-                    if (Unit* channelTarget = (channelObjects.size() == 1 ? ObjectAccessor::GetUnit(*me, *channelObjects.begin()) : nullptr))
+                    if (Creature* channelTarget = ObjectAccessor::GetCreature(*me, me->GetChannelObjectGuid()))
                         me->SetFacingToObject(channelTarget);
                     return;
                 }
@@ -1178,9 +1170,8 @@ class boss_aerial_command_unit : public CreatureScript
                     case DO_START_AERIAL:
                         me->SetDisableGravity(false);
                         me->SetHover(true);
-                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
+                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                         me->SetImmuneToPC(false);
-                        me->SetUninteractible(false);
                         me->SetReactState(REACT_AGGRESSIVE);
 
                         events.SetPhase(PHASE_AERIAL_COMMAND_UNIT);
@@ -1199,8 +1190,7 @@ class boss_aerial_command_unit : public CreatureScript
                         me->SetReactState(REACT_AGGRESSIVE);
                         break;
                     case DO_ASSEMBLED_COMBAT:
-                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
-                        me->SetUninteractible(false);
+                        me->RemoveUnitFlag(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_UNINTERACTIBLE);
                         me->SetReactState(REACT_AGGRESSIVE);
                         me->SetStandState(UNIT_STAND_STATE_STAND);
                         events.SetPhase(PHASE_VOL7RON);
@@ -1234,7 +1224,7 @@ class boss_aerial_command_unit : public CreatureScript
                 if (type == POINT_MOTION_TYPE && point == WP_AERIAL_P4_POS)
                 {
                     me->SetFacingTo(VehicleRelocation[WP_AERIAL_P4_POS].GetOrientation());
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     DoCastSelf(SPELL_CLEAR_ALL_DEBUFFS);
 
                     if (Creature* mimiron = instance->GetCreature(DATA_MIMIRON))
@@ -1336,6 +1326,8 @@ class npc_mimiron_assault_bot : public CreatureScript
                             break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -1718,6 +1710,8 @@ class spell_mimiron_bomb_bot : public SpellScriptLoader
 
         class spell_mimiron_bomb_bot_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_bomb_bot_SpellScript);
+
             void HandleScript(SpellEffIndex /*effIndex*/)
             {
                 if (GetHitPlayer())
@@ -1730,8 +1724,7 @@ class spell_mimiron_bomb_bot : public SpellScriptLoader
             {
                 if (Creature* target = GetHitCreature())
                 {
-                    target->SetUnitFlag(UNIT_FLAG_PACIFIED);
-                    target->SetUninteractible(true);
+                    target->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE | UNIT_FLAG_PACIFIED);
                     target->DespawnOrUnsummon(1s);
                 }
             }
@@ -1757,6 +1750,8 @@ class spell_mimiron_clear_fires : public SpellScriptLoader
 
         class spell_mimiron_clear_fires_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_clear_fires_SpellScript);
+
             void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 if (GetHitCreature())
@@ -1783,6 +1778,8 @@ class spell_mimiron_despawn_assault_bots : public SpellScriptLoader
 
         class spell_mimiron_despawn_assault_bots_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_despawn_assault_bots_SpellScript);
+
             void HandleScript(SpellEffIndex /*effIndex*/)
             {
                 if (GetHitCreature())
@@ -1809,6 +1806,8 @@ class spell_mimiron_fire_search : public SpellScriptLoader
 
         class spell_mimiron_fire_search_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_fire_search_SpellScript);
+
         public:
             spell_mimiron_fire_search_SpellScript()
             {
@@ -1878,11 +1877,13 @@ class spell_mimiron_fire_search : public SpellScriptLoader
 // 64444 - Magnetic Core Summon
 class spell_mimiron_magnetic_core_summon : public SpellScript
 {
+    PrepareSpellScript(spell_mimiron_magnetic_core_summon);
+
     void ModDest(SpellDestination& dest)
     {
         Unit* caster = GetCaster();
         Position pos = caster->GetPosition();
-        float z = caster->GetMap()->GetHeight(caster->GetPhaseShift(), pos);
+        float z = caster->GetMap()->GetHeight(pos);
         pos.m_positionZ = z;
         dest.Relocate(pos);
     }
@@ -1901,6 +1902,8 @@ class spell_mimiron_magnetic_core : public SpellScriptLoader
 
         class spell_mimiron_magnetic_core_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_magnetic_core_SpellScript);
+
             void FilterTargets(std::list<WorldObject*>& targets)
             {
                 targets.remove_if([](WorldObject* obj) { return obj->IsUnit() && (obj->ToUnit()->GetVehicleBase() || obj->ToUnit()->HasUnitFlag(UNIT_FLAG_NON_ATTACKABLE)); });
@@ -1919,6 +1922,8 @@ class spell_mimiron_magnetic_core : public SpellScriptLoader
 
         class spell_mimiron_magnetic_core_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_magnetic_core_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_MAGNETIC_CORE_VISUAL });
@@ -1970,9 +1975,11 @@ class spell_mimiron_napalm_shell : public SpellScriptLoader
 
         class spell_mimiron_napalm_shell_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_napalm_shell_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
-                return ValidateSpellInfo({ SPELL_NAPALM_SHELL, SPELL_NAPALM_SHELL_25 });
+                return ValidateSpellInfo({ SPELL_NAPALM_SHELL });
             }
 
             void FilterTargets(std::list<WorldObject*>& targets)
@@ -1993,7 +2000,7 @@ class spell_mimiron_napalm_shell : public SpellScriptLoader
 
             void HandleScript(SpellEffIndex /*effIndex*/)
             {
-                GetCaster()->CastSpell(GetHitUnit(), GetCaster()->GetMap()->Is25ManRaid() ? SPELL_NAPALM_SHELL_25 : SPELL_NAPALM_SHELL);
+                GetCaster()->CastSpell(GetHitUnit(), SPELL_NAPALM_SHELL);
             }
 
             void Register() override
@@ -2009,6 +2016,33 @@ class spell_mimiron_napalm_shell : public SpellScriptLoader
         }
 };
 
+// 63274 - P3Wx2 Laser Barrage -- HACK! Core will currently not set UNIT_FIELD_CHANNEL_OBJECT automatially if the spell targets more than a single target.
+class spell_mimiron_p3wx2_laser_barrage : public SpellScriptLoader
+{
+    public:
+        spell_mimiron_p3wx2_laser_barrage() : SpellScriptLoader("spell_mimiron_p3wx2_laser_barrage") { }
+
+        class spell_mimiron_p3wx2_laser_barrage_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_mimiron_p3wx2_laser_barrage_SpellScript);
+
+            void OnHit(SpellEffIndex /*effIndex*/)
+            {
+                GetCaster()->SetChannelObjectGuid(GetHitUnit()->GetGUID());
+            }
+
+            void Register() override
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_mimiron_p3wx2_laser_barrage_SpellScript::OnHit, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_mimiron_p3wx2_laser_barrage_SpellScript();
+        }
+};
+
 // 64542 - Plasma Blast
 class spell_mimiron_plasma_blast : public SpellScriptLoader
 {
@@ -2017,6 +2051,8 @@ class spell_mimiron_plasma_blast : public SpellScriptLoader
 
         class spell_mimiron_plasma_blast_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_plasma_blast_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_PLASMA_BLAST });
@@ -2053,6 +2089,8 @@ class spell_mimiron_proximity_explosion : public SpellScriptLoader
 
         class spell_mimiron_proximity_explosion_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_proximity_explosion_SpellScript);
+
             void OnHit(SpellEffIndex /*effIndex*/)
             {
                 if (GetHitPlayer())
@@ -2087,6 +2125,8 @@ class spell_mimiron_proximity_mines : public SpellScriptLoader
 
         class spell_mimiron_proximity_mines_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_proximity_mines_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_PROXIMITY_MINE });
@@ -2118,6 +2158,8 @@ class spell_mimiron_proximity_trigger : public SpellScriptLoader
 
         class spell_mimiron_proximity_trigger_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_proximity_trigger_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_PROXIMITY_MINE_EXPLOSION });
@@ -2157,6 +2199,8 @@ class spell_mimiron_rapid_burst : public SpellScriptLoader
 
         class spell_mimiron_rapid_burst_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_rapid_burst_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_RAPID_BURST_LEFT, SPELL_RAPID_BURST_RIGHT });
@@ -2195,6 +2239,8 @@ class spell_mimiron_rocket_strike : public SpellScriptLoader
 
         class spell_mimiron_rocket_strike_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_rocket_strike_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SCRIPT_EFFECT_ROCKET_STRIKE });
@@ -2205,20 +2251,17 @@ class spell_mimiron_rocket_strike : public SpellScriptLoader
                 if (targets.empty())
                     return;
 
-                if (GetSpellInfo()->Id == SPELL_ROCKET_STRIKE_SINGLE && GetCaster()->IsVehicle())
-                {
+                if (m_scriptSpellId == SPELL_ROCKET_STRIKE_SINGLE && GetCaster()->IsVehicle())
                     if (WorldObject* target = GetCaster()->GetVehicleKit()->GetPassenger(RAND(ROCKET_SEAT_LEFT, ROCKET_SEAT_RIGHT)))
                     {
                         targets.clear();
                         targets.push_back(target);
                     }
-                }
             }
 
             void HandleDummy(SpellEffIndex /*effIndex*/)
             {
-                GetHitUnit()->CastSpell(nullptr, SPELL_SCRIPT_EFFECT_ROCKET_STRIKE, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                    .SetOriginalCaster(GetCaster()->GetGUID()));
+                GetHitUnit()->CastSpell(nullptr, SPELL_SCRIPT_EFFECT_ROCKET_STRIKE, GetCaster()->GetGUID());
             }
 
             void Register() override
@@ -2242,6 +2285,8 @@ class spell_mimiron_rocket_strike_damage : public SpellScriptLoader
 
         class spell_mimiron_rocket_strike_damage_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_rocket_strike_damage_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_NOT_SO_FRIENDLY_FIRE });
@@ -2288,6 +2333,8 @@ class spell_mimiron_rocket_strike_target_select : public SpellScriptLoader
 
         class spell_mimiron_rocket_strike_target_select_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_rocket_strike_target_select_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_ROCKET_STRIKE });
@@ -2312,8 +2359,7 @@ class spell_mimiron_rocket_strike_target_select : public SpellScriptLoader
             void HandleScript(SpellEffIndex /*effIndex*/)
             {
                 if (InstanceScript* instance = GetCaster()->GetInstanceScript())
-                    GetCaster()->CastSpell(GetHitUnit(), SPELL_SUMMON_ROCKET_STRIKE, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                        .SetOriginalCaster(instance->GetGuidData(DATA_VX_001)));
+                    GetCaster()->CastSpell(GetHitUnit(), SPELL_SUMMON_ROCKET_STRIKE, instance->GetGuidData(DATA_VX_001));
                 GetCaster()->SetDisplayId(11686);
             }
 
@@ -2338,6 +2384,8 @@ class spell_mimiron_self_repair : public SpellScriptLoader
 
         class spell_mimiron_self_repair_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_self_repair_SpellScript);
+
             void HandleScript()
             {
                 if (GetCaster()->GetAI())
@@ -2356,6 +2404,35 @@ class spell_mimiron_self_repair : public SpellScriptLoader
         }
 };
 
+// 63414 - Spinning Up -- HACK! Core will currently not set UNIT_FIELD_CHANNEL_OBJECT automatially if the spell targets more than a single target.
+// eff0 will hit both caster and target due to hack in spellmgr.cpp, it is necessary because caster will interrupt itself if aura is not active on caster.
+class spell_mimiron_spinning_up : public SpellScriptLoader
+{
+    public:
+        spell_mimiron_spinning_up() : SpellScriptLoader("spell_mimiron_spinning_up") { }
+
+        class spell_mimiron_spinning_up_SpellScript : public SpellScript
+        {
+            PrepareSpellScript(spell_mimiron_spinning_up_SpellScript);
+
+            void OnHit(SpellEffIndex /*effIndex*/)
+            {
+                if (GetHitUnit() != GetCaster())
+                    GetCaster()->SetChannelObjectGuid(GetHitUnit()->GetGUID());
+            }
+
+            void Register() override
+            {
+                OnEffectHitTarget += SpellEffectFn(spell_mimiron_spinning_up_SpellScript::OnHit, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+            }
+        };
+
+        SpellScript* GetSpellScript() const override
+        {
+            return new spell_mimiron_spinning_up_SpellScript();
+        }
+};
+
 // 64426 - Summon Scrap Bot
 class spell_mimiron_summon_assault_bot : public SpellScriptLoader
 {
@@ -2364,6 +2441,8 @@ class spell_mimiron_summon_assault_bot : public SpellScriptLoader
 
         class spell_mimiron_summon_assault_bot_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_summon_assault_bot_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_ASSAULT_BOT });
@@ -2374,9 +2453,7 @@ class spell_mimiron_summon_assault_bot : public SpellScriptLoader
                 if (Unit* caster = GetCaster())
                     if (InstanceScript* instance = caster->GetInstanceScript())
                         if (instance->GetBossState(DATA_MIMIRON) == IN_PROGRESS)
-                            caster->CastSpell(caster, SPELL_SUMMON_ASSAULT_BOT, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                                .SetTriggeringAura(aurEff)
-                                .SetOriginalCaster(instance->GetGuidData(DATA_AERIAL_COMMAND_UNIT)));
+                            caster->CastSpell(caster, SPELL_SUMMON_ASSAULT_BOT, { aurEff, instance->GetGuidData(DATA_AERIAL_COMMAND_UNIT) });
             }
 
             void Register() override
@@ -2399,6 +2476,8 @@ class spell_mimiron_summon_assault_bot_target : public SpellScriptLoader
 
         class spell_mimiron_summon_assault_bot_target_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_summon_assault_bot_target_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_ASSAULT_BOT_DUMMY });
@@ -2429,6 +2508,8 @@ class spell_mimiron_summon_fire_bot : public SpellScriptLoader
 
         class spell_mimiron_summon_fire_bot_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_summon_fire_bot_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_FIRE_BOT });
@@ -2439,9 +2520,7 @@ class spell_mimiron_summon_fire_bot : public SpellScriptLoader
                 if (Unit* caster = GetCaster())
                     if (InstanceScript* instance = caster->GetInstanceScript())
                         if (instance->GetBossState(DATA_MIMIRON) == IN_PROGRESS)
-                            caster->CastSpell(caster, SPELL_SUMMON_FIRE_BOT, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                                .SetTriggeringAura(aurEff)
-                                .SetOriginalCaster(instance->GetGuidData(DATA_AERIAL_COMMAND_UNIT)));
+                            caster->CastSpell(caster, SPELL_SUMMON_FIRE_BOT, { aurEff, instance->GetGuidData(DATA_AERIAL_COMMAND_UNIT) });
             }
 
             void Register() override
@@ -2464,6 +2543,8 @@ class spell_mimiron_summon_fire_bot_target : public SpellScriptLoader
 
         class spell_mimiron_summon_fire_bot_target_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_summon_fire_bot_target_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_FIRE_BOT_DUMMY });
@@ -2494,6 +2575,8 @@ class spell_mimiron_summon_flames_spread : public SpellScriptLoader
 
         class spell_mimiron_summon_flames_spread_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_summon_flames_spread_SpellScript);
+
             void FilterTargets(std::list<WorldObject*>& targets)
             {
                 if (targets.empty())
@@ -2529,6 +2612,8 @@ class spell_mimiron_summon_flames_spread : public SpellScriptLoader
 
         class spell_mimiron_summon_flames_spread_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_summon_flames_spread_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_FLAMES_SPREAD });
@@ -2562,6 +2647,8 @@ class spell_mimiron_summon_frost_bomb_target : public SpellScriptLoader
 
         class spell_mimiron_summon_frost_bomb_target_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_summon_frost_bomb_target_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_FROST_BOMB });
@@ -2609,6 +2696,8 @@ class spell_mimiron_summon_junk_bot : public SpellScriptLoader
 
         class spell_mimiron_summon_junk_bot_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_summon_junk_bot_AuraScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_JUNK_BOT });
@@ -2619,9 +2708,7 @@ class spell_mimiron_summon_junk_bot : public SpellScriptLoader
                 if (Unit* caster = GetCaster())
                     if (InstanceScript* instance = caster->GetInstanceScript())
                         if (instance->GetBossState(DATA_MIMIRON) == IN_PROGRESS)
-                            caster->CastSpell(caster, SPELL_SUMMON_JUNK_BOT, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                                .SetTriggeringAura(aurEff)
-                                .SetOriginalCaster(instance->GetGuidData(DATA_AERIAL_COMMAND_UNIT)));
+                            caster->CastSpell(caster, SPELL_SUMMON_JUNK_BOT, { aurEff, instance->GetGuidData(DATA_AERIAL_COMMAND_UNIT) });
             }
 
             void Register() override
@@ -2644,6 +2731,8 @@ class spell_mimiron_summon_junk_bot_target : public SpellScriptLoader
 
         class spell_mimiron_summon_junk_bot_target_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_mimiron_summon_junk_bot_target_SpellScript);
+
             bool Validate(SpellInfo const* /*spell*/) override
             {
                 return ValidateSpellInfo({ SPELL_SUMMON_JUNK_BOT_DUMMY });
@@ -2674,6 +2763,8 @@ class spell_mimiron_weld : public SpellScriptLoader
 
         class spell_mimiron_weld_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_mimiron_weld_AuraScript);
+
             void HandleTick(AuraEffect const* aurEff)
             {
                 Unit* caster = GetTarget();
@@ -2765,6 +2856,7 @@ void AddSC_boss_mimiron()
     RegisterSpellScript(spell_mimiron_magnetic_core_summon);
     new spell_mimiron_magnetic_core();
     new spell_mimiron_napalm_shell();
+    new spell_mimiron_p3wx2_laser_barrage();
     new spell_mimiron_plasma_blast();
     new spell_mimiron_proximity_explosion();
     new spell_mimiron_proximity_mines();
@@ -2774,6 +2866,7 @@ void AddSC_boss_mimiron()
     new spell_mimiron_rocket_strike_damage();
     new spell_mimiron_rocket_strike_target_select();
     new spell_mimiron_self_repair();
+    new spell_mimiron_spinning_up();
     new spell_mimiron_summon_assault_bot();
     new spell_mimiron_summon_assault_bot_target();
     new spell_mimiron_summon_fire_bot();

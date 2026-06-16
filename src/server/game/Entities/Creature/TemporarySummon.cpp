@@ -16,35 +16,25 @@
  */
 
 #include "TemporarySummon.h"
-#include "CellImpl.h"
-#include "CharmInfo.h"
 #include "CreatureAI.h"
-#include "DB2Stores.h"
+#include "DBCStructure.h"
 #include "GameObject.h"
 #include "GameObjectAI.h"
-#include "GridNotifiers.h"
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
-#include "ObjectMgr.h"
 #include "Pet.h"
 #include "Player.h"
-#include "SmoothPhasing.h"
-#include "SpellMgr.h"
-#include <boost/container/small_vector.hpp>
-#include <sstream>
 
 TempSummon::TempSummon(SummonPropertiesEntry const* properties, WorldObject* owner, bool isWorldObject) :
 Creature(isWorldObject), m_Properties(properties), m_type(TEMPSUMMON_MANUAL_DESPAWN),
-m_timer(0ms), m_lifetime(0ms), m_canFollowOwner(true)
+m_timer(0), m_lifetime(0), m_canFollowOwner(true)
 {
     if (owner)
         m_summonerGUID = owner->GetGUID();
 
     m_unitTypeMask |= UNIT_MASK_SUMMON;
 }
-
-TempSummon::~TempSummon() = default;
 
 WorldObject* TempSummon::GetSummoner() const
 {
@@ -79,8 +69,6 @@ void TempSummon::Update(uint32 diff)
         UnSummon();
         return;
     }
-
-    Milliseconds msDiff = Milliseconds(diff);
     switch (m_type)
     {
         case TEMPSUMMON_MANUAL_DESPAWN:
@@ -88,26 +76,26 @@ void TempSummon::Update(uint32 diff)
             break;
         case TEMPSUMMON_TIMED_DESPAWN:
         {
-            if (m_timer <= msDiff)
+            if (m_timer <= diff)
             {
                 UnSummon();
                 return;
             }
 
-            m_timer -= msDiff;
+            m_timer -= diff;
             break;
         }
         case TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT:
         {
             if (!IsInCombat())
             {
-                if (m_timer <= msDiff)
+                if (m_timer <= diff)
                 {
                     UnSummon();
                     return;
                 }
 
-                m_timer -= msDiff;
+                m_timer -= diff;
             }
             else if (m_timer != m_lifetime)
                 m_timer = m_lifetime;
@@ -119,13 +107,13 @@ void TempSummon::Update(uint32 diff)
         {
             if (m_deathState == CORPSE)
             {
-                if (m_timer <= msDiff)
+                if (m_timer <= diff)
                 {
                     UnSummon();
                     return;
                 }
 
-                m_timer -= msDiff;
+                m_timer -= diff;
             }
             break;
         }
@@ -150,13 +138,13 @@ void TempSummon::Update(uint32 diff)
 
             if (!IsInCombat())
             {
-                if (m_timer <= msDiff)
+                if (m_timer <= diff)
                 {
                     UnSummon();
                     return;
                 }
                 else
-                    m_timer -= msDiff;
+                    m_timer -= diff;
             }
             else if (m_timer != m_lifetime)
                 m_timer = m_lifetime;
@@ -166,13 +154,13 @@ void TempSummon::Update(uint32 diff)
         {
             if (!IsInCombat() && IsAlive())
             {
-                if (m_timer <= msDiff)
+                if (m_timer <= diff)
                 {
                     UnSummon();
                     return;
                 }
                 else
-                    m_timer -= msDiff;
+                    m_timer -= diff;
             }
             else if (m_timer != m_lifetime)
                 m_timer = m_lifetime;
@@ -185,7 +173,7 @@ void TempSummon::Update(uint32 diff)
     }
 }
 
-void TempSummon::InitStats(WorldObject* summoner, Milliseconds duration)
+void TempSummon::InitStats(uint32 duration)
 {
     ASSERT(!IsPet());
 
@@ -193,135 +181,65 @@ void TempSummon::InitStats(WorldObject* summoner, Milliseconds duration)
     m_lifetime = duration;
 
     if (m_type == TEMPSUMMON_MANUAL_DESPAWN)
-    {
-        if (duration <= 0s)
-            m_type = TEMPSUMMON_DEAD_DESPAWN;
-        else if (m_Properties && m_Properties->GetFlags().HasFlag(SummonPropertiesFlags::UseDemonTimeout))
-            m_type = TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT;
-        else
-            m_type = TEMPSUMMON_TIMED_DESPAWN;
-    }
+        m_type = (duration == 0) ? TEMPSUMMON_DEAD_DESPAWN : TEMPSUMMON_TIMED_DESPAWN;
 
-    if (summoner && summoner->IsPlayer())
+    Unit* owner = GetSummonerUnit();
+
+    if (owner && IsTrigger() && m_spells[0])
     {
-        if (IsTrigger() && m_spells[0])
+        SetFaction(owner->GetFaction());
+        SetLevel(owner->GetLevel());
+        if (owner->GetTypeId() == TYPEID_PLAYER)
             m_ControlledByPlayer = true;
-
-        if (CreatureSummonedData const* summonedData = sObjectMgr->GetCreatureSummonedData(GetEntry()))
-        {
-            m_creatureIdVisibleToSummoner = summonedData->CreatureIDVisibleToSummoner;
-            if (summonedData->CreatureIDVisibleToSummoner)
-            {
-                CreatureTemplate const* creatureTemplateVisibleToSummoner = ASSERT_NOTNULL(sObjectMgr->GetCreatureTemplate(*summonedData->CreatureIDVisibleToSummoner));
-                m_displayIdVisibleToSummoner = ObjectMgr::ChooseDisplayId(creatureTemplateVisibleToSummoner, nullptr)->CreatureDisplayID;
-            }
-        }
     }
 
     if (!m_Properties)
         return;
 
-    if (Unit* unitSummoner = ToUnit(summoner))
+    if (owner)
     {
         std::ptrdiff_t slot = m_Properties->Slot;
-        if (slot == SUMMON_SLOT_ANY_TOTEM)
-            slot = FindUsableTotemSlot(unitSummoner);
-
         if (slot != 0)
         {
-            if (!unitSummoner->m_SummonSlot[slot].IsEmpty() && unitSummoner->m_SummonSlot[slot] != GetGUID())
+            if (!owner->m_SummonSlot[slot].IsEmpty() && owner->m_SummonSlot[slot] != GetGUID())
             {
-                Creature* oldSummon = GetMap()->GetCreature(unitSummoner->m_SummonSlot[slot]);
+                Creature* oldSummon = GetMap()->GetCreature(owner->m_SummonSlot[slot]);
                 if (oldSummon && oldSummon->IsSummon())
                     oldSummon->ToTempSummon()->UnSummon();
             }
-            unitSummoner->m_SummonSlot[slot] = GetGUID();
-        }
-
-        if (!m_Properties->GetFlags().HasFlag(SummonPropertiesFlags::UseCreatureLevel))
-        {
-            int32 minLevel = m_unitData->ScalingLevelMin + m_unitData->ScalingLevelDelta;
-            int32 maxLevel = m_unitData->ScalingLevelMax + m_unitData->ScalingLevelDelta;
-            uint8 level = std::clamp<int32>(unitSummoner->GetLevel(), minLevel, maxLevel);
-            SetLevel(level);
+            owner->m_SummonSlot[slot] = GetGUID();
         }
     }
 
-    uint32 faction = m_Properties->Faction;
-    if (summoner && m_Properties->GetFlags().HasFlag(SummonPropertiesFlags::UseSummonerFaction)) // TODO: Determine priority between faction and flag
-        faction = summoner->GetFaction();
-
-    if (faction)
-        SetFaction(faction);
-
-    if (m_Properties->GetFlags().HasFlag(SummonPropertiesFlags::SummonFromBattlePetJournal))
-        RemoveNpcFlag(UNIT_NPC_FLAG_WILD_BATTLE_PET);
+    if (m_Properties->Faction)
+        SetFaction(m_Properties->Faction);
+    else if (IsVehicle() && owner) // properties should be vehicle
+        SetFaction(owner->GetFaction());
 }
 
-void TempSummon::InitSummon(WorldObject* summoner)
+void TempSummon::InitSummon()
 {
-    if (summoner)
+    WorldObject* owner = GetSummoner();
+    if (owner)
     {
-        if (summoner->GetTypeId() == TYPEID_UNIT)
+        if (owner->GetTypeId() == TYPEID_UNIT)
         {
-            if (summoner->ToCreature()->IsAIEnabled())
-                summoner->ToCreature()->AI()->JustSummoned(this);
+            if (owner->ToCreature()->IsAIEnabled())
+                owner->ToCreature()->AI()->JustSummoned(this);
         }
-        else if (summoner->GetTypeId() == TYPEID_GAMEOBJECT)
+        else if (owner->GetTypeId() == TYPEID_GAMEOBJECT)
         {
-            if (summoner->ToGameObject()->AI())
-                summoner->ToGameObject()->AI()->JustSummoned(this);
+            if (owner->ToGameObject()->AI())
+                owner->ToGameObject()->AI()->JustSummoned(this);
         }
         if (IsAIEnabled())
-            AI()->IsSummonedBy(summoner);
+            AI()->IsSummonedBy(owner);
     }
 }
 
 void TempSummon::UpdateObjectVisibilityOnCreate()
 {
-    boost::container::small_vector<WorldObject*, 2> objectsToUpdate;
-    objectsToUpdate.push_back(this);
-
-    if (SmoothPhasing const* smoothPhasing = GetSmoothPhasing())
-    {
-        SmoothPhasingInfo const* infoForSeer = smoothPhasing->GetInfoForSeer(GetDemonCreatorGUID());
-        if (infoForSeer && infoForSeer->ReplaceObject && smoothPhasing->IsReplacing(*infoForSeer->ReplaceObject))
-            if (WorldObject* original = ObjectAccessor::GetWorldObject(*this, *infoForSeer->ReplaceObject))
-                objectsToUpdate.push_back(original);
-    }
-
-    Trinity::VisibleChangesNotifier notifier({ objectsToUpdate.data(), objectsToUpdate.data() + objectsToUpdate.size() });
-    Cell::VisitWorldObjects(this, notifier, GetVisibilityRange());
-}
-
-void TempSummon::UpdateObjectVisibilityOnDestroy()
-{
-    boost::container::small_vector<WorldObject*, 2> objectsToUpdate;
-    objectsToUpdate.push_back(this);
-
-    WorldObject* original = nullptr;
-    if (SmoothPhasing const* smoothPhasing = GetSmoothPhasing())
-    {
-        SmoothPhasingInfo const* infoForSeer = smoothPhasing->GetInfoForSeer(GetDemonCreatorGUID());
-        if (infoForSeer && infoForSeer->ReplaceObject && smoothPhasing->IsReplacing(*infoForSeer->ReplaceObject))
-            original = ObjectAccessor::GetWorldObject(*this, *infoForSeer->ReplaceObject);
-
-        if (original)
-        {
-            objectsToUpdate.push_back(original);
-
-            // disable replacement without removing - it is still needed for next step (visibility update)
-            if (SmoothPhasing* originalSmoothPhasing = original->GetSmoothPhasing())
-                originalSmoothPhasing->DisableReplacementForSeer(GetDemonCreatorGUID());
-        }
-    }
-
-    Trinity::VisibleChangesNotifier notifier({ objectsToUpdate.data(), objectsToUpdate.data() + objectsToUpdate.size() });
-    Cell::VisitWorldObjects(this, notifier, GetVisibilityRange());
-
-    if (original) // original is only != nullptr when it was replaced
-        if (SmoothPhasing* originalSmoothPhasing = original->GetSmoothPhasing())
-            originalSmoothPhasing->ClearViewerDependentInfo(GetDemonCreatorGUID());
+    WorldObject::UpdateObjectVisibility(true);
 }
 
 void TempSummon::SetTempSummonType(TempSummonType type)
@@ -333,7 +251,9 @@ void TempSummon::UnSummon(uint32 msTime)
 {
     if (msTime)
     {
-        m_Events.AddEventAtOffset(new ForcedDespawnDelayEvent(*this, 0s), Milliseconds(msTime));
+        ForcedUnsummonDelayEvent* pEvent = new ForcedUnsummonDelayEvent(*this);
+
+        m_Events.AddEvent(pEvent, m_Events.CalculateTime(Milliseconds(msTime)));
         return;
     }
 
@@ -356,12 +276,18 @@ void TempSummon::UnSummon(uint32 msTime)
     AddObjectToRemoveList();
 }
 
+bool ForcedUnsummonDelayEvent::Execute(uint64 /*e_time*/, uint32 /*p_time*/)
+{
+    m_owner.UnSummon();
+    return true;
+}
+
 void TempSummon::RemoveFromWorld()
 {
     if (!IsInWorld())
         return;
 
-    if (m_Properties && m_Properties->Slot != 0)
+    if (m_Properties)
         if (Unit* owner = GetSummonerUnit())
             for (ObjectGuid& summonSlot : owner->m_SummonSlot)
                 if (summonSlot == GetGUID())
@@ -373,73 +299,13 @@ void TempSummon::RemoveFromWorld()
     Creature::RemoveFromWorld();
 }
 
-std::ptrdiff_t TempSummon::FindUsableTotemSlot(Unit const* summoner) const
-{
-    auto totemBegin = summoner->m_SummonSlot.begin() + SUMMON_SLOT_TOTEM;
-    auto totemEnd = summoner->m_SummonSlot.begin() + MAX_TOTEM_SLOT;
-
-    // first try exact guid match
-    auto totemSlot = std::find_if(totemBegin, totemEnd, [&](ObjectGuid const& otherTotemGuid)
-    {
-        return otherTotemGuid == GetGUID();
-    });
-
-    // then a slot that shares totem category with this new summon
-    if (totemSlot == totemEnd)
-        totemSlot = std::find_if(totemBegin, totemEnd, [&](ObjectGuid const& otherTotemGuid) { return IsSharingTotemSlotWith(otherTotemGuid); });
-
-    // any empty slot...?
-    if (totemSlot == totemEnd)
-        totemSlot = std::find_if(totemBegin, totemEnd, [](ObjectGuid const& otherTotemGuid) { return otherTotemGuid.IsEmpty(); });
-
-    // if no usable slot was found, try used slot by a summon with the same creature id
-    // we must not despawn unrelated summons
-    if (totemSlot == totemEnd)
-        totemSlot = std::find_if(totemBegin, totemEnd, [&](ObjectGuid const& otherTotemGuid) { return GetEntry() == otherTotemGuid.GetEntry(); });
-
-    // if no slot was found, this summon gets no slot and will not be stored in m_SummonSlot
-    if (totemSlot == totemEnd)
-        return 0;
-
-    return totemSlot - summoner->m_SummonSlot.begin();
-}
-
-bool TempSummon::IsSharingTotemSlotWith(ObjectGuid objectGuid) const
-{
-    Creature const* otherSummon = GetMap()->GetCreature(objectGuid);
-    if (!otherSummon)
-        return false;
-
-    SpellInfo const* mySummonSpell = sSpellMgr->GetSpellInfo(m_unitData->CreatedBySpell, DIFFICULTY_NONE);
-    if (!mySummonSpell)
-        return false;
-
-    SpellInfo const* otherSummonSpell = sSpellMgr->GetSpellInfo(otherSummon->m_unitData->CreatedBySpell, DIFFICULTY_NONE);
-    if (!otherSummonSpell)
-        return false;
-
-    for (uint16 myTotemCategory : mySummonSpell->TotemCategory)
-        if (myTotemCategory)
-            for (uint16 otherTotemCategory : otherSummonSpell->TotemCategory)
-                if (otherTotemCategory && DB2Manager::IsTotemCategoryCompatibleWith(myTotemCategory, otherTotemCategory, false))
-                    return true;
-
-    for (int32 myTotemId : mySummonSpell->Totem)
-        if (myTotemId)
-            for (int32 otherTotemId : otherSummonSpell->Totem)
-                if (otherTotemId && myTotemId == otherTotemId)
-                    return true;
-
-    return false;
-}
-
 std::string TempSummon::GetDebugInfo() const
 {
     std::stringstream sstr;
     sstr << Creature::GetDebugInfo() << "\n"
         << std::boolalpha
         << "TempSummonType: " << std::to_string(GetSummonType()) << " Summoner: " << GetSummonerGUID().ToString()
-        << "Timer: " << GetTimer().count() << "ms";
+        << "Timer: " << GetTimer();
     return sstr.str();
 }
 
@@ -449,18 +315,16 @@ Minion::Minion(SummonPropertiesEntry const* properties, Unit* owner, bool isWorl
     ASSERT(m_owner);
     m_unitTypeMask |= UNIT_MASK_MINION;
     m_followAngle = PET_FOLLOW_ANGLE;
-    /// @todo: Find correct way
-    InitCharmInfo();
 }
 
-void Minion::InitStats(WorldObject* summoner, Milliseconds duration)
+void Minion::InitStats(uint32 duration)
 {
-    TempSummon::InitStats(summoner, duration);
+    TempSummon::InitStats(duration);
 
     SetReactState(REACT_PASSIVE);
 
     SetCreatorGUID(GetOwner()->GetGUID());
-    SetFaction(GetOwner()->GetFaction()); // TODO: Is this correct? Overwrite the use of SummonPropertiesFlags::UseSummonerFaction
+    SetFaction(GetOwner()->GetFaction());
 
     GetOwner()->SetMinion(this, true);
 }
@@ -515,18 +379,18 @@ Guardian::Guardian(SummonPropertiesEntry const* properties, Unit* owner, bool is
 {
     memset(m_statFromOwner, 0, sizeof(float)*MAX_STATS);
     m_unitTypeMask |= UNIT_MASK_GUARDIAN;
-    if (properties && (SummonTitle(properties->Title) == SummonTitle::Pet || properties->Control == SUMMON_CATEGORY_PET))
+    if (properties && (properties->Title == SUMMON_TYPE_PET || properties->Control == SUMMON_CATEGORY_PET))
     {
         m_unitTypeMask |= UNIT_MASK_CONTROLABLE_GUARDIAN;
         InitCharmInfo();
     }
 }
 
-void Guardian::InitStats(WorldObject* summoner, Milliseconds duration)
+void Guardian::InitStats(uint32 duration)
 {
-    Minion::InitStats(summoner, duration);
+    Minion::InitStats(duration);
 
-    InitStatsForLevel(GetLevel()); // level is already initialized in TempSummon::InitStats, so use that
+    InitStatsForLevel(GetOwner()->GetLevel());
 
     if (GetOwner()->GetTypeId() == TYPEID_PLAYER && HasUnitTypeMask(UNIT_MASK_CONTROLABLE_GUARDIAN))
         m_charmInfo->InitCharmCreateSpells();
@@ -534,9 +398,9 @@ void Guardian::InitStats(WorldObject* summoner, Milliseconds duration)
     SetReactState(REACT_AGGRESSIVE);
 }
 
-void Guardian::InitSummon(WorldObject* summoner)
+void Guardian::InitSummon()
 {
-    TempSummon::InitSummon(summoner);
+    TempSummon::InitSummon();
 
     if (GetOwner()->GetTypeId() == TYPEID_PLAYER
             && GetOwner()->GetMinionGUID() == GetGUID()
@@ -560,15 +424,16 @@ Puppet::Puppet(SummonPropertiesEntry const* properties, Unit* owner)
     m_unitTypeMask |= UNIT_MASK_PUPPET;
 }
 
-void Puppet::InitStats(WorldObject* summoner, Milliseconds duration)
+void Puppet::InitStats(uint32 duration)
 {
-    Minion::InitStats(summoner, duration);
+    Minion::InitStats(duration);
+    SetLevel(GetOwner()->GetLevel());
     SetReactState(REACT_PASSIVE);
 }
 
-void Puppet::InitSummon(WorldObject* summoner)
+void Puppet::InitSummon()
 {
-    Minion::InitSummon(summoner);
+    Minion::InitSummon();
     if (!SetCharmedBy(GetOwner(), CHARM_TYPE_POSSESS))
         ABORT();
 }

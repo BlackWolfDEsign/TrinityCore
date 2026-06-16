@@ -16,19 +16,18 @@
  */
 
 #include "WorldStatePackets.h"
-#include "PacketOperators.h"
 
 namespace WorldPackets::WorldState
 {
 WorldPacket const* InitWorldStates::Write()
 {
-    _worldPacket.reserve(16 + Worldstates.size() * 8);
+    _worldPacket.reserve(4 + 4 + 4 + 2 + Worldstates.size() * 8);
 
     _worldPacket << int32(MapID);
     _worldPacket << int32(AreaID);
     _worldPacket << int32(SubareaID);
 
-    _worldPacket << Size<uint32>(Worldstates);
+    _worldPacket << uint16(Worldstates.size());
     for (WorldStateInfo const& wsi : Worldstates)
     {
         _worldPacket << int32(wsi.VariableID);
@@ -40,10 +39,8 @@ WorldPacket const* InitWorldStates::Write()
 
 WorldPacket const* UpdateWorldState::Write()
 {
-    _worldPacket << uint32(VariableID);
+    _worldPacket << int32(VariableID);
     _worldPacket << int32(Value);
-    _worldPacket << Bits<1>(Hidden);
-    _worldPacket.FlushBits();
 
     return &_worldPacket;
 }

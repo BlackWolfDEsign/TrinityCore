@@ -8,35 +8,48 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-GroupSources(${CMAKE_CURRENT_SOURCE_DIR})
-
-add_library(common)
-
-CollectAndAddSourceFiles(
-  common
+CollectSourceFiles(
   ${CMAKE_CURRENT_SOURCE_DIR}
-  EXCLUDE
+  PRIVATE_SOURCES
+  # Exclude
   ${CMAKE_CURRENT_SOURCE_DIR}/Debugging/Windows
   ${CMAKE_CURRENT_SOURCE_DIR}/Platform
-  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders
-  ${CMAKE_CURRENT_SOURCE_DIR}/mmaps_common
-  ${CMAKE_CURRENT_SOURCE_DIR}/network)
+  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
 
 if(WIN32)
-  CollectAndAddSourceFiles(
-    common
+  CollectSourceFiles(
     ${CMAKE_CURRENT_SOURCE_DIR}/Debugging/Windows
-    BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-  CollectAndAddSourceFiles(
-    common
+    WINDOWS_DEBUGGING_SOURCES)
+  list(APPEND PRIVATE_SOURCES
+    ${WINDOWS_DEBUGGING_SOURCES})
+  CollectSourceFiles(
     ${CMAKE_CURRENT_SOURCE_DIR}/Platform/Windows
-    BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+    WINDOWS_PLATFORM_SOURCES)
+  list(APPEND PRIVATE_SOURCES
+    ${WINDOWS_PLATFORM_SOURCES})
 endif()
+
+if(USE_COREPCH)
+  set(PRIVATE_PCH_HEADER PrecompiledHeaders/commonPCH.h)
+endif(USE_COREPCH)
+
+GroupSources(${CMAKE_CURRENT_SOURCE_DIR})
+
+add_library(common
+  ${PRIVATE_SOURCES}
+)
+
+CollectIncludeDirectories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PUBLIC_INCLUDES
+  # Exclude
+  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
 
 target_include_directories(common
   PUBLIC
     # Provide the binary dir for all child targets
     ${CMAKE_BINARY_DIR}
+    ${PUBLIC_INCLUDES}
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -54,12 +67,12 @@ target_link_libraries(common
     boost
     fmt
     g3dlib
+    Detour
     sfmt
     utf8cpp
     openssl
     valgrind
     threads
-    openssl_ed25519
     short_alloc)
 
 set_target_properties(common
@@ -84,8 +97,5 @@ endif()
 
 # Generate precompiled header
 if(USE_COREPCH)
-  add_cxx_pch(common PrecompiledHeaders/commonPCH.h)
+  add_cxx_pch(common ${PRIVATE_PCH_HEADER})
 endif()
-
-add_subdirectory(mmaps_common)
-add_subdirectory(network)

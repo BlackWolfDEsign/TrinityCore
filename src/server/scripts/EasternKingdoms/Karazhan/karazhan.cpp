@@ -37,6 +37,7 @@ EndContentData */
 #include "Player.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
+#include "SpellScript.h"
 #include "TemporarySummon.h"
 
 enum Spells
@@ -199,7 +200,7 @@ public:
                         me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), 0.0f,
                         TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 1min))
                     {
-                        spotlight->SetUninteractible(true);
+                        spotlight->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                         spotlight->CastSpell(spotlight, SPELL_SPOTLIGHT, false);
                         m_uiSpotlightGUID = spotlight->GetGUID();
                     }
@@ -310,7 +311,7 @@ public:
                     if (WipeTimer <= diff)
                     {
                         Map::PlayerList const& PlayerList = me->GetMap()->GetPlayers();
-                        if (PlayerList.empty())
+                        if (PlayerList.isEmpty())
                             return;
 
                         RaidWiped = true;
@@ -325,7 +326,7 @@ public:
 
                         if (RaidWiped)
                         {
-                            EnterEvadeMode(EvadeReason::Other);
+                            EnterEvadeMode();
                             return;
                         }
 
@@ -382,9 +383,9 @@ public:
 
                 if (player->IsGameMaster())
                 {
-                    AddGossipItemFor(player, GossipOptionNpc::None, OZ_GM_GOSSIP1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
-                    AddGossipItemFor(player, GossipOptionNpc::None, OZ_GM_GOSSIP2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
-                    AddGossipItemFor(player, GossipOptionNpc::None, OZ_GM_GOSSIP3, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
+                    AddGossipItemFor(player, GOSSIP_ICON_DOT, OZ_GM_GOSSIP1, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 3);
+                    AddGossipItemFor(player, GOSSIP_ICON_DOT, OZ_GM_GOSSIP2, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 4);
+                    AddGossipItemFor(player, GOSSIP_ICON_DOT, OZ_GM_GOSSIP3, GOSSIP_SENDER_MAIN, GOSSIP_ACTION_INFO_DEF + 5);
                 }
 
                 if (!RaidWiped)
@@ -473,7 +474,7 @@ public:
             if (instance->GetGuidData(DATA_IMAGE_OF_MEDIVH).IsEmpty())
             {
                 instance->SetGuidData(DATA_IMAGE_OF_MEDIVH, me->GetGUID());
-                me->GetMotionMaster()->MovePoint(1, MedivPos[0], MedivPos[1], MedivPos[2]);
+                (*me).GetMotionMaster()->MovePoint(1, MedivPos[0], MedivPos[1], MedivPos[2]);
                 Step = 0;
             }
             else
@@ -622,8 +623,35 @@ public:
     };
 };
 
+enum KarazhanCharge
+{
+    SPELL_FEAR      = 29321
+};
+
+// 29320 - Charge
+class spell_karazhan_charge : public SpellScript
+{
+    PrepareSpellScript(spell_karazhan_charge);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_FEAR });
+    }
+
+    void HandleAfterHit()
+    {
+        GetCaster()->CastSpell(GetCaster(), SPELL_FEAR);
+    }
+
+    void Register() override
+    {
+        AfterHit += SpellHitFn(spell_karazhan_charge::HandleAfterHit);
+    }
+};
+
 void AddSC_karazhan()
 {
     new npc_barnes();
     new npc_image_of_medivh();
+    RegisterSpellScript(spell_karazhan_charge);
 }

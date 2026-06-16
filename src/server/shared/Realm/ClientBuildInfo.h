@@ -49,61 +49,17 @@ TC_SHARED_API std::array<char, 5> ToCharArray(uint32 value);
 namespace Platform
 {
     inline constexpr uint32 Win_x86     = "Win"_fourcc;
-    inline constexpr uint32 Win_x64     = "Wn64"_fourcc;
-    inline constexpr uint32 Win_arm64   = "WinA"_fourcc;
-    inline constexpr uint32 Mac_x86     = "Mac"_fourcc;
-    inline constexpr uint32 Mac_x64     = "Mc64"_fourcc;
-    inline constexpr uint32 Mac_arm64   = "MacA"_fourcc;
+    inline constexpr uint32 Mac_x86     = "OSX"_fourcc;
 
     TC_SHARED_API bool IsValid(std::string_view platform);
 }
 
-namespace PlatformType
+struct ExecutableHash
 {
-    inline constexpr uint32 Windows     = "Win"_fourcc;
-    inline constexpr uint32 macOS       = "Mac"_fourcc;
+    static constexpr std::size_t Size = 20;
 
-    TC_SHARED_API bool IsValid(std::string_view platformType);
-}
-
-namespace Arch
-{
-    inline constexpr uint32 x86         = "x86"_fourcc;
-    inline constexpr uint32 x64         = "x64"_fourcc;
-    inline constexpr uint32 Arm32       = "A32"_fourcc;
-    inline constexpr uint32 Arm64       = "A64"_fourcc;
-    inline constexpr uint32 WA32        = "WA32"_fourcc;
-
-    TC_SHARED_API bool IsValid(std::string_view arch);
-}
-
-namespace Type
-{
-    inline constexpr uint32 Retail      = "WoW"_fourcc;
-    inline constexpr uint32 RetailChina = "WoWC"_fourcc;
-    inline constexpr uint32 Beta        = "WoWB"_fourcc;
-    inline constexpr uint32 BetaRelease = "WoWE"_fourcc;
-    inline constexpr uint32 Ptr         = "WoWT"_fourcc;
-    inline constexpr uint32 PtrRelease  = "WoWR"_fourcc;
-
-    TC_SHARED_API bool IsValid(std::string_view type);
-}
-
-struct VariantId
-{
     uint32 Platform;
-    uint32 Arch;
-    uint32 Type;
-
-    friend bool operator==(VariantId const& left, VariantId const& right) = default;
-};
-
-struct AuthKey
-{
-    static constexpr std::size_t Size = 16;
-
-    VariantId Variant;
-    std::array<uint8, Size> Key;
+    std::array<uint8, Size> Hash;
 };
 
 struct Info
@@ -113,12 +69,11 @@ struct Info
     uint32 MinorVersion;
     uint32 BugfixVersion;
     std::array<char, 4> HotfixVersion;
-    std::vector<AuthKey> AuthKeys;
+    std::vector<ExecutableHash> ExecutableHashes;
 };
 
 TC_SHARED_API void LoadBuildInfo();
 TC_SHARED_API Info const* GetBuildInfo(uint32 build);
-TC_SHARED_API uint32 GetMinorMajorBugfixVersionForBuild(uint32 build);
 }
 
 #endif // TRINITYCORE_CLIENT_BUILD_INFO_H

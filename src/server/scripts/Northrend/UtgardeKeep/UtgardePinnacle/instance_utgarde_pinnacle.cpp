@@ -26,13 +26,14 @@ BossBoundaryData const boundaries =
     { DATA_KING_YMIRON, new RectangleBoundary(340.0f, 443.0f, -412.0f, -275.0f) }
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
-    { GO_SKADI_THE_RUTHLESS_DOOR,   DATA_SKADI_THE_RUTHLESS,    EncounterDoorBehavior::OpenWhenDone },
-    { GO_KING_YMIRON_DOOR,          DATA_KING_YMIRON,           EncounterDoorBehavior::OpenWhenDone },
+    { GO_SKADI_THE_RUTHLESS_DOOR,   DATA_SKADI_THE_RUTHLESS,    DOOR_TYPE_PASSAGE },
+    { GO_KING_YMIRON_DOOR,          DATA_KING_YMIRON,           DOOR_TYPE_PASSAGE },
+    { 0,                            0,                          DOOR_TYPE_ROOM    } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_SVALA_SORROWGRAVE,        DATA_SVALA_SORROWGRAVE      },
     { NPC_GORTOK_PALEHOOF,          DATA_GORTOK_PALEHOOF        },
@@ -45,20 +46,14 @@ static constexpr ObjectData creatureData[] =
     { NPC_PALEHOOF_ORB,             DATA_GORTOK_ORB             },
     { NPC_SVALA,                    DATA_SVALA                  },
     { NPC_GRAUF,                    DATA_GRAUF                  },
+    { 0,                            0                           } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_UTGARDE_MIRROR,            DATA_UTGARDE_MIRROR         },
     { GO_GORTOK_PALEHOOF_SPHERE,    DATA_GORTOK_PALEHOOF_SPHERE },
-};
-
-static constexpr DungeonEncounterData encounters[] =
-{
-    { DATA_SVALA_SORROWGRAVE, {{ 2030 }} },
-    { DATA_GORTOK_PALEHOOF, {{ 2027 }} },
-    { DATA_SKADI_THE_RUTHLESS, {{ 2029 }} },
-    { DATA_KING_YMIRON, {{ 2028 }} }
+    { 0,                            0                           } //END
 };
 
 class instance_utgarde_pinnacle : public InstanceMapScript
@@ -75,7 +70,6 @@ class instance_utgarde_pinnacle : public InstanceMapScript
                 LoadBossBoundaries(boundaries);
                 LoadDoorData(doorData);
                 LoadObjectData(creatureData, gameObjectData);
-                LoadDungeonEncounterData(encounters);
             }
 
             void OnGameObjectCreate(GameObject* go) override

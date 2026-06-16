@@ -21,6 +21,7 @@
 #include "DatabaseEnvFwd.h"
 #include "Define.h"
 #include "Duration.h"
+#include "MySQLWorkaround.h"
 #include <string>
 #include <vector>
 

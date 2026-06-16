@@ -72,21 +72,21 @@ void CalendarMgr::LoadFromDB()
     _maxEventId = 0;
     _maxInviteId = 0;
 
-    //                                                       0        1      2      3            4          5          6     7      8
-    if (QueryResult result = CharacterDatabase.Query("SELECT EventID, Owner, Title, Description, EventType, TextureID, Date, Flags, LockDate FROM calendar_events"))
+    //                                                       0   1        2      3            4     5        6          7      8
+    if (QueryResult result = CharacterDatabase.Query("SELECT id, creator, title, description, type, dungeon, eventtime, flags, time2 FROM calendar_events"))
         do
         {
             Field* fields = result->Fetch();
 
             uint64 eventID          = fields[0].GetUInt64();
-            ObjectGuid ownerGUID    = ObjectGuid::Create<HighGuid::Player>(fields[1].GetUInt64());
+            ObjectGuid ownerGUID    = ObjectGuid::Create<HighGuid::Player>(fields[1].GetUInt32());
             std::string title       = fields[2].GetString();
             std::string description = fields[3].GetString();
             CalendarEventType type  = CalendarEventType(fields[4].GetUInt8());
             int32 textureID         = fields[5].GetInt32();
-            time_t date             = fields[6].GetInt64();
+            time_t date             = fields[6].GetUInt32();
             uint32 flags            = fields[7].GetUInt32();
-            time_t lockDate         = fields[8].GetInt64();
+            time_t lockDate         = fields[8].GetUInt32();
             ObjectGuid::LowType guildID = UI64LIT(0);
 
             if (flags & CALENDAR_FLAG_GUILD_EVENT || flags & CALENDAR_FLAG_WITHOUT_INVITES)
@@ -105,18 +105,18 @@ void CalendarMgr::LoadFromDB()
     count = 0;
     oldMSTime = getMSTime();
 
-    //                                                       0         1        2        3       4       5             6               7
-    if (QueryResult result = CharacterDatabase.Query("SELECT InviteID, EventID, Invitee, Sender, Status, ResponseTime, ModerationRank, Note FROM calendar_invites"))
+    //                                                       0   1      2        3       4       5            6      7
+    if (QueryResult result = CharacterDatabase.Query("SELECT id, event, invitee, sender, status, statustime, `rank`, text FROM calendar_invites"))
         do
         {
             Field* fields = result->Fetch();
 
             uint64 inviteId             = fields[0].GetUInt64();
             uint64 eventId              = fields[1].GetUInt64();
-            ObjectGuid invitee          = ObjectGuid::Create<HighGuid::Player>(fields[2].GetUInt64());
-            ObjectGuid senderGUID       = ObjectGuid::Create<HighGuid::Player>(fields[3].GetUInt64());
+            ObjectGuid invitee          = ObjectGuid::Create<HighGuid::Player>(fields[2].GetUInt32());
+            ObjectGuid senderGUID       = ObjectGuid::Create<HighGuid::Player>(fields[3].GetUInt32());
             CalendarInviteStatus status = CalendarInviteStatus(fields[4].GetUInt8());
-            time_t responseTime         = fields[5].GetInt64();
+            time_t responseTime         = fields[5].GetUInt32();
             CalendarModerationRank rank = CalendarModerationRank(fields[6].GetUInt8());
             std::string note            = fields[7].GetString();
 
@@ -149,7 +149,7 @@ void CalendarMgr::AddEvent(CalendarEvent* calendarEvent, CalendarSendEventType s
 
 void CalendarMgr::AddInvite(CalendarEvent* calendarEvent, CalendarInvite* invite, CharacterDatabaseTransaction trans)
 {
-    if (!calendarEvent->IsGuildAnnouncement() && calendarEvent->GetOwnerGUID() != invite->GetInviteeGUID())
+    if (!calendarEvent->IsGuildAnnouncement())
         SendCalendarEventInvite(*invite);
 
     if (!calendarEvent->IsGuildEvent() || invite->GetInviteeGUID() == calendarEvent->GetOwnerGUID())
@@ -257,14 +257,14 @@ void CalendarMgr::UpdateEvent(CalendarEvent* calendarEvent)
 {
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_CALENDAR_EVENT);
     stmt->setUInt64(0, calendarEvent->GetEventId());
-    stmt->setUInt64(1, calendarEvent->GetOwnerGUID().GetCounter());
+    stmt->setUInt32(1, calendarEvent->GetOwnerGUID().GetCounter());
     stmt->setString(2, calendarEvent->GetTitle());
     stmt->setString(3, calendarEvent->GetDescription());
     stmt->setUInt8(4, calendarEvent->GetType());
     stmt->setInt32(5, calendarEvent->GetTextureId());
-    stmt->setInt64(6, calendarEvent->GetDate());
+    stmt->setUInt32(6, calendarEvent->GetDate());
     stmt->setUInt32(7, calendarEvent->GetFlags());
-    stmt->setInt64(8, calendarEvent->GetLockDate());
+    stmt->setUInt32(8, calendarEvent->GetLockDate());
     CharacterDatabase.Execute(stmt);
 }
 
@@ -273,10 +273,10 @@ void CalendarMgr::UpdateInvite(CalendarInvite* invite, CharacterDatabaseTransact
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_CALENDAR_INVITE);
     stmt->setUInt64(0, invite->GetInviteId());
     stmt->setUInt64(1, invite->GetEventId());
-    stmt->setUInt64(2, invite->GetInviteeGUID().GetCounter());
-    stmt->setUInt64(3, invite->GetSenderGUID().GetCounter());
+    stmt->setUInt32(2, invite->GetInviteeGUID().GetCounter());
+    stmt->setUInt32(3, invite->GetSenderGUID().GetCounter());
     stmt->setUInt8(4, invite->GetStatus());
-    stmt->setInt64(5, invite->GetResponseTime());
+    stmt->setUInt32(5, invite->GetResponseTime());
     stmt->setUInt8(6, invite->GetRank());
     stmt->setString(7, invite->GetNote());
     CharacterDatabase.ExecuteOrAppend(trans, stmt);
@@ -469,7 +469,7 @@ uint32 CalendarMgr::GetPlayerNumPending(ObjectGuid guid)
 
 std::string CalendarEvent::BuildCalendarMailSubject(ObjectGuid remover) const
 {
-    return Trinity::StringFormat("{}:{}", remover.ToString(), _title);
+    return Trinity::StringFormat("{}:{}", remover.GetRawValue(), _title);
 }
 
 std::string CalendarEvent::BuildCalendarMailBody(Player const* invitee) const
@@ -501,8 +501,8 @@ void CalendarMgr::SendCalendarEventInvite(CalendarInvite const& invite) const
         packet.ResponseTime.SetUtcTimeFromUnixTime(invite.GetResponseTime());
         packet.ResponseTime += receiver->GetSession()->GetTimezoneOffset();
         packet.Status = invite.GetStatus();
-        packet.Type = calendarEvent ? calendarEvent->IsGuildEvent() : 0; // Correct ?
-        packet.ClearPending = calendarEvent ? !calendarEvent->IsGuildEvent() : true; // Correct ?
+        packet.Type = calendarEvent ? calendarEvent->IsGuildEvent() : 0;
+        packet.ClearPending = invite.GetSenderGUID() != invite.GetInviteeGUID();
 
         receiver->SendDirectMessage(packet.Write());
     };
@@ -529,7 +529,6 @@ void CalendarMgr::SendCalendarEventUpdateAlert(CalendarEvent const& calendarEven
         packet.Date.SetUtcTimeFromUnixTime(calendarEvent.GetDate());
         packet.Date += receiver->GetSession()->GetTimezoneOffset();
         packet.Description = calendarEvent.GetDescription();
-        packet.EventClubID = calendarEvent.GetGuildId();
         packet.EventID = calendarEvent.GetEventId();
         packet.EventName = calendarEvent.GetTitle();
         packet.EventType = calendarEvent.GetType();
@@ -626,7 +625,6 @@ void CalendarMgr::SendCalendarEventInviteAlert(CalendarEvent const& calendarEven
         packet.OwnerGuid = calendarEvent.GetOwnerGUID();
         packet.Status = invite.GetStatus();
         packet.TextureID = calendarEvent.GetTextureId();
-        packet.EventClubID = calendarEvent.GetGuildId();
 
         receiver->SendDirectMessage(packet.Write());
     };
@@ -660,7 +658,7 @@ void CalendarMgr::SendCalendarEvent(ObjectGuid guid, CalendarEvent const& calend
         packet.LockDate += player->GetSession()->GetTimezoneOffset();
     packet.OwnerGuid = calendarEvent.GetOwnerGUID();
     packet.TextureID = calendarEvent.GetTextureId();
-    packet.EventClubID = calendarEvent.GetGuildId();
+    packet.EventGuildID = calendarEvent.GetGuildId();
 
     if (CalendarInviteStore const* eventInviteeList = Trinity::Containers::MapGetValuePtr(_invites, calendarEvent.GetEventId()))
     {

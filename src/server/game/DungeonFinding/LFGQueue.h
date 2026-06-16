@@ -19,7 +19,6 @@
 #define _LFGQUEUE_H
 
 #include "LFG.h"
-#include <list>
 
 namespace lfg
 {
@@ -85,12 +84,6 @@ typedef std::map<ObjectGuid, LfgQueueData> LfgQueueDataContainer;
 class TC_GAME_API LFGQueue
 {
     public:
-        LFGQueue();
-        LFGQueue(LFGQueue const&) = delete;
-        LFGQueue(LFGQueue&& other) noexcept;
-        LFGQueue& operator=(LFGQueue const&) = delete;
-        LFGQueue& operator=(LFGQueue&& right) noexcept;
-        ~LFGQueue();
 
         // Add/Remove from queue
         std::string GetDetailedMatchRoles(GuidList const& check) const;
@@ -106,7 +99,7 @@ class TC_GAME_API LFGQueue
         void UpdateWaitTimeDps(int32 waitTime, uint32 dungeonId);
 
         // Update Queue timers
-        void UpdateQueueTimers(uint8 queueId, time_t currTime);
+        void UpdateQueueTimers(time_t currTime);
         time_t GetJoinTime(ObjectGuid guid) const;
 
         // Find new group
@@ -117,6 +110,8 @@ class TC_GAME_API LFGQueue
         std::string DumpCompatibleInfo(bool full = false) const;
 
     private:
+        void SetQueueUpdateData(std::string const& strGuids, LfgRolesMap const& proposalRoles);
+
         void AddToNewQueue(ObjectGuid guid);
         void AddToCurrentQueue(ObjectGuid guid);
         void AddToFrontCurrentQueue(ObjectGuid guid);

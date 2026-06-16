@@ -19,6 +19,7 @@
 #define TRINITY_GRIDDEFINES_H
 
 #include "Common.h"
+#include "ObjectGuid.h"
 #include "NGrid.h"
 #include <cmath>
 
@@ -29,9 +30,6 @@ class DynamicObject;
 class GameObject;
 class Pet;
 class Player;
-class AreaTrigger;
-class SceneObject;
-class Conversation;
 
 #define MAX_NUMBER_OF_CELLS     8
 
@@ -57,19 +55,16 @@ class Conversation;
 #define MAP_SIZE                (SIZE_OF_GRIDS*MAX_NUMBER_OF_GRIDS)
 #define MAP_HALFSIZE            (MAP_SIZE/2)
 
-#define MAX_HEIGHT            100000.0f                     // can be use for find ground height at surface
-#define INVALID_HEIGHT       -100000.0f                     // for check, must be equal to VMAP_INVALID_HEIGHT, real value for unknown height is VMAP_INVALID_HEIGHT_VALUE
-#define MAX_FALL_DISTANCE     250000.0f                     // "unlimited fall" to find VMap ground if it is available, just larger than MAX_HEIGHT - INVALID_HEIGHT
-#define DEFAULT_HEIGHT_SEARCH     50.0f                     // default search distance to find height at nearby locations
+// Creature used instead pet to simplify *::Visit templates (not required duplicate code for Creature->Pet case)
+typedef TYPELIST_4(Player, Creature/*pets*/, Corpse/*resurrectable*/, DynamicObject/*farsight target*/) AllWorldObjectTypes;
+typedef TYPELIST_4(GameObject, Creature/*except pets*/, DynamicObject, Corpse/*Bones*/) AllGridObjectTypes;
+typedef TYPELIST_5(Creature, GameObject, DynamicObject, Pet, Corpse) AllMapStoredObjectTypes;
 
 typedef GridRefManager<Corpse>          CorpseMapType;
 typedef GridRefManager<Creature>        CreatureMapType;
 typedef GridRefManager<DynamicObject>   DynamicObjectMapType;
 typedef GridRefManager<GameObject>      GameObjectMapType;
 typedef GridRefManager<Player>          PlayerMapType;
-typedef GridRefManager<AreaTrigger>     AreaTriggerMapType;
-typedef GridRefManager<SceneObject>     SceneObjectMapType;
-typedef GridRefManager<Conversation>    ConversationMapType;
 
 enum GridMapTypeMask
 {
@@ -78,24 +73,20 @@ enum GridMapTypeMask
     GRID_MAP_TYPE_MASK_DYNAMICOBJECT    = 0x04,
     GRID_MAP_TYPE_MASK_GAMEOBJECT       = 0x08,
     GRID_MAP_TYPE_MASK_PLAYER           = 0x10,
-    GRID_MAP_TYPE_MASK_AREATRIGGER      = 0x20,
-    GRID_MAP_TYPE_MASK_SCENEOBJECT      = 0x40,
-    GRID_MAP_TYPE_MASK_CONVERSATION     = 0x80,
-    GRID_MAP_TYPE_MASK_ALL              = 0xFF
+    GRID_MAP_TYPE_MASK_ALL              = 0x1F
 };
 
-// Creature used instead pet to simplify *::Visit templates (not required duplicate code for Creature->Pet case)
-extern template struct TypeListContainer<GridRefManagerContainer, GameObject, Creature/*except pets*/, DynamicObject, Corpse/*Bones*/, AreaTrigger, SceneObject, Conversation>;
-extern template struct TypeListContainer<GridRefManagerContainer, Player, Creature/*pets*/, Corpse/*resurrectable*/, DynamicObject/*farsight target*/>;
+extern template class Grid<Player, AllWorldObjectTypes, AllGridObjectTypes>;
+extern template class NGrid<MAX_NUMBER_OF_CELLS, Player, AllWorldObjectTypes, AllGridObjectTypes>;
 
-typedef TypeListContainer<GridRefManagerContainer, GameObject, Creature/*except pets*/, DynamicObject, Corpse/*Bones*/, AreaTrigger, SceneObject, Conversation> GridTypeMapContainer;
-typedef TypeListContainer<GridRefManagerContainer, Player, Creature/*pets*/, Corpse/*resurrectable*/, DynamicObject/*farsight target*/> WorldTypeMapContainer;
+extern template class TypeMapContainer<AllGridObjectTypes>;
+extern template class TypeMapContainer<AllWorldObjectTypes>;
 
-extern template class Grid<WorldTypeMapContainer, GridTypeMapContainer>;
-extern template class NGrid<MAX_NUMBER_OF_CELLS, WorldTypeMapContainer, GridTypeMapContainer>;
+typedef Grid<Player, AllWorldObjectTypes, AllGridObjectTypes> GridType;
+typedef NGrid<MAX_NUMBER_OF_CELLS, Player, AllWorldObjectTypes, AllGridObjectTypes> NGridType;
 
-typedef Grid<WorldTypeMapContainer, GridTypeMapContainer> GridType;
-typedef NGrid<MAX_NUMBER_OF_CELLS, WorldTypeMapContainer, GridTypeMapContainer> NGridType;
+typedef TypeMapContainer<AllGridObjectTypes> GridTypeMapContainer;
+typedef TypeMapContainer<AllWorldObjectTypes> WorldTypeMapContainer;
 
 template<uint32 LIMIT>
 struct CoordPair

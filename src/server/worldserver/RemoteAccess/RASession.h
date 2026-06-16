@@ -18,12 +18,15 @@
 #ifndef TRINITYCORE_RA_SESSION_H
 #define TRINITYCORE_RA_SESSION_H
 
-#include "Define.h"
+#include <memory>
 #include "Socket.h"
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/streambuf.hpp>
+#include "Common.h"
+
 #include <future>
-#include <memory>
+
+using boost::asio::ip::tcp;
 
 const size_t bufferSize = 4096;
 
@@ -36,13 +39,14 @@ public:
 
     void Start();
 
-    boost::asio::ip::address GetRemoteIpAddress() const { return _socket.remote_endpoint().address(); }
-    uint16 GetRemotePort() const { return _socket.remote_endpoint().port(); }
+    const std::string GetRemoteIpAddress() const { return _socket.remote_endpoint().address().to_string(); }
+    unsigned short GetRemotePort() const { return _socket.remote_endpoint().port(); }
 
 private:
     int Send(std::string_view data);
     std::string ReadString();
     bool CheckAccessLevel(const std::string& user);
+    bool CheckPassword(const std::string& user, const std::string& pass);
     bool ProcessCommand(std::string& command);
 
     static void CommandPrint(void* callbackArg, std::string_view text);

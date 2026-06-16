@@ -26,8 +26,10 @@ EndScriptData */
 #include "ArenaTeamMgr.h"
 #include "CharacterCache.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "Language.h"
+#include "Log.h"
+#include "ObjectMgr.h"
+#include "Player.h"
 #include "RBAC.h"
 #include "WorldSession.h"
 
@@ -38,7 +40,7 @@ class arena_commandscript : public CommandScript
 public:
     arena_commandscript() : CommandScript("arena_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable arenaCommandTable =
         {

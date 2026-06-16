@@ -27,8 +27,6 @@ namespace Trinity
 class ThreadPool
 {
 public:
-    using executor_type = boost::asio::thread_pool::executor_type;
-
     explicit ThreadPool(std::size_t numThreads = std::thread::hardware_concurrency()) : _impl(numThreads) { }
 
     template<typename T>
@@ -40,11 +38,6 @@ public:
     void Join()
     {
         _impl.join();
-    }
-
-    void Stop()
-    {
-        _impl.stop();
     }
 
 private:

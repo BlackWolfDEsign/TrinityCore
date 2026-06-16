@@ -18,19 +18,55 @@
 #ifndef TRINITY_ARENA_SCORE_H
 #define TRINITY_ARENA_SCORE_H
 
-#include "Define.h"
+#include "BattlegroundScore.h"
+#include <sstream>
+
+struct TC_GAME_API ArenaScore final : public BattlegroundScore
+{
+    friend class Arena;
+
+    protected:
+        ArenaScore(ObjectGuid playerGuid, uint32 team) : BattlegroundScore(playerGuid), TeamId(team == ALLIANCE ? PVP_TEAM_ALLIANCE : PVP_TEAM_HORDE) { }
+
+        void AppendToPacket(WorldPackets::Battleground::PVPLogData_Player& playerData) override;
+        void BuildObjectivesBlock(WorldPackets::Battleground::PVPLogData_Player& playerData) override;
+
+        // For Logging purpose
+        std::string ToString() const override
+        {
+            std::ostringstream stream;
+            stream << "Damage done: " << DamageDone << ", Healing done: " << HealingDone << ", Killing blows: " << KillingBlows;
+            return stream.str();
+        }
+
+        uint8 TeamId; // PvPTeamId
+};
 
 struct TC_GAME_API ArenaTeamScore
 {
-    ArenaTeamScore();
-    virtual ~ArenaTeamScore();
+    friend class Arena;
+    friend class Battleground;
 
-    void Assign(uint32 preMatchRating, uint32 postMatchRating, uint32 preMatchMMR, uint32 postMatchMMR);
+    protected:
+        ArenaTeamScore() : RatingChange(0), MatchmakerRating(0) { }
 
-    uint32 PreMatchRating = 0;
-    uint32 PostMatchRating = 0;
-    uint32 PreMatchMMR = 0;
-    uint32 PostMatchMMR = 0;
+        void Reset()
+        {
+            RatingChange = 0;
+            MatchmakerRating = 0;
+            TeamName.clear();
+        }
+
+        void Assign(int32 ratingChange, uint32 matchMakerRating, std::string const& teamName)
+        {
+            RatingChange = ratingChange;
+            MatchmakerRating = matchMakerRating;
+            TeamName = teamName;
+        }
+
+        int32 RatingChange;
+        uint32 MatchmakerRating;
+        std::string TeamName;
 };
 
 #endif // TRINITY_ARENA_SCORE_H

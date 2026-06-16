@@ -1,4 +1,4 @@
- /*
+/*
  * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -18,7 +18,7 @@
 /* ScriptData
 SDName: Azuremyst_Isle
 SD%Complete: 75
-SDComment: Quest support: 9283, 9537, 9582, 9554, ? (special flight path, proper model for mount missing). Injured Draenei cosmetic only, 9582.
+SDComment: Quest support: 9283, 9537, 9582, 9554, 9531, ? (special flight path, proper model for mount missing). Injured Draenei cosmetic only, 9582.
 SDCategory: Azuremyst Isle
 EndScriptData */
 
@@ -27,16 +27,18 @@ npc_draenei_survivor
 npc_engineer_spark_overgrind
 npc_injured_draenei
 npc_magwin
+npc_geezle
 EndContentData */
 
 #include "ScriptMgr.h"
-#include "GameObject.h"
+#include "CellImpl.h"
+#include "GameObjectAI.h"
+#include "GridNotifiersImpl.h"
+#include "Log.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
-#include "Player.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
-#include "SpellInfo.h"
 #include "SpellScript.h"
 #include "TemporarySummon.h"
 
@@ -46,16 +48,11 @@ EndContentData */
 
 enum draeneiSurvivor
 {
-    SAY_THANK_FOR_HEAL     = 0,
-    SAY_ASK_FOR_HELP       = 1,
-    SPELL_IRRIDATION       = 35046,
-    SPELL_STUNNED          = 28630,
-    EVENT_CAN_ASK_FOR_HELP = 1,
-    EVENT_THANK_PLAYER     = 2,
-    EVENT_RUN_AWAY         = 3
+    SAY_HEAL            = 0,
+    SAY_HELP            = 1,
+    SPELL_IRRIDATION    = 35046,
+    SPELL_STUNNED       = 28630
 };
-
-Position const CrashSite = { -4115.25f, -13754.75f };
 
 class npc_draenei_survivor : public CreatureScript
 {
@@ -71,18 +68,28 @@ public:
 
         void Initialize()
         {
-            _playerGUID.Clear();
-            _canAskForHelp = true;
-            _canUpdateEvents = false;
-            _tappedBySpell = false;
+            pCaster.Clear();
+
+            SayThanksTimer = 0;
+            RunAwayTimer = 0;
+            SayHelpTimer = 10000;
+
+            CanSayHelp = true;
         }
+
+        ObjectGuid pCaster;
+
+        uint32 SayThanksTimer;
+        uint32 RunAwayTimer;
+        uint32 SayHelpTimer;
+
+        bool CanSayHelp;
 
         void Reset() override
         {
             Initialize();
-            _events.Reset();
 
-            DoCastSelf(SPELL_IRRIDATION, true);
+            DoCast(me, SPELL_IRRIDATION, true);
 
             me->SetPvP(true);
             me->SetUnitFlag(UNIT_FLAG_IN_COMBAT);
@@ -94,77 +101,72 @@ public:
 
         void MoveInLineOfSight(Unit* who) override
         {
-            if (_canAskForHelp && who->GetTypeId() == TYPEID_PLAYER && me->IsFriendlyTo(who) && me->IsWithinDistInMap(who, 25.0f))
+            if (CanSayHelp && who->GetTypeId() == TYPEID_PLAYER && me->IsFriendlyTo(who) && me->IsWithinDistInMap(who, 25.0f))
             {
                 //Random switch between 4 texts
-                Talk(SAY_ASK_FOR_HELP);
+                Talk(SAY_HELP, who);
 
-                _events.ScheduleEvent(EVENT_CAN_ASK_FOR_HELP, Seconds(16), Seconds(20));
-                _canAskForHelp = false;
-                _canUpdateEvents = true;
+                SayHelpTimer = 20000;
+                CanSayHelp = false;
             }
         }
 
         void SpellHit(WorldObject* caster, SpellInfo const* spellInfo) override
         {
-            if (spellInfo->SpellFamilyFlags[2] & 0x80000000 && !_tappedBySpell)
+            if (spellInfo->SpellFamilyFlags[2] & 0x080000000)
             {
-                _events.Reset();
-                _tappedBySpell = true;
-                _canAskForHelp = false;
-                _canUpdateEvents = true;
-
                 me->SetPvP(false);
                 me->SetStandState(UNIT_STAND_STATE_STAND);
 
-                _playerGUID = caster->GetGUID();
-                if (Player* player = caster->ToPlayer())
-                    player->KilledMonsterCredit(me->GetEntry());
+                DoCast(me, SPELL_STUNNED, true);
 
-                me->SetFacingToObject(caster);
-                DoCastSelf(SPELL_STUNNED, true);
-                _events.ScheduleEvent(EVENT_THANK_PLAYER, Seconds(4));
+                pCaster = caster->GetGUID();
+
+                SayThanksTimer = 5000;
             }
         }
 
         void UpdateAI(uint32 diff) override
         {
-            if (!_canUpdateEvents)
-                return;
-
-            _events.Update(diff);
-
-            while (uint32 eventId = _events.ExecuteEvent())
+            if (SayThanksTimer)
             {
-                switch (eventId)
+                if (SayThanksTimer <= diff)
                 {
-                    case EVENT_CAN_ASK_FOR_HELP:
-                        _canAskForHelp = true;
-                        _canUpdateEvents = false;
-                        break;
-                    case EVENT_THANK_PLAYER:
-                        me->RemoveAurasDueToSpell(SPELL_IRRIDATION);
-                        if (Player* player = ObjectAccessor::GetPlayer(*me, _playerGUID))
-                            Talk(SAY_THANK_FOR_HEAL, player);
-                        _events.ScheduleEvent(EVENT_RUN_AWAY, Seconds(10));
-                        break;
-                    case EVENT_RUN_AWAY:
-                        me->GetMotionMaster()->Clear();
-                        me->GetMotionMaster()->MovePoint(0, me->GetPositionX() + (std::cos(me->GetAbsoluteAngle(CrashSite)) * 28.0f), me->GetPositionY() + (std::sin(me->GetAbsoluteAngle(CrashSite)) * 28.0f), me->GetPositionZ() + 1.0f);
-                        me->DespawnOrUnsummon(Seconds(4));
-                        break;
-                    default:
-                        break;
-                }
-            }
-        }
+                    me->RemoveAurasDueToSpell(SPELL_IRRIDATION);
 
-    private:
-        EventMap _events;
-        bool _canUpdateEvents;
-        bool _tappedBySpell;
-        bool _canAskForHelp;
-        ObjectGuid _playerGUID;
+                    if (Player* player = ObjectAccessor::GetPlayer(*me, pCaster))
+                    {
+                        Talk(SAY_HEAL, player);
+
+                        player->TalkedToCreature(me->GetEntry(), me->GetGUID());
+                    }
+
+                    me->GetMotionMaster()->Clear();
+                    me->GetMotionMaster()->MovePoint(0, -4115.053711f, -13754.831055f, 73.508949f);
+
+                    RunAwayTimer = 10000;
+                    SayThanksTimer = 0;
+                } else SayThanksTimer -= diff;
+
+                return;
+            }
+
+            if (RunAwayTimer)
+            {
+                if (RunAwayTimer <= diff)
+                    me->DespawnOrUnsummon();
+                else
+                    RunAwayTimer -= diff;
+
+                return;
+            }
+
+            if (SayHelpTimer <= diff)
+            {
+                CanSayHelp = true;
+                SayHelpTimer = 20000;
+            } else SayHelpTimer -= diff;
+        }
     };
 
     CreatureAI* GetAI(Creature* creature) const override
@@ -257,6 +259,8 @@ public:
                 DoCastVictim(SPELL_DYNAMITE);
                 DynamiteTimer = 8000;
             } else DynamiteTimer -= diff;
+
+            DoMeleeAttackIfReady();
         }
 
     private:
@@ -571,12 +575,14 @@ public:
         void CompleteQuest()
         {
             float radius = 50.0f;
-            std::vector<Player*> players;
-            me->GetPlayerListInGrid(players, radius);
+            std::list<Player*> players;
+            Trinity::AnyPlayerInObjectRangeCheck checker(me, radius);
+            Trinity::PlayerListSearcher<Trinity::AnyPlayerInObjectRangeCheck> searcher(me, players, checker);
+            Cell::VisitWorldObjects(me, searcher, radius);
 
-            for (Player* player : players)
-                if (player->GetQuestStatus(QUEST_TREES_COMPANY) == QUEST_STATUS_INCOMPLETE && player->HasAura(SPELL_TREE_DISGUISE))
-                    player->KilledMonsterCredit(NPC_SPARK);
+            for (std::list<Player*>::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+                if ((*itr)->GetQuestStatus(QUEST_TREES_COMPANY) == QUEST_STATUS_INCOMPLETE && (*itr)->HasAura(SPELL_TREE_DISGUISE))
+                    (*itr)->KilledMonsterCredit(NPC_SPARK);
         }
 
         void DespawnNagaFlag(bool despawn)
@@ -617,6 +623,8 @@ public:
 // 29528 - Inoculate Nestlewood Owlkin
 class spell_inoculate_nestlewood : public AuraScript
 {
+    PrepareAuraScript(spell_inoculate_nestlewood);
+
     void PeriodicTick(AuraEffect const* /*aurEff*/)
     {
         if (GetTarget()->GetTypeId() != TYPEID_UNIT) // prevent error reports in case ignored player target
@@ -642,6 +650,8 @@ enum RedSnapperVeryTasty
 // 29866 - Cast Fishing Net
 class spell_azuremyst_isle_cast_fishing_net : public SpellScript
 {
+    PrepareSpellScript(spell_azuremyst_isle_cast_fishing_net);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_FISHED_UP_RED_SNAPPER, SPELL_FISHED_UP_MURLOC });
@@ -649,12 +659,70 @@ class spell_azuremyst_isle_cast_fishing_net : public SpellScript
 
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetCaster(), roll_chance(66) ? SPELL_FISHED_UP_RED_SNAPPER : SPELL_FISHED_UP_MURLOC);
+        GetCaster()->CastSpell(GetCaster(), roll_chance_i(66) ? SPELL_FISHED_UP_RED_SNAPPER : SPELL_FISHED_UP_MURLOC);
     }
 
     void Register() override
     {
         OnEffectHit += SpellEffectFn(spell_azuremyst_isle_cast_fishing_net::HandleDummy, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+/*######
+## Quest 9542: Totem of Vark
+######*/
+
+enum TotemOfVark
+{
+    SPELL_SHADOW_OF_THE_FOREST_SI_DND     = 32213
+};
+
+// 30447 - Shadow of the Forest
+class spell_azuremyst_isle_shadow_of_the_forest_creature : public AuraScript
+{
+    PrepareAuraScript(spell_azuremyst_isle_shadow_of_the_forest_creature);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_SHADOW_OF_THE_FOREST_SI_DND });
+    }
+
+    void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->CastSpell(GetTarget(), SPELL_SHADOW_OF_THE_FOREST_SI_DND, true);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_azuremyst_isle_shadow_of_the_forest_creature::AfterApply, EFFECT_0, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
+    }
+};
+
+// 30448 - Shadow of the Forest
+class spell_azuremyst_isle_shadow_of_the_forest_player : public AuraScript
+{
+    PrepareAuraScript(spell_azuremyst_isle_shadow_of_the_forest_player);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo({ SPELL_SHADOW_OF_THE_FOREST_SI_DND });
+    }
+
+    void AfterApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        if (Unit* caster = GetCaster())
+            caster->CastSpell(GetTarget(), SPELL_SHADOW_OF_THE_FOREST_SI_DND, true);
+    }
+
+    void AfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
+    {
+        GetTarget()->RemoveAurasDueToSpell(SPELL_SHADOW_OF_THE_FOREST_SI_DND);
+    }
+
+    void Register() override
+    {
+        AfterEffectApply += AuraEffectApplyFn(spell_azuremyst_isle_shadow_of_the_forest_player::AfterApply, EFFECT_0, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
+        AfterEffectRemove += AuraEffectRemoveFn(spell_azuremyst_isle_shadow_of_the_forest_player::AfterRemove, EFFECT_0, SPELL_AURA_TRANSFORM, AURA_EFFECT_HANDLE_REAL);
     }
 };
 
@@ -664,6 +732,9 @@ void AddSC_azuremyst_isle()
     new npc_engineer_spark_overgrind();
     new npc_injured_draenei();
     new npc_magwin();
+    new npc_geezle();
     RegisterSpellScript(spell_inoculate_nestlewood);
     RegisterSpellScript(spell_azuremyst_isle_cast_fishing_net);
+    RegisterSpellScript(spell_azuremyst_isle_shadow_of_the_forest_creature);
+    RegisterSpellScript(spell_azuremyst_isle_shadow_of_the_forest_player);
 }

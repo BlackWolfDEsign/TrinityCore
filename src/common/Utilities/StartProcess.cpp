@@ -26,7 +26,6 @@
 #include "StartProcess.h"
 #include "Errors.h"
 #include "Log.h"
-#include "Memory.h"
 #include "Optional.h"
 #include BOOST_PROCESS_V1_HEADER(args.hpp)
 #include BOOST_PROCESS_V1_HEADER(child.hpp)
@@ -75,7 +74,7 @@ public:
     {
         ASSERT(!my_child, "Process started already!");
 
-#if TRINITY_COMPILER_IS_MICROSOFT
+#if TRINITY_COMPILER == TRINITY_COMPILER_MICROSOFT
 #pragma warning(push)
 #pragma warning(disable:4297)
 /*
@@ -89,7 +88,7 @@ public:
 #endif
         bp::ipstream outStream;
         bp::ipstream errStream;
-#if TRINITY_COMPILER_IS_MICROSOFT
+#if TRINITY_COMPILER == TRINITY_COMPILER_MICROSOFT
 #pragma warning(pop)
 #endif
 
@@ -105,7 +104,7 @@ public:
         }
 
         // prepare file with only read permission (boost process opens with read_write)
-        auto inputFile = Trinity::make_unique_ptr_with_deleter<&::fclose>(!input_file.empty() ? fopen(input_file.c_str(), "rb") : nullptr);
+        auto inputFile = std::shared_ptr<FILE>(!input_file.empty() ? fopen(input_file.c_str(), "rb") : nullptr, [](FILE* f) { if (f) fclose(f); });
 
         std::error_code ec;
 

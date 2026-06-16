@@ -52,22 +52,9 @@ void AddSC_boss_mal_ganis();
 void AddSC_boss_meathook();
 void AddSC_culling_of_stratholme();
 void AddSC_instance_culling_of_stratholme();
-// CoT End Time
-void AddSC_instance_end_time();
-// CoT Hour of Twilight
-void AddSC_instance_hour_of_twilight();
-// CoT Well of Eternity
-void AddSC_instance_well_of_eternity();
 // Dire Maul
 void AddSC_instance_dire_maul();
-// Dragon Soul
-void AddSC_instance_dragon_soul();
 // Ragefire Chasm
-void AddSC_boss_adarogg();
-void AddSC_boss_dark_shaman_koranthal();
-void AddSC_boss_slagmaw();
-void AddSC_boss_lava_guard_gordoth();
-void AddSC_ragefire_chasm();
 void AddSC_instance_ragefire_chasm();
 // Maraudon
 void AddSC_boss_celebras_the_cursed();
@@ -86,7 +73,6 @@ void AddSC_boss_amnennar_the_coldbringer();
 void AddSC_razorfen_downs();
 void AddSC_instance_razorfen_downs();
 // Razorfen Kraul
-void AddSC_razorfen_kraul();
 void AddSC_instance_razorfen_kraul();
 // Ruins of ahn'qiraj
 void AddSC_boss_kurinnaxx();
@@ -96,6 +82,7 @@ void AddSC_boss_buru();
 void AddSC_boss_ayamiss();
 void AddSC_boss_ossirian();
 void AddSC_instance_ruins_of_ahnqiraj();
+void AddSC_ruins_of_ahnqiraj();
 // Temple of ahn'qiraj
 void AddSC_boss_cthun();
 void AddSC_boss_viscidus();
@@ -108,15 +95,7 @@ void AddSC_boss_twinemperors();
 void AddSC_boss_ouro();
 void AddSC_npc_anubisath_sentinel();
 void AddSC_instance_temple_of_ahnqiraj();
-// Throne of the Four Winds
-void AddSC_instance_throne_of_the_four_winds();
-// The Lost City of the Tol'vir
-void AddSC_boss_general_husam();
-void AddSC_boss_lockmaw();
-void AddSC_instance_lost_city_of_the_tolvir();
-// The Vortex Pinnacle
-void AddSC_instance_vortex_pinnacle();
-void AddSC_vortex_pinnacle();
+void AddSC_temple_of_ahnqiraj();
 // Wailing caverns
 void AddSC_wailing_caverns();
 void AddSC_instance_wailing_caverns();
@@ -124,22 +103,12 @@ void AddSC_instance_wailing_caverns();
 void AddSC_boss_zum_rah();
 void AddSC_zulfarrak();
 void AddSC_instance_zulfarrak();
-// Halls of Origination
-void AddSC_instance_halls_of_origination();
-void AddSC_boss_temple_guardian_anhuur();
-void AddSC_boss_earthrager_ptah();
-void AddSC_boss_anraphet();
-void AddSC_halls_of_origination();
-// Firelands
-void AddSC_instance_firelands();
-void AddSC_firelands();
-void AddSC_boss_alysrazor();
-void AddSC_boss_baleroc();
 
 void AddSC_ashenvale();
 void AddSC_azshara();
 void AddSC_azuremyst_isle();
 void AddSC_bloodmyst_isle();
+void AddSC_boss_azuregos();
 void AddSC_darkshore();
 void AddSC_desolace();
 void AddSC_durotar();
@@ -147,7 +116,6 @@ void AddSC_dustwallow_marsh();
 void AddSC_felwood();
 void AddSC_feralas();
 void AddSC_moonglade();
-void AddSC_mulgore();
 void AddSC_orgrimmar();
 void AddSC_silithus();
 // void AddSC_stonetalon_mountains();
@@ -198,22 +166,9 @@ void AddKalimdorScripts()
     AddSC_boss_meathook();
     AddSC_culling_of_stratholme();
     AddSC_instance_culling_of_stratholme();
-    // CoT End Time
-    AddSC_instance_end_time();
-    // CoT Hour of Twilight
-    AddSC_instance_hour_of_twilight();
-    // CoT Well of Eternity
-    AddSC_instance_well_of_eternity();
     // Dire Maul
     AddSC_instance_dire_maul();
-    // Dragon Soul
-    AddSC_instance_dragon_soul();
     // Ragefire Chasm
-    AddSC_boss_adarogg();
-    AddSC_boss_dark_shaman_koranthal();
-    AddSC_boss_slagmaw();
-    AddSC_boss_lava_guard_gordoth();
-    AddSC_ragefire_chasm();
     AddSC_instance_ragefire_chasm();
     //Maraudon
     AddSC_boss_celebras_the_cursed();
@@ -232,7 +187,6 @@ void AddKalimdorScripts()
     AddSC_razorfen_downs();
     AddSC_instance_razorfen_downs();
     // Razorfen Kraul
-    AddSC_razorfen_kraul();
     AddSC_instance_razorfen_kraul();
     // Ruins of ahn'qiraj
     AddSC_boss_kurinnaxx();
@@ -242,6 +196,7 @@ void AddKalimdorScripts()
     AddSC_boss_ayamiss();
     AddSC_boss_ossirian();
     AddSC_instance_ruins_of_ahnqiraj();
+    AddSC_ruins_of_ahnqiraj();
     // Temple of ahn'qiraj
     AddSC_boss_cthun();
     AddSC_boss_viscidus();
@@ -254,15 +209,7 @@ void AddKalimdorScripts()
     AddSC_boss_ouro();
     AddSC_npc_anubisath_sentinel();
     AddSC_instance_temple_of_ahnqiraj();
-    // Throne of the Four Winds
-    AddSC_instance_throne_of_the_four_winds();
-    // The Lost City of the Tol'vir
-    AddSC_boss_general_husam();
-    AddSC_boss_lockmaw();
-    AddSC_instance_lost_city_of_the_tolvir();
-    // The Vortex Pinnacle
-    AddSC_instance_vortex_pinnacle();
-    AddSC_vortex_pinnacle();
+    AddSC_temple_of_ahnqiraj();
     // Wailing caverns
     AddSC_wailing_caverns();
     AddSC_instance_wailing_caverns();
@@ -275,6 +222,7 @@ void AddKalimdorScripts()
     AddSC_azshara();
     AddSC_azuremyst_isle();
     AddSC_bloodmyst_isle();
+    AddSC_boss_azuregos();
     AddSC_darkshore();
     AddSC_desolace();
     AddSC_durotar();
@@ -282,7 +230,6 @@ void AddKalimdorScripts()
     AddSC_felwood();
     AddSC_feralas();
     AddSC_moonglade();
-    AddSC_mulgore();
     AddSC_orgrimmar();
     AddSC_silithus();
     // AddSC_stonetalon_mountains();
@@ -292,15 +239,4 @@ void AddKalimdorScripts()
     AddSC_thunder_bluff();
     // AddSC_ungoro_crater();
     AddSC_winterspring();
-    // Halls of Origination
-    AddSC_instance_halls_of_origination();
-    AddSC_boss_temple_guardian_anhuur();
-    AddSC_boss_earthrager_ptah();
-    AddSC_boss_anraphet();
-    AddSC_halls_of_origination();
-    // Firelands
-    AddSC_instance_firelands();
-    AddSC_firelands();
-    AddSC_boss_alysrazor();
-    AddSC_boss_baleroc();
 }

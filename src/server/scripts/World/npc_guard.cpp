@@ -21,7 +21,6 @@
 #include "Random.h"
 #include "ScriptMgr.h"
 #include "SpellInfo.h"
-#include "CreatureAIImpl.h"
 
 enum GuardMisc
 {
@@ -57,10 +56,10 @@ struct npc_guard_generic : public GuardAI
     {
         _scheduler.CancelAll();
         _combatScheduler.CancelAll();
-        _scheduler.Schedule(Seconds(1), [this](TaskContext& context)
+        _scheduler.Schedule(Seconds(1), [this](TaskContext context)
         {
             // Find a spell that targets friendly and applies an aura (these are generally buffs)
-            if (SpellInfo const* spellInfo = SelectSpell(me, 0, 0, SELECT_TARGET_ANY_FRIEND, 0, 0, SELECT_EFFECT_AURA))
+            if (SpellInfo const* spellInfo = SelectSpell(me, 0, 0, SELECT_TARGET_ANY_FRIEND, 0, 0, 0, 0, SELECT_EFFECT_AURA))
                 DoCast(me, spellInfo->Id);
 
             context.Repeat(Minutes(10));
@@ -115,7 +114,7 @@ struct npc_guard_generic : public GuardAI
         if (me->GetEntry() == NPC_CENARION_HOLD_INFANTRY)
             Talk(SAY_GUARD_SIL_AGGRO, who);
 
-        _combatScheduler.Schedule(Seconds(1), [this](TaskContext& meleeContext)
+        _combatScheduler.Schedule(Seconds(1), [this](TaskContext meleeContext)
         {
             Unit* victim = me->GetVictim();
             if (!me->isAttackReady() || !me->IsWithinMeleeRange(victim))
@@ -123,29 +122,33 @@ struct npc_guard_generic : public GuardAI
                 meleeContext.Repeat();
                 return;
             }
-            if (roll_chance(20))
+            if (roll_chance_i(20))
             {
-                if (SpellInfo const* spellInfo = SelectSpell(me->GetVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, NOMINAL_MELEE_RANGE, SELECT_EFFECT_DONTCARE))
+                if (SpellInfo const* spellInfo = SelectSpell(me->GetVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, 0, 0, NOMINAL_MELEE_RANGE, SELECT_EFFECT_DONTCARE))
                 {
                     me->resetAttackTimer();
                     DoCastVictim(spellInfo->Id);
+                    meleeContext.Repeat();
+                    return;
                 }
             }
+            me->AttackerStateUpdate(victim);
+            me->resetAttackTimer();
             meleeContext.Repeat();
-        }).Schedule(Seconds(5), [this](TaskContext& spellContext)
+        }).Schedule(Seconds(5), [this](TaskContext spellContext)
         {
             bool healing = false;
             SpellInfo const* spellInfo = nullptr;
 
             // Select a healing spell if less than 30% hp and ONLY 33% of the time
-            if (me->HealthBelowPct(30) && roll_chance(33))
-                spellInfo = SelectSpell(me, 0, 0, SELECT_TARGET_ANY_FRIEND, 0, 0, SELECT_EFFECT_HEALING);
+            if (me->HealthBelowPct(30) && roll_chance_i(33))
+                spellInfo = SelectSpell(me, 0, 0, SELECT_TARGET_ANY_FRIEND, 0, 0, 0, 0, SELECT_EFFECT_HEALING);
 
             // No healing spell available, check if we can cast a ranged spell
             if (spellInfo)
                 healing = true;
             else
-                spellInfo = SelectSpell(me->GetVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, NOMINAL_MELEE_RANGE, 0, SELECT_EFFECT_DONTCARE);
+                spellInfo = SelectSpell(me->GetVictim(), 0, 0, SELECT_TARGET_ANY_ENEMY, 0, 0, NOMINAL_MELEE_RANGE, 0, SELECT_EFFECT_DONTCARE);
 
             // Found a spell
             if (spellInfo)
@@ -201,19 +204,19 @@ struct npc_guard_shattrath_faction : public GuardAI
         if (!UpdateVictim())
             return;
 
-        _scheduler.Update(diff);
+        _scheduler.Update(diff, std::bind(&GuardAI::DoMeleeAttackIfReady, this));
     }
 
     void ScheduleVanish()
     {
-        _scheduler.Schedule(Seconds(5), [this](TaskContext& banishContext)
+        _scheduler.Schedule(Seconds(5), [this](TaskContext banishContext)
         {
             Unit* temp = me->GetVictim();
             if (temp && temp->GetTypeId() == TYPEID_PLAYER)
             {
                 DoCast(temp, me->GetEntry() == NPC_ALDOR_VINDICATOR ? SPELL_BANISHED_SHATTRATH_S : SPELL_BANISHED_SHATTRATH_A);
                 ObjectGuid playerGUID = temp->GetGUID();
-                banishContext.Schedule(Seconds(9), [this, playerGUID](TaskContext const& /*exileContext*/)
+                banishContext.Schedule(Seconds(9), [this, playerGUID](TaskContext /*exileContext*/)
                 {
                     if (Unit* temp = ObjectAccessor::GetUnit(*me, playerGUID))
                     {

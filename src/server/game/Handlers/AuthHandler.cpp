@@ -16,72 +16,24 @@
  */
 
 #include "WorldSession.h"
-#include "AuthenticationPackets.h"
-#include "BattlenetRpcErrorCodes.h"
-#include "CharacterTemplateDataStore.h"
 #include "ClientConfigPackets.h"
-#include "DisableMgr.h"
-#include "GameTime.h"
-#include "ObjectMgr.h"
-#include "RBAC.h"
-#include "RealmList.h"
-#include "SystemPackets.h"
-#include "Timezone.h"
-#include "Util.h"
-#include "World.h"
 
-void WorldSession::SendAuthResponse(uint32 code, bool queued, uint32 queuePos)
+void WorldSession::SendAuthResponse(uint8 code, bool shortForm, uint32 queuePos)
 {
-    WorldPackets::Auth::AuthResponse response;
-    response.Result = code;
+    WorldPacket packet(SMSG_AUTH_RESPONSE, 1 + 4 + 1 + 4 + 1 + (4 + 1));
+    packet << uint8(code);
+    packet << uint32(0);                                   // BillingTimeRemaining
+    packet << uint8(0);                                    // BillingPlanFlags
+    packet << uint32(0);                                   // BillingTimeRested
+    packet << uint8(Expansion());                          // 0 - normal, 1 - TBC, 2 - WOTLK, must be set in database manually for each account
 
-    if (code == ERROR_OK)
+    if (!shortForm)
     {
-        response.SuccessInfo.emplace();
-
-        response.SuccessInfo->ActiveExpansionLevel = GetExpansion();
-        response.SuccessInfo->AccountExpansionLevel = GetAccountExpansion();
-        response.SuccessInfo->Time = int32(GameTime::GetGameTime());
-
-        // Send current home realm. Also there is no need to send it later in realm queries.
-        if (std::shared_ptr<Realm const> currentRealm = sRealmList->GetCurrentRealm())
-        {
-            response.SuccessInfo->VirtualRealmAddress = currentRealm->Id.GetAddress();
-            response.SuccessInfo->VirtualRealms.emplace_back(currentRealm->Id.GetAddress(), true, false, currentRealm->Name, currentRealm->NormalizedName);
-        }
-
-        if (HasPermission(rbac::RBAC_PERM_USE_CHARACTER_TEMPLATES))
-            for (auto&& templ : sCharacterTemplateDataStore->GetCharacterTemplates())
-                response.SuccessInfo->Templates.push_back(&templ.second);
-
-        response.SuccessInfo->AvailableClasses = &sObjectMgr->GetClassExpansionRequirements();
-
-        // TEMPORARY - prevent creating characters in uncompletable zone
-        // This has the side effect of disabling Exile's Reach choice clientside without actually forcing character templates
-        response.SuccessInfo->ForceCharacterTemplate = DisableMgr::IsDisabledFor(DISABLE_TYPE_MAP, 2175 /*Exile's Reach*/, nullptr);
+        packet << uint32(queuePos);                             // Queue position
+        packet << uint8(0);                                     // Realm has a free character migration - bool
     }
 
-    if (queued)
-    {
-        response.WaitInfo.emplace();
-        response.WaitInfo->WaitCount = queuePos;
-    }
-
-    SendPacket(response.Write());
-}
-
-void WorldSession::SendAuthWaitQueue(uint32 position)
-{
-    if (position)
-    {
-        WorldPackets::Auth::WaitQueueUpdate waitQueueUpdate;
-        waitQueueUpdate.WaitInfo.WaitCount = position;
-        waitQueueUpdate.WaitInfo.WaitTime = 0;
-        waitQueueUpdate.WaitInfo.HasFCM = false;
-        SendPacket(waitQueueUpdate.Write());
-    }
-    else
-        SendPacket(WorldPackets::Auth::WaitQueueFinish().Write());
+    SendPacket(&packet);
 }
 
 void WorldSession::SendClientCacheVersion(uint32 version)
@@ -90,77 +42,4 @@ void WorldSession::SendClientCacheVersion(uint32 version)
     cache.CacheVersion = version;
 
     SendPacket(cache.Write());
-}
-
-void WorldSession::SendSetTimeZoneInformation()
-{
-    Minutes timezoneOffset = Trinity::Timezone::GetSystemZoneOffset(false);
-    std::string realTimezone = Trinity::Timezone::GetSystemZoneName();
-    std::string_view clientSupportedTZ = Trinity::Timezone::FindClosestClientSupportedTimezone(realTimezone, timezoneOffset);
-
-    WorldPackets::System::SetTimeZoneInformation packet;
-    packet.ServerTimeTZ = clientSupportedTZ;
-    packet.GameTimeTZ = clientSupportedTZ;
-    packet.ServerRegionalTimeTZ = clientSupportedTZ;
-    SendPacket(packet.Write());
-}
-
-void WorldSession::SendFeatureSystemStatusGlueScreen()
-{
-    WorldPackets::System::FeatureSystemStatusGlueScreen features;
-    features.BpayStoreAvailable = false;
-    features.BpayStoreDisabledByParentalControls = false;
-    features.CharUndeleteEnabled = sWorld->getBoolConfig(CONFIG_FEATURE_SYSTEM_CHARACTER_UNDELETE_ENABLED);
-    features.MaxCharactersOnThisRealm = sWorld->getIntConfig(CONFIG_CHARACTERS_PER_REALM);
-    features.MinimumExpansionLevel = EXPANSION_CLASSIC;
-    features.MaximumExpansionLevel = sWorld->getIntConfig(CONFIG_EXPANSION);
-
-    features.EuropaTicketSystemStatus.emplace();
-    features.EuropaTicketSystemStatus->ThrottleState.MaxTries = 10;
-    features.EuropaTicketSystemStatus->ThrottleState.PerMilliseconds = 60000;
-    features.EuropaTicketSystemStatus->ThrottleState.TryCount = 1;
-    features.EuropaTicketSystemStatus->ThrottleState.LastResetTimeBeforeNow = 111111;
-    features.EuropaTicketSystemStatus->TicketsEnabled = sWorld->getBoolConfig(CONFIG_SUPPORT_TICKETS_ENABLED);
-    features.EuropaTicketSystemStatus->BugsEnabled = sWorld->getBoolConfig(CONFIG_SUPPORT_BUGS_ENABLED);
-    features.EuropaTicketSystemStatus->ComplaintsEnabled = sWorld->getBoolConfig(CONFIG_SUPPORT_COMPLAINTS_ENABLED);
-    features.EuropaTicketSystemStatus->SuggestionsEnabled = sWorld->getBoolConfig(CONFIG_SUPPORT_SUGGESTIONS_ENABLED);
-
-    for (World::GameRule const& gameRule : sWorld->GetGameRules())
-    {
-        WorldPackets::System::GameRuleValuePair& rule = features.GameRules.emplace_back();
-        rule.Rule = AsUnderlyingType(gameRule.Rule);
-        std::visit([&]<typename T>(T value)
-        {
-            if constexpr (std::is_same_v<T, float>)
-                rule.ValueF = value;
-            else
-                rule.Value = value;
-        }, gameRule.Value);
-    }
-
-    features.AvailableGameModeIDs.push_back(8); // GameMode.db2, standard
-
-    SendPacket(features.Write());
-
-    WorldPackets::System::MirrorVarSingle vars[] =
-    {
-        { "raidLockoutExtendEnabled"sv, "1"sv },
-        { "sellAllJunkEnabled"sv, "1"sv },
-        { "bypassItemLevelScalingCode"sv, "0"sv },
-        { "shop2Enabled"sv, "0"sv },
-        { "bpayStoreEnable"sv, "0"sv },
-        { "recentAlliesEnabledClient"sv, "0"sv },
-        { "browserEnabled"sv, "0"sv },
-        { "housingEnableCreateGuildNeighborhood"sv, "0"sv },
-        { "housingEnableDeleteHouse"sv, "0"sv },
-        { "housingServiceEnabled"sv, "0"sv },
-        { "housingEnableMoveHouse"sv, "0"sv },
-        { "housingEnableCreateCharterNeighborhood"sv, "0"sv },
-        { "housingEnableBuyHouse"sv, "0"sv },
-        { "housingMarketEnabled"sv, "0"sv },
-    };
-
-    WorldPackets::System::MirrorVars variables;
-    variables.Variables = vars;
-    SendPacket(variables.Write());
 }

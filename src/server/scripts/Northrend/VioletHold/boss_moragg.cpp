@@ -22,20 +22,21 @@
 #include "SpellScript.h"
 #include "violet_hold.h"
 
-enum Spells
+enum MoraggSpells
 {
-    SPELL_CORROSIVE_SALIVA                     = 54527,
-    SPELL_OPTIC_LINK                           = 54396,
+    SPELL_CORROSIVE_SALIVA       = 54527,
+    SPELL_OPTIC_LINK             = 54396,
+    SPELL_RAY_OF_PAIN            = 54438,
+    SPELL_RAY_OF_SUFFERING       = 54442,
 
     // Visual
-    SPELL_OPTIC_LINK_LEVEL_1                   = 54393,
-    SPELL_OPTIC_LINK_LEVEL_2                   = 54394,
-    SPELL_OPTIC_LINK_LEVEL_3                   = 54395
+    SPELL_OPTIC_LINK_LEVEL_1     = 54393,
+    SPELL_OPTIC_LINK_LEVEL_2     = 54394,
+    SPELL_OPTIC_LINK_LEVEL_3     = 54395
 };
 
-#define SPELL_RAY_OF_PAIN DUNGEON_MODE(54438,59523)
-#define SPELL_RAY_OF_SUFFERING DUNGEON_MODE(54442,59524)
-
+// 29316 - Moragg
+// 32235 - Chaos Watcher
 struct boss_moragg : public BossAI
 {
     boss_moragg(Creature* creature) : BossAI(creature, DATA_MORAGG) { }
@@ -61,7 +62,8 @@ struct boss_moragg : public BossAI
         if (!UpdateVictim())
             return;
 
-        scheduler.Update(diff);
+        scheduler.Update(diff,
+            std::bind(&BossAI::DoMeleeAttackIfReady, this));
     }
 
     void ScheduleTasks() override
@@ -72,17 +74,17 @@ struct boss_moragg : public BossAI
             DoCast(me, SPELL_RAY_OF_SUFFERING);
         });
 
-        scheduler.Schedule(Seconds(15), [this](TaskContext& task)
+        scheduler.Schedule(15s, [this](TaskContext task)
         {
             if (Unit* target = SelectTarget(SelectTargetMethod::Random, 0, 50.0f, true))
                 DoCast(target, SPELL_OPTIC_LINK);
-            task.Repeat(Seconds(25));
+            task.Repeat(25s);
         });
 
-        scheduler.Schedule(Seconds(5), [this](TaskContext& task)
+        scheduler.Schedule(5s, [this](TaskContext task)
         {
             DoCastVictim(SPELL_CORROSIVE_SALIVA);
-            task.Repeat(Seconds(10));
+            task.Repeat(10s);
         });
     }
 };
@@ -91,6 +93,8 @@ struct boss_moragg : public BossAI
 // 54442, 59524 - Ray of Suffering
 class spell_moragg_ray : public AuraScript
 {
+    PrepareAuraScript(spell_moragg_ray);
+
     void OnPeriodic(AuraEffect const* aurEff)
     {
         PreventDefaultAction();
@@ -112,15 +116,7 @@ class spell_moragg_ray : public AuraScript
 // 54396 - Optic Link
 class spell_moragg_optic_link : public AuraScript
 {
-    bool Validate(SpellInfo const* /*spellInfo*/) override
-    {
-        return ValidateSpellInfo(
-        {
-            SPELL_OPTIC_LINK_LEVEL_3,
-            SPELL_OPTIC_LINK_LEVEL_2,
-            SPELL_OPTIC_LINK_LEVEL_1
-        });
-    }
+    PrepareAuraScript(spell_moragg_optic_link);
 
     void OnPeriodic(AuraEffect const* aurEff)
     {

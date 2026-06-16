@@ -15,29 +15,17 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* ScriptData
-SDName: Instance_Wailing_Caverns
-SD%Complete: 99
-SDComment: Everything seems to work, still need some checking
-SDCategory: Wailing Caverns
-EndScriptData */
-
 #include "ScriptMgr.h"
 #include "Creature.h"
+#include "CreatureAI.h"
 #include "InstanceScript.h"
-#include "Map.h"
 #include "wailing_caverns.h"
 
-static constexpr DungeonEncounterData Encounters[] =
+static constexpr ObjectData creatureData[] =
 {
-    { BOSS_LADY_ANACONDRA, {{ 585 } } },
-    { BOSS_LORD_COBRAHN, {{ 586 } } },
-    { BOSS_KRESH, {{ 587 } } },
-    { BOSS_LORD_PYTHAS, {{ 588 } } },
-    { BOSS_SKUM, {{ 589 } } },
-    { BOSS_LORD_SERPENTIS, {{ 590 } } },
-    { BOSS_VERDAN_THE_EVERLIVING, {{ 591 } } },
-    { BOSS_MUTANUS_THE_DEVOURER, {{ 592 } } },
+    { NPC_DISCIPLE,              DATA_DISCIPLE },
+    { NPC_NARALEX,               DATA_NARALEX  },
+    { 0,                         0             } // END
 };
 
 class instance_wailing_caverns : public InstanceMapScript
@@ -55,77 +43,37 @@ public:
         instance_wailing_caverns_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
         {
             SetHeaders(DataHeader);
-            SetBossNumber(MAX_ENCOUNTER);
-            LoadDungeonEncounterData(Encounters);
-
-            yelled = false;
+            SetBossNumber(EncounterCount);
+            LoadObjectData(creatureData, nullptr);
         }
 
-        bool yelled;
-        ObjectGuid NaralexGUID;
-
-        void OnCreatureCreate(Creature* creature) override
+        bool SetBossState(uint32 type, EncounterState state) override
         {
-            if (creature->GetEntry() == DATA_NARALEX)
-                NaralexGUID = creature->GetGUID();
-        }
+            if (!InstanceScript::SetBossState(type, state))
+                return false;
 
-        void OnUnitDeath(Unit* unit) override
-        {
-            switch (unit->GetEntry())
+            switch (type)
             {
-                case NPC_KRESH:                 SetBossState(BOSS_KRESH, DONE); break;
-                case NPC_SKUM:                  SetBossState(BOSS_SKUM, DONE); break;
-                case NPC_VERDAN_THE_EVERLIVING: SetBossState(BOSS_VERDAN_THE_EVERLIVING, DONE); break;
+                case DATA_LORD_COBRAHN:
+                case DATA_LORD_PYTHAS:
+                case DATA_LADY_ANACONDRA:
+                case DATA_LORD_SERPENTIS:
+                    if (state == DONE)
+                    {
+                        if (GetBossState(DATA_LORD_COBRAHN) == DONE && GetBossState(DATA_LORD_PYTHAS) == DONE
+                            && GetBossState(DATA_LADY_ANACONDRA) == DONE && GetBossState(DATA_LORD_SERPENTIS) == DONE)
+                        {
+                            if (Creature* disciple = GetCreature(DATA_DISCIPLE))
+                                disciple->AI()->DoAction(ACTION_ALL_DONE);
+                        }
+                    }
+                    break;
                 default:
                     break;
             }
-        }
-
-        void SetData(uint32 type, uint32 data) override
-        {
-            switch (type)
-            {
-                case TYPE_LORD_COBRAHN:         SetBossState(BOSS_LORD_COBRAHN, EncounterState(data));break;
-                case TYPE_LORD_PYTHAS:          SetBossState(BOSS_LORD_PYTHAS, EncounterState(data));break;
-                case TYPE_LADY_ANACONDRA:       SetBossState(BOSS_LADY_ANACONDRA, EncounterState(data));break;
-                case TYPE_LORD_SERPENTIS:       SetBossState(BOSS_LORD_SERPENTIS, EncounterState(data));break;
-                case TYPE_NARALEX_EVENT:        SetBossState(4, EncounterState(data));break;
-                case TYPE_NARALEX_PART1:        SetBossState(5, EncounterState(data));break;
-                case TYPE_NARALEX_PART2:        SetBossState(6, EncounterState(data));break;
-                case TYPE_NARALEX_PART3:        SetBossState(7, EncounterState(data));break;
-                case TYPE_MUTANUS_THE_DEVOURER: SetBossState(BOSS_MUTANUS_THE_DEVOURER, EncounterState(data));break;
-                case TYPE_NARALEX_YELLED:       yelled = true;      break;
-                default:                        break;
-            }
-        }
-
-        uint32 GetData(uint32 type) const override
-        {
-            switch (type)
-            {
-                case TYPE_LORD_COBRAHN:         return GetBossState(BOSS_LORD_COBRAHN);
-                case TYPE_LORD_PYTHAS:          return GetBossState(BOSS_LORD_PYTHAS);
-                case TYPE_LADY_ANACONDRA:       return GetBossState(BOSS_LADY_ANACONDRA);
-                case TYPE_LORD_SERPENTIS:       return GetBossState(BOSS_LORD_SERPENTIS);
-                case TYPE_NARALEX_EVENT:        return GetBossState(4);
-                case TYPE_NARALEX_PART1:        return GetBossState(5);
-                case TYPE_NARALEX_PART2:        return GetBossState(6);
-                case TYPE_NARALEX_PART3:        return GetBossState(7);
-                case TYPE_MUTANUS_THE_DEVOURER: return GetBossState(BOSS_MUTANUS_THE_DEVOURER);
-                case TYPE_NARALEX_YELLED:       return yelled;
-                default:                        break;
-            }
-            return 0;
-        }
-
-        ObjectGuid GetGuidData(uint32 data) const override
-        {
-            if (data == DATA_NARALEX)return NaralexGUID;
-            return ObjectGuid::Empty;
+            return true;
         }
     };
-
 };
 
 void AddSC_instance_wailing_caverns()

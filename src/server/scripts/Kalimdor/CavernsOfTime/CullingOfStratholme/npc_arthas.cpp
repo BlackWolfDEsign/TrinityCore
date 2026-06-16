@@ -31,7 +31,6 @@
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
 #include "ScriptSystem.h"
-#include "SmartEnum.h"
 #include "SpellScript.h"
 #include "SplineChainMovementGenerator.h"
 #include "TemporarySummon.h"
@@ -502,7 +501,8 @@ static std::array<Position, NUM_POSITIONS> const ArthasPositions =
     }
 };
 
-G3D::Vector3 const ChromieSplinePos[] =
+uint32 const chromiePathSize = 3;
+G3D::Vector3 const ChromieSplinePos[chromiePathSize] =
 {
     { 2320.632f, 1507.193f, 152.5081f },
     { 2319.823f, 1506.605f, 152.5081f },
@@ -907,6 +907,8 @@ public:
             }
             else
                 _exorcismCooldown -= diff;
+
+            DoMeleeAttackIfReady();
         }
 
         void UpdateAI(uint32 diff) override
@@ -1467,16 +1469,17 @@ public:
                             chromie->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
                             std::function<void(Movement::MoveSplineInit&)> initializer = [](Movement::MoveSplineInit& init)
                             {
+                                Movement::PointsArray path(ChromieSplinePos, ChromieSplinePos + chromiePathSize);
                                 init.SetFly();
                                 init.SetWalk(true);
-                                init.MovebyPath(ChromieSplinePos);
+                                init.MovebyPath(path, 0);
                             };
                             chromie->GetMotionMaster()->LaunchMoveSpline(std::move(initializer), 0, MOTION_PRIORITY_NORMAL, POINT_MOTION_TYPE);
                         }
                         break;
                     case RP5_EVENT_CHROMIE_LAND:
                         if (Creature* chromie = me->FindNearestCreature(NPC_CHROMIE_3, 100.0f, true))
-                            chromie->SetAnimTier(AnimTier::Ground, true);
+                            chromie->SetAnimTier(AnimTier::Ground);
                         break;
                     case RP5_EVENT_CHROMIE_TRANSFORM:
                         if (Creature* chromie = me->FindNearestCreature(NPC_CHROMIE_3, 100.0f, true))
@@ -1548,7 +1551,7 @@ public:
 
         void EnterEvadeMode(EvadeReason why) override
         {
-            TC_LOG_TRACE("scripts.cos", "npc_arthas_stratholmeAI::EnterEvadeMode: why = {} ", EnumUtils::ToConstant(why));
+            TC_LOG_TRACE("scripts.cos", "npc_arthas_stratholmeAI::EnterEvadeMode: why = {} ", why);
             ScriptedAI::EnterEvadeMode(why);
         }
 
@@ -1654,6 +1657,8 @@ struct npc_stratholme_rp_dummy : NullCreatureAI
 // 50773 - Crusader Strike
 class spell_stratholme_crusader_strike : public SpellScript
 {
+    PrepareSpellScript(spell_stratholme_crusader_strike);
+
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
         if (Unit* target = GetHitUnit())

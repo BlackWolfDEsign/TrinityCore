@@ -18,12 +18,12 @@
 #ifndef _MODELINSTANCE_H_
 #define _MODELINSTANCE_H_
 
-#include "Define.h"
-#include <memory>
-#include <G3D/AABox.h>
 #include <G3D/Matrix3.h>
-#include <G3D/Ray.h>
 #include <G3D/Vector3.h>
+#include <G3D/AABox.h>
+#include <G3D/Ray.h>
+
+#include "Define.h"
 
 namespace VMAP
 {
@@ -32,59 +32,48 @@ namespace VMAP
     struct LocationInfo;
     enum class ModelIgnoreFlags : uint32;
 
-    enum ModelInstanceFlags
+    enum ModelFlags
     {
-        MOD_HAS_BOUND       = 1 << 0,
-        MOD_PARENT_SPAWN    = 1 << 1,
-        MOD_PATH_ONLY       = 1 << 2
+        MOD_M2 = 1,
+        MOD_WORLDSPAWN = 1<<1,
+        MOD_HAS_BOUND = 1<<2
     };
 
-    struct ModelMinimalData
+    class TC_COMMON_API ModelSpawn
     {
-            //Flags, ID, Pos, Rot, Scale, Bound_lo, Bound_hi
-            uint8 flags;
-            uint8 adtId;
+        public:
+            //mapID, tileX, tileY, Flags, ID, Pos, Rot, Scale, Bound_lo, Bound_hi, name
+            uint32 flags;
+            uint16 adtId;
             uint32 ID;
             G3D::Vector3 iPos;
+            G3D::Vector3 iRot;
             float iScale;
             G3D::AABox iBound;
-#ifdef VMAP_DEBUG
             std::string name;
-#endif
+            bool operator==(ModelSpawn const& other) const { return ID == other.ID; }
+            //uint32 hashCode() const { return ID; }
+            // temp?
+            const G3D::AABox& getBounds() const { return iBound; }
 
-            bool operator==(ModelMinimalData const& other) const { return ID == other.ID; }
-            G3D::AABox const& getBounds() const { return iBound; }
-    };
-
-    struct TC_COMMON_API ModelSpawn : public ModelMinimalData
-    {
-            G3D::Vector3 iRot;
-#ifndef VMAP_DEBUG
-            std::string name;
-#endif
-
-            static bool readFromFile(FILE* rf, ModelSpawn& spawn);
+            static bool readFromFile(FILE* rf, ModelSpawn &spawn);
             static bool writeToFile(FILE* rw, ModelSpawn const& spawn);
     };
 
-    class TC_COMMON_API ModelInstance : public ModelMinimalData
+    class TC_COMMON_API ModelInstance: public ModelSpawn
     {
         public:
-            ModelInstance() : iInvScale(0.0f), iModel(nullptr), referencingTiles(0) { }
-            ModelInstance(ModelSpawn const& spawn, std::shared_ptr<WorldModel> model);
+            ModelInstance(): iInvScale(0.0f), iModel(nullptr) { }
+            ModelInstance(ModelSpawn const& spawn, WorldModel* model);
             void setUnloaded() { iModel = nullptr; }
             bool intersectRay(G3D::Ray const& pRay, float& pMaxDist, bool pStopAtFirstHit, ModelIgnoreFlags ignoreFlags) const;
-            bool GetLocationInfo(G3D::Vector3 const& p, LocationInfo& info) const;
-            bool GetLiquidLevel(G3D::Vector3 const& p, LocationInfo& info, float& liqHeight) const;
-            G3D::Matrix3 const& GetInvRot() const { return iInvRot; }
-            WorldModel const* getWorldModel() const { return iModel.get(); }
-            void AddTileReference() { ++referencingTiles; }
-            uint32 RemoveTileReference() { return --referencingTiles; }
+            bool GetLocationInfo(G3D::Vector3 const& p, LocationInfo &info) const;
+            bool GetLiquidLevel(G3D::Vector3 const& p, LocationInfo &info, float &liqHeight) const;
+            WorldModel* getWorldModel() { return iModel; }
         protected:
             G3D::Matrix3 iInvRot;
             float iInvScale;
-            std::shared_ptr<WorldModel> iModel;
-            uint32 referencingTiles;
+            WorldModel* iModel;
     };
 } // namespace VMAP
 

@@ -26,15 +26,16 @@
 #include "Map.h"
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
-#include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
+#include "Spell.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "SpellInfo.h"
-#include "WaypointDefines.h"
+#include "SpellMgr.h"
+#include "PassiveAI.h"
 
 enum HeadlessHorsemanSays
 {
@@ -153,33 +154,29 @@ enum HeadlessHorsemanMisc
     QUEST_CALL_THE_HEADLESS_HORSEMAN    = 11405
 };
 
-WaypointPath const HeadlessHorsemanFlightPoints =
+uint32 const HorsemanPathSize = 20;
+Position const HeadlessHorsemanFlightPoints[HorsemanPathSize] =
 {
-    POINT_HORSEMAN_FINISH_PATH,
-    {
-        { 0, 1765.00f, 1347.00f, 19.00f },
-        { 1, 1784.00f, 1346.80f, 25.40f },
-        { 2, 1803.30f, 1347.60f, 33.00f },
-        { 3, 1824.00f, 1350.00f, 42.60f },
-        { 4, 1838.80f, 1353.20f, 49.80f },
-        { 5, 1852.00f, 1357.60f, 55.70f },
-        { 6, 1861.30f, 1364.00f, 59.40f },
-        { 7, 1866.30f, 1374.80f, 61.70f },
-        { 8, 1864.00f, 1387.30f, 63.20f },
-        { 9, 1854.80f, 1399.40f, 64.10f },
-        { 10, 1844.00f, 1406.90f, 64.10f },
-        { 11, 1824.30f, 1411.40f, 63.30f },
-        { 12, 1801.00f, 1412.30f, 60.40f },
-        { 13, 1782.00f, 1410.10f, 55.50f },
-        { 14, 1770.50f, 1405.20f, 50.30f },
-        { 15, 1765.20f, 1400.70f, 46.60f },
-        { 16, 1761.40f, 1393.40f, 41.70f },
-        { 17, 1759.10f, 1386.70f, 36.60f },
-        { 18, 1757.80f, 1378.20f, 29.00f },
-        { 19, 1758.00f, 1367.00f, 19.51f }
-    },
-    WaypointMoveType::Run,
-    WaypointPathFlags::FlyingPath
+    { 1765.00f, 1347.00f, 19.00f },
+    { 1784.00f, 1346.80f, 25.40f },
+    { 1803.30f, 1347.60f, 33.00f },
+    { 1824.00f, 1350.00f, 42.60f },
+    { 1838.80f, 1353.20f, 49.80f },
+    { 1852.00f, 1357.60f, 55.70f },
+    { 1861.30f, 1364.00f, 59.40f },
+    { 1866.30f, 1374.80f, 61.70f },
+    { 1864.00f, 1387.30f, 63.20f },
+    { 1854.80f, 1399.40f, 64.10f },
+    { 1844.00f, 1406.90f, 64.10f },
+    { 1824.30f, 1411.40f, 63.30f },
+    { 1801.00f, 1412.30f, 60.40f },
+    { 1782.00f, 1410.10f, 55.50f },
+    { 1770.50f, 1405.20f, 50.30f },
+    { 1765.20f, 1400.70f, 46.60f },
+    { 1761.40f, 1393.40f, 41.70f },
+    { 1759.10f, 1386.70f, 36.60f },
+    { 1757.80f, 1378.20f, 29.00f },
+    { 1758.00f, 1367.00f, 19.51f }
 };
 
 std::vector<uint32> HeadlessHorsemanRandomLaughSound = { SOUNDID_MANIACAL_LAUGH, SOUNDID_MANIACAL_LAUGH_2, SOUNDID_MANIACAL_LAUGH_3 };
@@ -192,7 +189,7 @@ struct npc_headless_horseman_head : public PassiveAI
 {
     npc_headless_horseman_head(Creature* creature) : PassiveAI(creature), _instance(creature->GetInstanceScript()), _phase(PHASE_1)
     {
-        creature->SetDisplayFromModel(0);
+        creature->SetDisplayId(me->GetCreatureTemplate()->Modelid1);
     }
 
     void JustAppeared() override
@@ -203,7 +200,7 @@ struct npc_headless_horseman_head : public PassiveAI
     void HandleInitialSetup()
     {
         DoCastSelf(SPELL_HEADLESS_HORSEMAN_C_HEAD_STUN);
-        me->SetUninteractible(true);
+        me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
         _phase = PHASE_1;
         _events.SetPhase(PHASE_1);
     }
@@ -260,7 +257,7 @@ struct npc_headless_horseman_head : public PassiveAI
     {
         me->RemoveAurasDueToSpell(SPELL_HEADLESS_HORSEMAN_C_HEAD_STUN);
         DoCastSelf(SPELL_HEADLESS_HORSEMAN_C_HEAD_VISUAL, true);
-        me->SetUninteractible(false);
+        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
         me->GetMotionMaster()->MoveRandom(30.0f);
 
         switch (_phase)
@@ -315,11 +312,11 @@ struct npc_headless_horseman_head : public PassiveAI
                         DoCast(horseman, SPELL_HEADLESS_HORSEMAN_C_RETURN_HEAD, true);
                     me->RemoveAllAttackers();
                     me->GetMotionMaster()->Clear();
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     break;
                 case EVENT_RAIN_OF_TREATS:
                     DoCastSelf(SPELL_RAIN_OF_TREATS);
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     _instance->SetData(DATA_PREPARE_RESET, 0);
                     if (GameObject* pumpkin = me->SummonGameObject(GO_PUMPKIN_SHRINE, GOPumpkinSpawnPosition, GOPumpkinSpawnQuat, 7_days))
                         me->RemoveGameObject(pumpkin, false);
@@ -383,6 +380,7 @@ struct boss_headless_horseman : public ScriptedAI
 
     void JustEngagedWith(Unit* /*who*/) override
     {
+        me->SetCombatPulseDelay(5);
         me->setActive(true);
         _events.ScheduleEvent(EVENT_HORSEMAN_CLEAVE, 13s, 0, PHASE_1);
         _events.ScheduleEvent(EVENT_RANDOM_LAUGH, 30s, 60s);
@@ -415,7 +413,7 @@ struct boss_headless_horseman : public ScriptedAI
             case ACTION_HORSEMAN_EVENT_START:
                 DoCastSelf(SPELL_HEADLESS_HORSEMAN_YELL_TIMER, true);
                 DoCastSelf(SPELL_HEADLESS_HORSEMAN_MANIACAL_LAUGH, true);
-                me->GetMotionMaster()->MovePath(HeadlessHorsemanFlightPoints, false);
+                me->GetMotionMaster()->MoveSmoothPath(POINT_HORSEMAN_FINISH_PATH, HeadlessHorsemanFlightPoints, HorsemanPathSize, false);
                 break;
             case ACTION_HORSEMAN_REQUEST_BODY:
                 me->RemoveAurasDueToSpell(SPELL_HEADLESS_HORSEMAN_C_BODY_REGEN_CONFUSE);
@@ -516,11 +514,21 @@ struct boss_headless_horseman : public ScriptedAI
 
     void MovementInform(uint32 type, uint32 id) override
     {
-        if (type != POINT_MOTION_TYPE)
+        if (type != POINT_MOTION_TYPE && type != EFFECT_MOTION_TYPE)
             return;
 
         switch (id)
         {
+            case POINT_HORSEMAN_FINISH_PATH:
+                _introDone = true;
+                me->SetImmuneToPC(false);
+                me->SetDisableGravity(false);
+                me->SetHover(false);
+                me->SetHomePosition(me->GetPosition());
+                DoCastSelf(SPELL_HEADLESS_HORSEMAN_C_BODY_STAGE_1);
+                me->SetReactState(REACT_AGGRESSIVE);
+                DoZoneInCombat();
+                break;
             case POINT_HEAD:
                 me->SetWalk(false);
                 me->RemoveAurasDueToSpell(SPELL_HEADLESS_HORSEMAN_C_HORSEMANS_WHIRLWIND);
@@ -529,21 +537,6 @@ struct boss_headless_horseman : public ScriptedAI
             default:
                 break;
         }
-    }
-
-    void WaypointPathEnded(uint32 /*waypointId*/, uint32 pathId) override
-    {
-        if (pathId != POINT_HORSEMAN_FINISH_PATH)
-            return;
-
-        _introDone = true;
-        me->SetImmuneToPC(false);
-        me->SetDisableGravity(false);
-        me->SetHover(false);
-        me->SetHomePosition(me->GetPosition());
-        DoCastSelf(SPELL_HEADLESS_HORSEMAN_C_BODY_STAGE_1);
-        me->SetReactState(REACT_AGGRESSIVE);
-        DoZoneInCombat();
     }
 
     void UpdateAI(uint32 diff) override
@@ -614,6 +607,8 @@ struct boss_headless_horseman : public ScriptedAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -647,7 +642,7 @@ struct npc_pulsing_pumpkin : public ScriptedAI
         if (id != ACTION_PUMPKIN_SPROUTING_FINISHED)
             return;
 
-        _scheduler.Schedule(1s, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(1s, [this](TaskContext /*context*/)
         {
             me->RemoveAurasDueToSpell(SPELL_PUMPKIN_LIFE_CYCLE);
             me->SetDisableGravity(false);
@@ -657,7 +652,7 @@ struct npc_pulsing_pumpkin : public ScriptedAI
             me->SetImmuneToNPC(true);
             me->SetReactState(REACT_AGGRESSIVE);
             DoZoneInCombat();
-        }).Schedule(11s, [this](TaskContext& squashSoul)
+        }).Schedule(11s, [this](TaskContext squashSoul)
         {
             DoCastVictim(SPELL_SQUASH_SOUL);
             squashSoul.Repeat(10s);
@@ -670,6 +665,8 @@ struct npc_pulsing_pumpkin : public ScriptedAI
             return;
 
         _scheduler.Update(diff);
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -680,15 +677,15 @@ struct npc_flame_bunny : public PassiveAI
 {
     npc_flame_bunny(Creature* creature) : PassiveAI(creature)
     {
-        creature->SetDisplayFromModel(1);
+        creature->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
     }
 
     void Reset() override
     {
-        _scheduler.Schedule(1s, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(1s, [this](TaskContext /*context*/)
         {
             DoCastSelf(SPELL_HEADLESS_HORSEMAN_BURNING_COSMETIC_BASE);
-        }).Schedule(3s, [this](TaskContext& grow)
+        }).Schedule(3s, [this](TaskContext grow)
         {
             DoCastSelf(SPELL_HEADLESS_HORSEMAN_FIRE_SIZE_BIG);
             if (grow.GetRepeatCounter() < 2)
@@ -712,10 +709,10 @@ struct npc_sir_thomas : public PassiveAI
     void Reset() override
     {
         me->RemoveNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
-        me->SetUninteractible(true);
+        me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
         DoCastSelf(SPELL_HEADLESS_HORSEMAN_WISP_INVIS);
 
-        _scheduler.Schedule(9s, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(9s, [this](TaskContext /*context*/)
         {
             DoCastSelf(SPELL_HEADLESS_HORSEMAN_WISP_FLIGHT_MISSILE);
         });
@@ -725,7 +722,7 @@ struct npc_sir_thomas : public PassiveAI
     {
         if (spellInfo->Id == SPELL_HEADLESS_HORSEMAN_WISP_FLIGHT_PORT)
         {
-            me->SetUninteractible(false);
+            me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             me->SetNpcFlag(UNIT_NPC_FLAG_QUESTGIVER);
             me->RemoveAurasDueToSpell(SPELL_HEADLESS_HORSEMAN_WISP_INVIS);
             DoCastSelf(SPELL_HEADLESS_HORSEMAN_C_GHOST_VISUAL, true);
@@ -756,7 +753,7 @@ struct go_loosely_turned_soil : public GameObjectAI
         return false;
     }
 
-    void OnQuestReward(Player* player, Quest const* /*quest*/, LootItemType /*type*/, uint32 /*opt*/) override
+    void OnQuestReward(Player* player, Quest const* /*quest*/, uint32 /*opt*/) override
     {
         player->AreaExploredOrEventHappens(QUEST_CALL_THE_HEADLESS_HORSEMAN);
         _instance->SetData(DATA_START_HORSEMAN_EVENT, 0);
@@ -798,6 +795,8 @@ private:
 // 42432 - Headless Horseman Yell Timer
 class spell_headless_horseman_yell_timer : public AuraScript
 {
+    PrepareAuraScript(spell_headless_horseman_yell_timer);
+
     void OnApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Creature* horseman = GetTarget()->ToCreature();
@@ -816,6 +815,8 @@ class spell_headless_horseman_yell_timer : public AuraScript
 // 43893 - Headless Horseman - Maniacal Laugh, Maniacal, Delayed 8
 class spell_headless_horseman_maniacal_laugh : public AuraScript
 {
+    PrepareAuraScript(spell_headless_horseman_maniacal_laugh);
+
     void HandleSound(AuraEffect const* /*aurEff*/)
     {
         GetTarget()->PlayDirectSound(SOUNDID_MANIACAL_LAUGH);
@@ -830,6 +831,8 @@ class spell_headless_horseman_maniacal_laugh : public AuraScript
 // 42410 - Headless Horseman Climax - Command, Head Repositions
 class spell_headless_horseman_head_reposition : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_head_reposition);
+
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         Position random = GetCaster()->GetRandomNearPosition(30.0f);
@@ -845,6 +848,8 @@ class spell_headless_horseman_head_reposition : public SpellScript
 // 42399 - Headless Horseman Climax - Send Head
 class spell_headless_horseman_send_head : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_send_head);
+
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         Unit* head = GetHitUnit();
@@ -861,6 +866,8 @@ class spell_headless_horseman_send_head : public SpellScript
 // 42603 - Headless Horseman Climax, Head: Periodic
 class spell_headless_horseman_head_periodic : public AuraScript
 {
+    PrepareAuraScript(spell_headless_horseman_head_periodic);
+
     void HandleHPCheck(AuraEffect const* /*aurEff*/)
     {
         Unit* target = GetTarget();
@@ -881,6 +888,8 @@ class spell_headless_horseman_head_periodic : public AuraScript
 // 43101 - Headless Horseman Climax - Command, Head Requests Body
 class spell_headless_horseman_command_head_request_body : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_command_head_request_body);
+
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         Unit* horseman = GetHitUnit();
@@ -897,6 +906,8 @@ class spell_headless_horseman_command_head_request_body : public SpellScript
 // 42401 - Headless Horseman Climax - Return Head
 class spell_headless_horseman_return_head : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_return_head);
+
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         Unit* horseman = GetHitUnit();
@@ -913,6 +924,8 @@ class spell_headless_horseman_return_head : public SpellScript
 // 52236 - Summon Pumpkin Burst Delay
 class spell_summon_pumpkin_burst_delay : public AuraScript
 {
+    PrepareAuraScript(spell_summon_pumpkin_burst_delay);
+
     void HandleText(AuraEffect const* /*aurEff*/)
     {
         if (Creature* horseman = GetTarget()->ToCreature())
@@ -928,6 +941,8 @@ class spell_summon_pumpkin_burst_delay : public AuraScript
 // 42428 - Headless Horseman Climax - Head Is Dead
 class spell_headless_horseman_head_is_dead : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_head_is_dead);
+
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
         Creature* target = GetHitCreature();
@@ -957,6 +972,8 @@ class spell_headless_horseman_head_is_dead : public SpellScript
 // 42879 - Headless Horseman Climax - Summoning Rhyme Aura
 class spell_headless_horseman_summoning_rhyme_aura : public AuraScript
 {
+    PrepareAuraScript(spell_headless_horseman_summoning_rhyme_aura);
+
     void PeriodicTick(AuraEffect const* aurEff)
     {
         if (!GetCaster())
@@ -970,17 +987,17 @@ class spell_headless_horseman_summoning_rhyme_aura : public AuraScript
         switch (aurEff->GetTickNumber())
         {
             case 1:
-                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_RISE, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, SoundKitPlayType::Normal, TEAM_OTHER, false, player);
+                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_RISE, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, TEAM_OTHER, false, player);
                 break;
             case 3:
-                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_TIME, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, SoundKitPlayType::Normal, TEAM_OTHER, false, player);
+                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_TIME, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, TEAM_OTHER, false, player);
                 break;
             case 5:
-                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_DEATH, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, SoundKitPlayType::Normal, TEAM_OTHER, false, player);
+                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_DEATH, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, TEAM_OTHER, false, player);
                 player->CastSpell(player, SPELL_HEADLESS_HORSEMAN_C_SUMMONING_RHYME_SHAKE_SMALL, true);
                 break;
             case 8:
-                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_DEMISE, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, SoundKitPlayType::Normal, TEAM_OTHER, false, player);
+                sCreatureTextMgr->SendChat(caster, SAY_PLAYER_DEMISE, nullptr, CHAT_MSG_SAY, LANG_UNIVERSAL, TEXT_RANGE_NORMAL, 0, TEAM_OTHER, false, player);
                 player->CastSpell(player, SPELL_HEADLESS_HORSEMAN_C_SUMMONING_RHYME_SHAKE_MEDIUM, true);
                 Remove();
                 break;
@@ -998,6 +1015,8 @@ class spell_headless_horseman_summoning_rhyme_aura : public AuraScript
 // 42281 - Sprouting
 class spell_headless_horseman_sprouting : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_sprouting);
+
     void HandleScriptEffect(SpellEffIndex /*effIndex*/)
     {
         Unit* pumpkin = GetHitUnit();
@@ -1015,6 +1034,8 @@ class spell_headless_horseman_sprouting : public SpellScript
 // 42818 - Headless Horseman - Wisp Flight Port
 class spell_headless_horseman_wisp_teleport : public SpellScript
 {
+    PrepareSpellScript(spell_headless_horseman_wisp_teleport);
+
     void SetDest(SpellDestination& dest)
     {
         dest.Relocate(EarthBunnySpawnPosition);

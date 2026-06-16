@@ -20,13 +20,9 @@
 
 #include "Define.h"
 #include "DatabaseEnvFwd.h"
-#include "DBCEnums.h"
-#include "ItemEnchantmentMgr.h"
-#include "LootItemType.h"
 
 #include <shared_mutex>
 #include <unordered_map>
-#include <vector>
 
 class Item;
 class Player;
@@ -46,9 +42,8 @@ struct StoredLootItem
     bool Counted;
     bool UnderThreshold;
     bool NeedsQuest;
-    ItemRandomBonusListId RandomBonusListId;
-    ItemContext Context;
-    std::vector<int32> BonusListIDs;
+    int32 RandomPropertyId;
+    uint32 RandomSuffix;
 };
 
 class StoredLootContainer
@@ -56,45 +51,40 @@ class StoredLootContainer
     public:
         typedef std::unordered_multimap<uint32 /*itemId*/, StoredLootItem> StoredLootItemContainer;
 
-        explicit StoredLootContainer(uint64 containerId) : _containerId(containerId), _money(0) { }
+        explicit StoredLootContainer(uint32 containerId) : _containerId(containerId), _money(0) { }
 
         void AddLootItem(LootItem const& lootItem, CharacterDatabaseTransaction trans);
         void AddMoney(uint32 money, CharacterDatabaseTransaction trans);
 
         void RemoveMoney();
-        void RemoveItem(LootItemType type, uint32 itemId, uint32 count, uint32 itemIndex);
+        void RemoveItem(uint32 itemId, uint32 count, uint32 itemIndex);
 
-        uint64 GetContainer() const { return _containerId; }
+        uint32 GetContainer() const { return _containerId; }
         uint32 GetMoney() const { return _money; }
         StoredLootItemContainer const& GetLootItems() const { return _lootItems; }
 
     private:
         StoredLootItemContainer _lootItems;
-        uint64 const _containerId;
+        uint32 const _containerId;
         uint32 _money;
 };
 
 class LootItemStorage
 {
     public:
-        LootItemStorage(LootItemStorage const&) = delete;
-        LootItemStorage(LootItemStorage&&) = delete;
-        LootItemStorage& operator=(LootItemStorage const&) = delete;
-        LootItemStorage& operator=(LootItemStorage&&) = delete;
-
         static LootItemStorage* instance();
         static std::shared_mutex* GetLock();
 
         void LoadStorageFromDB();
         bool LoadStoredLoot(Item* item, Player* player);
-        void RemoveStoredMoneyForContainer(uint64 containerId);
-        void RemoveStoredLootForContainer(uint64 containerId);
-        void RemoveStoredLootItemForContainer(uint64 containerId, LootItemType type, uint32 itemId, uint32 count, uint32 itemIndex);
-        void AddNewStoredLoot(uint64 containerId, Loot* loot, Player* player);
+        void RemoveStoredMoneyForContainer(uint32 containerId);
+        void RemoveStoredLootForContainer(uint32 containerId);
+        void RemoveStoredLootItemForContainer(uint32 containerId, uint32 itemId, uint32 count, uint32 itemIndex);
+        void AddNewStoredLoot(Loot* loot, Player* player);
 
     private:
-        LootItemStorage() = default;
-        ~LootItemStorage() = default;
+        LootItemStorage() { }
+        ~LootItemStorage() { }
 };
 
 #define sLootItemStorage LootItemStorage::instance()

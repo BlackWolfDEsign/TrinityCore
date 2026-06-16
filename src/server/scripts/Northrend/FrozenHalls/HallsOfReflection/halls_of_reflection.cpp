@@ -27,6 +27,7 @@
 #include "ScriptedCreature.h"
 #include "ScriptedGossip.h"
 #include "ScriptMgr.h"
+#include "Spell.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "TemporarySummon.h"
@@ -273,7 +274,7 @@ enum HorGossipMenu
     GOSSIP_MENU_SYLVANAS_FINAL         = 10931
 };
 
-constexpr Position NpcJainaOrSylvanasEscapeRoute[] =
+Position const NpcJainaOrSylvanasEscapeRoute[] =
 {
     { 5601.217285f, 2207.652832f, 731.541931f, 5.223304f }, // leave the throne room
     { 5607.224375f, 2173.913330f, 731.126038f, 2.608723f }, // adjust route
@@ -286,36 +287,36 @@ constexpr Position NpcJainaOrSylvanasEscapeRoute[] =
     { 5265.53f,     1681.6f,      784.2947f,   4.13643f  }  // final position (sniffed)
 };
 
-constexpr Position LichKingMoveAwayPos      = { 5400.069824f, 2102.7131689f, 707.69525f, 0.843803f }; // Lich King walks away
-constexpr Position LichKingFirstSummon      = { 5600.076172f, 2192.270996f, 731.750488f, 4.330935f }; // Lich King First summons
-//constexpr Position JainaSylvanasShadowThroneDoor = { 5577.243f, 2235.852f, 733.0128f, 2.209562f };    // Jaina/Sylvanas move to door
-constexpr Position LichKingFinalPos         = { 5283.742188f, 1706.335693f, 783.293518f, 4.138510f }; // Lich King Final Pos
+Position const LichKingMoveAwayPos      = { 5400.069824f, 2102.7131689f, 707.69525f, 0.843803f }; // Lich King walks away
+Position const LichKingFirstSummon      = { 5600.076172f, 2192.270996f, 731.750488f, 4.330935f }; // Lich King First summons
+Position const JainaSylvanasShadowThroneDoor = { 5577.243f, 2235.852f, 733.0128f, 2.209562f }; // Jaina/Sylvanas move to door
+Position const LichKingFinalPos         = { 5283.742188f, 1706.335693f, 783.293518f, 4.138510f }; // Lich King Final Pos
 
 // sniffed
-constexpr Position KorelnOrLoralenPos[] =
+Position const KorelnOrLoralenPos[] =
 {
     { 5253.061f, 1953.616f, 707.6948f, 0.8377581f },
     { 5283.226f, 1992.300f, 707.7445f, 0.8377581f },
     { 5360.711f, 2064.797f, 707.6948f, 0.0f }
 };
 
-constexpr Position SylvanasIntroPosition[] =
+Position const SylvanasIntroPosition[] =
 {
     { 0.0f,     0.0f,     0.0f,      0.0f       }, // 0 - Spawn
     { 5263.2f,  1950.96f, 707.6948f, 0.8028514f }, // 1 - Move to Door
     { 5306.82f, 1998.17f, 709.341f,  1.239184f  }, // 2 - Move to Frostmourne
 };
 
-constexpr Position JainaIntroPosition[] =
+Position const JainaIntroPosition[] =
 {
     { 0.0f,     0.0f,     0.0f,      0.0f      }, // 0 - Spawn
     { 5265.89f, 1952.98f, 707.6978f, 0.0f      }, // 1 - Move to Door
     { 5306.95f, 1998.49f, 709.3414f, 1.277278f }  // 2 - Move to Frostmourne
 };
 
-constexpr Position UtherSpawnPos = { 5307.814f, 2003.168f, 709.4244f, 4.537856f };
+Position const UtherSpawnPos = { 5307.814f, 2003.168f, 709.4244f, 4.537856f };
 
-constexpr Position LichKingIntroPosition[] =
+Position const LichKingIntroPosition[] =
 {
     { 5362.463f, 2062.693f, 707.7781f, 3.944444f }, // 0 - Spawn
     { 5332.83f,  2031.24f,  707.6948f, 0.0f      }, // 1 - Door
@@ -325,21 +326,21 @@ constexpr Position LichKingIntroPosition[] =
     { 5355.488f, 2055.149f, 707.6907f, 0.0f      }  // 5 - Move back 3
 };
 
-constexpr Position FalricPosition[] =
+Position const FalricPosition[] =
 {
     { 5276.583f, 2037.45f, 709.4025f, 5.532694f }, // 0 - Spawn
     { 5283.95f,  2030.53f, 709.3191f, 0.0f      }  // 1 - Intro
 };
 
-constexpr Position MarwynPosition[] =
+Position const MarwynPosition[] =
 {
     { 5342.232f, 1975.696f, 709.4025f, 2.391101f }, // 0 - Spawn
     { 5335.01f,  1982.37f,  709.3191f, 0.0f      }  // 1 - Intro
 };
 
-constexpr Position SylvanasShadowThroneDoorPosition = { 5576.79f, 2235.73f, 733.0029f, 2.687807f };
+Position const SylvanasShadowThroneDoorPosition = { 5576.79f, 2235.73f, 733.0029f, 2.687807f };
 
-constexpr Position IceWallTargetPosition[] =
+Position const IceWallTargetPosition[] =
 {
     { 5547.833f, 2083.701f, 731.4332f, 1.029744f  }, // 1st Icewall
     { 5503.213f, 1969.547f, 737.0245f, 1.27409f   }, // 2nd Icewall
@@ -379,12 +380,12 @@ class npc_jaina_or_sylvanas_intro_hor : public CreatureScript
                 switch (gossipListId)
                 {
                     case 0:
-                        CloseGossipMenuFor(player);
+                        player->PlayerTalkClass->SendCloseGossip();
                         _events.ScheduleEvent(EVENT_START_INTRO, 1s);
                         me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
                         break;
                     case 1:
-                        CloseGossipMenuFor(player);
+                        player->PlayerTalkClass->SendCloseGossip();
                         _events.ScheduleEvent(EVENT_SKIP_INTRO, 1s);
                         me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
                         break;
@@ -658,7 +659,7 @@ class npc_jaina_or_sylvanas_intro_hor : public CreatureScript
                         if (Creature* lichking = ObjectAccessor::GetCreature(*me, _lichkingGUID))
                         {
                             if (GameObject* frostmourne = ObjectAccessor::GetGameObject(*me, _instance->GetGuidData(DATA_FROSTMOURNE)))
-                                frostmourne->SetLootState(GO_JUST_DEACTIVATED);
+                                frostmourne->SetPhaseMask(2, true);
                             lichking->CastSpell(lichking, SPELL_TAKE_FROSTMOURNE, true);
                             lichking->CastSpell(lichking, SPELL_FROSTMOURNE_VISUAL, true);
                         }
@@ -711,7 +712,7 @@ class npc_jaina_or_sylvanas_intro_hor : public CreatureScript
                     case EVENT_INTRO_LK_9:
                         if (Creature* falric = ObjectAccessor::GetCreature(*me, _instance->GetGuidData(DATA_FALRIC)))
                             falric->AI()->Talk(SAY_FALRIC_INTRO_2);
-                        _instance->ProcessEvent(nullptr, EVENT_SPAWN_WAVES, nullptr);
+                        _instance->ProcessEvent(nullptr, EVENT_SPAWN_WAVES);
                         _events.ScheduleEvent(EVENT_INTRO_LK_10, 4s);
                         break;
                     case EVENT_INTRO_LK_10:
@@ -836,6 +837,7 @@ class npc_jaina_or_sylvanas_escape_hor : public CreatureScript
                 _events.Reset();
                 _icewall = 0;
                 _events.ScheduleEvent(EVENT_ESCAPE, 1s);
+                _instance->DoStopTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_NOT_RETREATING_EVENT);
             }
 
             void JustDied(Unit* /*killer*/) override
@@ -899,7 +901,7 @@ class npc_jaina_or_sylvanas_escape_hor : public CreatureScript
                 switch (gossipListId)
                 {
                     case 0:
-                        CloseGossipMenuFor(player);
+                        player->PlayerTalkClass->SendCloseGossip();
                         me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                         _events.ScheduleEvent(EVENT_ESCAPE_6, 0s);
                         break;
@@ -1084,7 +1086,7 @@ class npc_jaina_or_sylvanas_escape_hor : public CreatureScript
                                 }
                             }
                             _invincibility = false;
-                            _instance->TriggerGameEvent(ACHIEV_NOT_RETREATING_EVENT);
+                            _instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_NOT_RETREATING_EVENT);
                             _events.ScheduleEvent(EVENT_ESCAPE_7, 1s);
                             break;
                         case EVENT_ESCAPE_7:
@@ -1160,6 +1162,8 @@ class npc_jaina_or_sylvanas_escape_hor : public CreatureScript
                             break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -1346,6 +1350,8 @@ class npc_the_lich_king_escape_hor : public CreatureScript
                             break;
                     }
                 }
+
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -1363,7 +1369,7 @@ class npc_the_lich_king_escape_hor : public CreatureScript
                 }
                 else if (me->GetCombatManager().GetPvECombatRefs().size() < 2 && me->HasAura(SPELL_REMORSELESS_WINTER))
                 {
-                    EnterEvadeMode(EvadeReason::Other);
+                    EnterEvadeMode(EVADE_REASON_OTHER);
                     return false;
                 }
 
@@ -1554,6 +1560,8 @@ class npc_ghostly_priest : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -1627,6 +1635,8 @@ class npc_phantom_mage : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -1718,6 +1728,8 @@ class npc_shadowy_mercenary : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -1770,6 +1782,8 @@ class npc_spectral_footman : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -1830,6 +1844,8 @@ class npc_tortured_rifleman : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -1928,6 +1944,7 @@ class npc_frostsworn_general : public CreatureScript
                             break;
                     }
                 }
+                DoMeleeAttackIfReady();
             }
 
             void SummonClones()
@@ -2001,6 +2018,8 @@ class npc_spiritual_reflection : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
 
         private:
@@ -2019,7 +2038,7 @@ class at_hor_intro_start : public AreaTriggerScript
     public:
         at_hor_intro_start() : AreaTriggerScript("at_hor_intro_start") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*trigger*/) override
         {
             if (player->IsGameMaster())
                 return true;
@@ -2045,7 +2064,7 @@ class at_hor_waves_restarter : public AreaTriggerScript
     public:
         at_hor_waves_restarter() : AreaTriggerScript("at_hor_waves_restarter") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*trigger*/) override
         {
             if (player->IsGameMaster())
                 return true;
@@ -2057,7 +2076,7 @@ class at_hor_waves_restarter : public AreaTriggerScript
 
             if (_instance->GetData(DATA_INTRO_EVENT) == DONE && _instance->GetBossState(DATA_MARWYN) != DONE)
             {
-                _instance->ProcessEvent(nullptr, EVENT_SPAWN_WAVES, nullptr);
+                _instance->ProcessEvent(nullptr, EVENT_SPAWN_WAVES);
 
                 if (Creature* falric = ObjectAccessor::GetCreature(*player, _instance->GetGuidData(DATA_FALRIC)))
                 {
@@ -2080,7 +2099,7 @@ class at_hor_impenetrable_door : public AreaTriggerScript
     public:
         at_hor_impenetrable_door() : AreaTriggerScript("at_hor_impenetrable_door") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
         {
             if (player->IsGameMaster())
                 return true;
@@ -2100,7 +2119,7 @@ class at_hor_shadow_throne : public AreaTriggerScript
     public:
         at_hor_shadow_throne() : AreaTriggerScript("at_hor_shadow_throne") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*at*/) override
         {
             if (player->IsGameMaster())
                 return true;
@@ -2127,23 +2146,6 @@ enum EscapeEvents
     // Lumbering Abomination
     EVENT_LUMBERING_ABOMINATION_VOMIT_SPRAY,
     EVENT_LUMBERING_ABOMINATION_CLEAVE
-};
-
-class HoRStartMovementEvent : public BasicEvent
-{
-    public:
-        explicit HoRStartMovementEvent(Creature* owner) : _owner(owner) { }
-
-        bool Execute(uint64 /*execTime*/, uint32 /*diff*/) override
-        {
-            _owner->SetReactState(REACT_AGGRESSIVE);
-            if (Unit* target = _owner->AI()->SelectTarget(SelectTargetMethod::Random, 0, 0.0f, true))
-                _owner->AI()->AttackStart(target);
-            return true;
-        }
-
-    private:
-        Creature* _owner;
 };
 
 struct npc_escape_event_trash : public ScriptedAI
@@ -2198,7 +2200,7 @@ class npc_raging_ghoul : public CreatureScript
                 me->CastSpell(me, SPELL_RAGING_GHOUL_SPAWN, true);
                 me->SetReactState(REACT_PASSIVE);
                 me->HandleEmoteCommand(EMOTE_ONESHOT_EMERGE);
-                me->m_Events.AddEvent(new HoRStartMovementEvent(me), me->m_Events.CalculateTime(5s));
+                SetAggressiveStateAfter(5s);
 
                 npc_escape_event_trash::IsSummonedBy(summoner);
             }
@@ -2231,6 +2233,8 @@ class npc_raging_ghoul : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -2262,7 +2266,7 @@ class npc_risen_witch_doctor : public CreatureScript
                 me->CastSpell(me, SPELL_RISEN_WITCH_DOCTOR_SPAWN, true);
                 me->SetReactState(REACT_PASSIVE);
                 me->HandleEmoteCommand(EMOTE_ONESHOT_EMERGE);
-                me->m_Events.AddEvent(new HoRStartMovementEvent(me), me->m_Events.CalculateTime(5s));
+                SetAggressiveStateAfter(5s);
 
                 npc_escape_event_trash::IsSummonedBy(summoner);
             }
@@ -2299,6 +2303,8 @@ class npc_risen_witch_doctor : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -2349,6 +2355,8 @@ class npc_lumbering_abomination : public CreatureScript
                     default:
                         break;
                 }
+
+                DoMeleeAttackIfReady();
             }
         };
 
@@ -2415,16 +2423,16 @@ enum QuelDelarMisc
     SPELL_QUEL_DELAR_WILL          = 70698
 };
 
-constexpr Position QuelDelarCenterPos = { 5309.259f, 2006.390f, 718.046f, 0.0f };
-constexpr Position QuelDelarSummonPos = { 5298.473f, 1994.852f, 709.424f, 3.979351f };
-constexpr Position QuelDelarMovement[] =
+Position const QuelDelarCenterPos = { 5309.259f, 2006.390f, 718.046f, 0.0f };
+Position const QuelDelarSummonPos = { 5298.473f, 1994.852f, 709.424f, 3.979351f };
+Position const QuelDelarMovement[] =
 {
     { 5292.870f, 1998.950f, 718.046f, 0.0f },
     { 5295.819f, 1991.912f, 707.707f, 0.0f },
     { 5295.301f, 1989.782f, 708.696f, 0.0f }
 };
 
-constexpr Position UtherQuelDelarMovement[] =
+Position const UtherQuelDelarMovement[] =
 {
     { 5336.830f, 1981.700f, 709.319f, 0.0f },
     { 5314.350f, 1993.440f, 707.726f, 0.0f }
@@ -2579,7 +2587,7 @@ class npc_quel_delar_sword : public CreatureScript
             npc_quel_delar_swordAI(Creature* creature) : ScriptedAI(creature)
             {
                 _instance = me->GetInstanceScript();
-                me->SetDisplayFromModel(1);
+                me->SetDisplayId(me->GetCreatureTemplate()->Modelid2);
                 _intro = true;
             }
 
@@ -2688,6 +2696,8 @@ class npc_quel_delar_sword : public CreatureScript
                                 break;
                         }
                     }
+
+                    DoMeleeAttackIfReady();
                 }
             }
 
@@ -2709,7 +2719,7 @@ class at_hor_uther_quel_delar_start : public AreaTriggerScript
     public:
         at_hor_uther_quel_delar_start() : AreaTriggerScript("at_hor_uther_quel_delar_start") { }
 
-        bool OnTrigger(Player* player, AreaTriggerEntry const* /*areaTrigger*/) override
+        bool OnTrigger(Player* player, AreaTriggerEntry const* /*trigger*/) override
         {
             if (player->IsGameMaster())
                 return true;
@@ -2732,6 +2742,8 @@ class spell_hor_start_halls_of_reflection_quest_ae : public SpellScriptLoader
 
         class spell_hor_start_halls_of_reflection_quest_ae_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_hor_start_halls_of_reflection_quest_ae_SpellScript);
+
             void StartQuests(SpellEffIndex /*effIndex*/)
             {
                 if (Player* target = GetHitPlayer())
@@ -2739,7 +2751,7 @@ class spell_hor_start_halls_of_reflection_quest_ae : public SpellScriptLoader
                     // CanTakeQuest and CanAddQuest checks done in spell effect execution
                     if (target->GetTeam() == ALLIANCE)
                         target->CastSpell(target, SPELL_START_HALLS_OF_REFLECTION_QUEST_A, true);
-                    else if (target->GetTeam() == HORDE)
+                    else
                         target->CastSpell(target, SPELL_START_HALLS_OF_REFLECTION_QUEST_H, true);
                 }
             }
@@ -2764,6 +2776,8 @@ class spell_hor_evasion : public SpellScriptLoader
 
         class spell_hor_evasion_SpellScript : public SpellScript
         {
+            PrepareSpellScript(spell_hor_evasion_SpellScript);
+
             bool Load() override
             {
                 return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -2772,7 +2786,7 @@ class spell_hor_evasion : public SpellScriptLoader
             void SetDest(SpellDestination& dest)
             {
                 WorldObject* target = GetExplTargetWorldObject();
-                Position pos = target->GetPosition();
+                Position pos(*target);
                 Position home = GetCaster()->ToCreature()->GetHomePosition();
 
                 // prevent evasion outside the room
@@ -2780,7 +2794,7 @@ class spell_hor_evasion : public SpellScriptLoader
                     return;
 
                 float angle = pos.GetAbsoluteAngle(&home);
-                float dist = GetEffectInfo().CalcRadius(GetCaster()).Max;
+                float dist = GetEffectInfo().CalcRadius(GetCaster());
                 target->MovePosition(pos, dist, angle);
 
                 dest.Relocate(pos);
@@ -2806,6 +2820,8 @@ class spell_hor_gunship_cannon_fire : public SpellScriptLoader
 
         class spell_hor_gunship_cannon_fire_AuraScript : public AuraScript
         {
+            PrepareAuraScript(spell_hor_gunship_cannon_fire_AuraScript);
+
             void HandlePeriodic(AuraEffect const* /*aurEff*/)
             {
                 if (!urand(0, 2))
@@ -2827,6 +2843,30 @@ class spell_hor_gunship_cannon_fire : public SpellScriptLoader
         {
             return new spell_hor_gunship_cannon_fire_AuraScript();
         }
+};
+
+// 70698 - Quel'Delar's Will
+class spell_hor_quel_delars_will : public SpellScript
+{
+    PrepareSpellScript(spell_hor_quel_delars_will);
+
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        return ValidateSpellInfo({ spellInfo->GetEffect(EFFECT_0).TriggerSpell });
+    }
+
+    void HandleReagent(SpellEffIndex effIndex)
+    {
+        PreventHitDefaultEffect(effIndex);
+
+        // dummy spell consumes reagent, don't ignore it
+        GetHitUnit()->CastSpell(GetCaster(), GetEffectInfo().TriggerSpell, TRIGGERED_FULL_MASK & ~TRIGGERED_IGNORE_POWER_AND_REAGENT_COST);
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_hor_quel_delars_will::HandleReagent, EFFECT_0, SPELL_EFFECT_FORCE_CAST);
+    }
 };
 
 void AddSC_halls_of_reflection()
@@ -2855,4 +2895,5 @@ void AddSC_halls_of_reflection()
     new spell_hor_start_halls_of_reflection_quest_ae();
     new spell_hor_evasion();
     new spell_hor_gunship_cannon_fire();
+    RegisterSpellScript(spell_hor_quel_delars_will);
 }

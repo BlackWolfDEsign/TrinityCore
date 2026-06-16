@@ -17,7 +17,7 @@
 
 #include "ScriptMgr.h"
 #include "Containers.h"
-#include "DB2Stores.h"
+#include "DBCStores.h"
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "InstanceScript.h"
@@ -27,6 +27,8 @@
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "Spell.h"
+#include "SpellAuraEffects.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "TemporarySummon.h"
@@ -153,6 +155,9 @@ enum Events
     EVENT_OUTRO_9,
     EVENT_OUTRO_10,
     EVENT_OUTRO_11,
+    EVENT_DESPAWN_ALGALON_1,
+    EVENT_DESPAWN_ALGALON_2,
+    EVENT_DESPAWN_ALGALON_3,
 
     // Living Constellation
     EVENT_ARCANE_BARRAGE
@@ -309,7 +314,7 @@ struct boss_algalon_the_observer : public BossAI
         {
             case ACTION_START_INTRO:
             {
-                me->SetUnitFlag2(UNIT_FLAG2_DONT_FADE_IN);
+                me->SetUnitFlag2(UNIT_FLAG2_DO_NOT_FADE_IN);
                 me->SetDisableGravity(true);
                 DoCastSelf(SPELL_ARRIVAL, true);
                 DoCastSelf(SPELL_RIDE_THE_LIGHTNING, true);
@@ -332,6 +337,18 @@ struct boss_algalon_the_observer : public BossAI
                 events.CancelEvent(EVENT_RESUME_UPDATING);
                 events.ScheduleEvent(EVENT_ASCEND_TO_THE_HEAVENS, 1s + 500ms);
                 break;
+            case EVENT_DESPAWN_ALGALON:
+                events.Reset();
+                events.SetPhase(PHASE_ROLE_PLAY);
+                if (me->IsInCombat())
+                    events.ScheduleEvent(EVENT_ASCEND_TO_THE_HEAVENS, 1ms);
+                events.ScheduleEvent(EVENT_DESPAWN_ALGALON_1, 5s);
+                events.ScheduleEvent(EVENT_DESPAWN_ALGALON_2, 17s);
+                events.ScheduleEvent(EVENT_DESPAWN_ALGALON_3, 26s);
+                me->DespawnOrUnsummon(34s);
+                me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
+                me->SetImmuneToNPC(true);
+                break;
             case ACTION_INIT_ALGALON:
                 _firstPull = false;
                 me->SetImmuneToPC(false);
@@ -349,7 +366,7 @@ struct boss_algalon_the_observer : public BossAI
     void JustEngagedWith(Unit* who) override
     {
         Milliseconds introDelay = 0ms;
-        me->SetUninteractible(true);
+        me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
         me->SetImmuneToNPC(true);
         events.Reset();
         events.SetPhase(PHASE_ROLE_PLAY);
@@ -371,6 +388,7 @@ struct boss_algalon_the_observer : public BossAI
             DoZoneInCombat();
             introDelay = 26500ms;
             summons.DespawnEntry(NPC_AZEROTH);
+            instance->SetData(EVENT_DESPAWN_ALGALON, 0);
             events.ScheduleEvent(EVENT_START_COMBAT, 16s);
         }
 
@@ -472,7 +490,7 @@ struct boss_algalon_the_observer : public BossAI
             events.SetPhase(PHASE_ROLE_PLAY);
             me->SetReactState(REACT_PASSIVE);
             me->AttackStop();
-            me->SetUninteractible(true);
+            me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             DoCastSelf(SPELL_SELF_STUN);
             events.Reset();
             summons.DespawnAll();
@@ -547,7 +565,7 @@ struct boss_algalon_the_observer : public BossAI
                 {
                     events.SetPhase(PHASE_NORMAL);
                     me->SetSheath(SHEATH_STATE_MELEE);
-                    me->SetUninteractible(false);
+                    me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     me->SetImmuneToNPC(false);
                     me->SetReactState(REACT_DEFENSIVE);
                     DoCastAOE(SPELL_SUPERMASSIVE_FAIL, true);
@@ -607,7 +625,7 @@ struct boss_algalon_the_observer : public BossAI
                     events.ScheduleEvent(EVENT_EVADE, 2s + 500ms);
                     break;
                 case EVENT_EVADE:
-                    EnterEvadeMode(EvadeReason::Other);
+                    EnterEvadeMode(EVADE_REASON_OTHER);
                     break;
                 case EVENT_COSMIC_SMASH:
                     Talk(EMOTE_ALGALON_COSMIC_SMASH);
@@ -639,7 +657,7 @@ struct boss_algalon_the_observer : public BossAI
                     break;
                 case EVENT_OUTRO_4:
                     DoCastAOE(SPELL_SUPERMASSIVE_FAIL);
-                    me->SetUninteractible(false);
+                    me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     break;
                 case EVENT_OUTRO_5:
                     if (Creature* brann = me->SummonCreature(NPC_BRANN_BRONZBEARD_ALG, BrannOutroPos))
@@ -672,6 +690,15 @@ struct boss_algalon_the_observer : public BossAI
                     DoCastSelf(SPELL_TELEPORT);
                     me->DespawnOrUnsummon(1s + 200ms);
                     break;
+                case EVENT_DESPAWN_ALGALON_1:
+                    Talk(SAY_ALGALON_DESPAWN_1);
+                    break;
+                case EVENT_DESPAWN_ALGALON_2:
+                    Talk(SAY_ALGALON_DESPAWN_2);
+                    break;
+                case EVENT_DESPAWN_ALGALON_3:
+                    Talk(SAY_ALGALON_DESPAWN_3);
+                    break;
                 default:
                     break;
             }
@@ -679,6 +706,8 @@ struct boss_algalon_the_observer : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING) && !events.IsInPhase(PHASE_ROLE_PLAY))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -723,7 +752,7 @@ struct npc_living_constellation : public CreatureAI
                     if (Unit* target = algalon->AI()->SelectTarget(SelectTargetMethod::Random, 0, NonTankTargetSelector(algalon)))
                     {
                         me->SetReactState(REACT_AGGRESSIVE);
-                        me->SetUninteractible(false);
+                        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                         AttackStart(target);
                         DoZoneInCombat();
                         _isActive = true;
@@ -749,7 +778,7 @@ struct npc_living_constellation : public CreatureAI
         if (spellInfo->Id != SPELL_CONSTELLATION_PHASE_EFFECT)
             return;
 
-        _instance->TriggerGameEvent(EVENT_ID_SUPERMASSIVE_START);
+        _instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, EVENT_ID_SUPERMASSIVE_START);
         creatureCaster->CastSpell(nullptr, SPELL_BLACK_HOLE_CREDIT, TRIGGERED_FULL_MASK);
         DoCast(creatureCaster, SPELL_DESPAWN_BLACK_HOLE, TRIGGERED_FULL_MASK);
         me->DespawnOrUnsummon(500ms);
@@ -1015,6 +1044,8 @@ private:
 // 64412 - Phase Punch
 class spell_algalon_phase_punch : public AuraScript
 {
+    PrepareAuraScript(spell_algalon_phase_punch);
+
     void HandlePeriodic(AuraEffect const* /*aurEff*/)
     {
         PreventDefaultAction();
@@ -1041,9 +1072,11 @@ class spell_algalon_phase_punch : public AuraScript
 // 65508 - Constellation Phase Trigger
 class spell_algalon_phase_constellation : public AuraScript
 {
+    PrepareAuraScript(spell_algalon_phase_constellation);
+
     bool Validate(SpellInfo const* spellInfo) override
     {
-        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } }) && ValidateSpellInfo({ spellInfo->GetEffect(EFFECT_0).TriggerSpell });
+        return ValidateSpellInfo({ spellInfo->GetEffect(EFFECT_0).TriggerSpell });
     }
 
     void HandlePeriodic(AuraEffect const* aurEff)
@@ -1052,7 +1085,7 @@ class spell_algalon_phase_constellation : public AuraScript
         CastSpellExtraArgs args(aurEff);
         args.AddSpellMod(SPELLVALUE_MAX_TARGETS, 1);
         // Phase Effect should only 1 target. Avoid 1 black hole despawn multiple Living Constellation
-        GetTarget()->CastSpell(nullptr, GetSpellInfo()->GetEffect(EFFECT_0).TriggerSpell, args);
+        GetTarget()->CastSpell(nullptr, aurEff->GetSpellEffectInfo().TriggerSpell, args);
     }
 
     void Register() override
@@ -1064,6 +1097,8 @@ class spell_algalon_phase_constellation : public AuraScript
 // 62266 - Trigger 3 Adds
 class spell_algalon_trigger_3_adds : public SpellScript
 {
+    PrepareSpellScript(spell_algalon_trigger_3_adds);
+
     void SelectTarget(std::list<WorldObject*>& targets)
     {
         // Remove Living Constellation already actived
@@ -1090,6 +1125,8 @@ class spell_algalon_trigger_3_adds : public SpellScript
 // 62018 - Collapse
 class spell_algalon_collapse : public AuraScript
 {
+    PrepareAuraScript(spell_algalon_collapse);
+
     void HandlePeriodic(AuraEffect const* /*aurEff*/)
     {
         PreventDefaultAction();
@@ -1105,6 +1142,8 @@ class spell_algalon_collapse : public AuraScript
 // 64443, 64584 - Big Bang
 class spell_algalon_big_bang : public SpellScript
 {
+    PrepareSpellScript(spell_algalon_big_bang);
+
     bool Load() override
     {
         _targetCount = 0;
@@ -1134,6 +1173,8 @@ private:
 // 64445 - Remove Player from Phase
 class spell_algalon_remove_phase : public AuraScript
 {
+    PrepareAuraScript(spell_algalon_remove_phase);
+
     void HandlePeriodic(AuraEffect const* /*aurEff*/)
     {
         PreventDefaultAction();
@@ -1149,6 +1190,8 @@ class spell_algalon_remove_phase : public AuraScript
 // 62295 - Cosmic Smash
 class spell_algalon_cosmic_smash : public SpellScript
 {
+    PrepareSpellScript(spell_algalon_cosmic_smash);
+
     void ModDestHeight(SpellDestination& dest)
     {
         // Meteor should spawn below the platform
@@ -1165,6 +1208,8 @@ class spell_algalon_cosmic_smash : public SpellScript
 // 62311, 64596 - Cosmic Smash
 class spell_algalon_cosmic_smash_damage : public SpellScript
 {
+    PrepareSpellScript(spell_algalon_cosmic_smash_damage);
+
     void RecalculateDamage()
     {
         if (!GetExplTargetDest() || !GetHitUnit())
@@ -1181,11 +1226,30 @@ class spell_algalon_cosmic_smash_damage : public SpellScript
     }
 };
 
+// 65311 - Supermassive Fail
+class spell_algalon_supermassive_fail : public SpellScript
+{
+    PrepareSpellScript(spell_algalon_supermassive_fail);
+
+    void RecalculateDamage()
+    {
+        if (Player* player = GetHitPlayer())
+            player->ResetAchievementCriteria(ACHIEVEMENT_CRITERIA_CONDITION_NO_SPELL_HIT, GetSpellInfo()->Id, true);
+    }
+
+    void Register() override
+    {
+        OnHit += SpellHitFn(spell_algalon_supermassive_fail::RecalculateDamage);
+    }
+};
+
 // 62168 - Black Hole (Phase Shifts)
 // 65250 - Worm Hole (Phase Shifts)
 // 64417 - Phase Punch (Phase Shifts)
 class spell_algalon_black_hole_phase_shifts : public AuraScript
 {
+    PrepareAuraScript(spell_algalon_black_hole_phase_shifts);
+
     bool Load() override
     {
         return GetUnitOwner()->GetTypeId() == TYPEID_PLAYER;
@@ -1207,6 +1271,17 @@ class spell_algalon_black_hole_phase_shifts : public AuraScript
     }
 };
 
+class achievement_he_feeds_on_your_tears : public AchievementCriteriaScript
+{
+    public:
+        achievement_he_feeds_on_your_tears() : AchievementCriteriaScript("achievement_he_feeds_on_your_tears") { }
+
+        bool OnCheck(Player* /*source*/, Unit* target) override
+        {
+            return !target->GetAI()->GetData(DATA_HAS_FED_ON_TEARS);
+        }
+};
+
 void AddSC_boss_algalon_the_observer()
 {
     RegisterUlduarCreatureAI(boss_algalon_the_observer);
@@ -1223,5 +1298,7 @@ void AddSC_boss_algalon_the_observer()
     RegisterSpellScript(spell_algalon_remove_phase);
     RegisterSpellScript(spell_algalon_cosmic_smash);
     RegisterSpellScript(spell_algalon_cosmic_smash_damage);
+    RegisterSpellScript(spell_algalon_supermassive_fail);
     RegisterSpellScript(spell_algalon_black_hole_phase_shifts);
+    new achievement_he_feeds_on_your_tears();
 }

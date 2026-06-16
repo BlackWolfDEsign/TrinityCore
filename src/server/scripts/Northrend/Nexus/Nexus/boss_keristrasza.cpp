@@ -23,6 +23,7 @@
 #include "ObjectAccessor.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "SpellAuraEffects.h"
 #include "SpellScript.h"
 
 enum Spells
@@ -195,6 +196,8 @@ struct boss_keristrasza : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING))
                 return;
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -229,9 +232,11 @@ struct containment_sphere : public GameObjectAI
 // 48095 - Intense Cold
 class spell_intense_cold : public AuraScript
 {
-    void HandlePeriodicTick(AuraEffect const* /*aurEff*/)
+    PrepareAuraScript(spell_intense_cold);
+
+    void HandlePeriodicTick(AuraEffect const* aurEff)
     {
-        if (GetStackAmount() < 2)
+        if (aurEff->GetBase()->GetStackAmount() < 2)
             return;
         Unit* caster = GetCaster();
         /// @todo the caster should be boss but not the player
@@ -258,9 +263,9 @@ class achievement_intense_cold : public AchievementCriteriaScript
             if (!target)
                 return false;
 
-            GuidList const& _intenseColdList = ENSURE_AI(boss_keristrasza, target->GetAI())->_intenseColdList;
+            GuidList _intenseColdList = ENSURE_AI(boss_keristrasza, target->ToCreature()->AI())->_intenseColdList;
             if (!_intenseColdList.empty())
-                for (GuidList::const_iterator itr = _intenseColdList.begin(); itr != _intenseColdList.end(); ++itr)
+                for (GuidList::iterator itr = _intenseColdList.begin(); itr != _intenseColdList.end(); ++itr)
                     if (player->GetGUID() == *itr)
                         return false;
 

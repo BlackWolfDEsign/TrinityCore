@@ -48,25 +48,11 @@ enum StratholmeMisc
     SAY_YSIDA_SAVED         = 0
 };
 
-static constexpr DungeonEncounterData Encounters[] =
+enum SpawnGroups
 {
-    { BOSS_HEARTHSINGER_FORRESTEN, {{ 473 }} }, // Hearthsinger Forresten
-    { BOSS_TIMMY_THE_CRUEL, {{ 474 }} }, // Timmy the Cruel
-    { BOSS_COMMANDER_MALOR, {{ 476 }} }, // Commander Malor
-    { BOSS_WILLEY_HOPEBREAKER, {{ 475 }} }, // Willey Hopebreaker
-    { BOSS_INSTRUCTOR_GALFORD, {{ 477 }} }, // Instructor Galford
-    { BOSS_BALNAZZAR, {{ 478 }} }, // Balnazzar
-    { BOSS_THE_UNFORGIVEN, {{ 472 }} }, // The Unforgiven
-    { BOSS_BARONESS_ANASTARI, {{ 479 }} }, // Baroness Anastari
-    { BOSS_NERUB_ENKAN, {{ 480 }} }, // Nerub'enkan
-    { BOSS_MALEKI_THE_PALLID, {{ 481 }} }, // Maleki the Pallid
-    { BOSS_MAGISTRATE_BARTHILAS, {{ 482 }} }, // Magistrate Barthilas
-    { BOSS_RAMSTEIN_THE_GORGER, {{ 483 }} }, // Ramstein the Gorger
-    { BOSS_RIVENDARE, {{ 484 }} }, // Lord Aurius Rivendare
-    { BOSS_POSTMASTER_MALOWN, {{ 1885 }} } // Postmaster Malown
+    SPAWN_GROUP_STR_TIMMY   = 327
 };
 
-Position const timmyTheCruelSpawnPosition = { 3625.358f, -3188.108f, 130.3985f, 4.834562f };
 EllipseBoundary const beforeScarletGate(Position(3671.158f, -3181.79f), 60.0f, 40.0f);
 
 enum class StratholmeGateTrapType : uint8
@@ -99,7 +85,6 @@ class instance_stratholme : public InstanceMapScript
             {
                 SetHeaders(DataHeader);
                 SetBossNumber(MAX_ENCOUNTER);
-                LoadDungeonEncounterData(Encounters);
 
                 for (uint8 i = 0; i < 5; ++i)
                     IsSilverHandDead[i] = false;
@@ -157,7 +142,7 @@ class instance_stratholme : public InstanceMapScript
                             {
                                 if (++scarletsKilled >= TIMMY_THE_CRUEL_CRUSADERS_REQUIRED)
                                 {
-                                    instance->SummonCreature(NPC_TIMMY_THE_CRUEL, timmyTheCruelSpawnPosition);
+                                    instance->SpawnGroupSpawn(SPAWN_GROUP_STR_TIMMY);
                                     timmySpawned = true;
                                 }
                             }
@@ -570,15 +555,9 @@ class instance_stratholme : public InstanceMapScript
                             TC_LOG_DEBUG("scripts", "Instance Stratholme: Baron run event reached end. Event has state {}.", GetData(TYPE_BARON_RUN));
                             break;
                         case EVENT_SLAUGHTER_SQUARE:
-                            if (Creature* baron = instance->GetCreature(baronGUID))
-                            {
-                                for (uint8 i = 0; i < 4; ++i)
-                                    baron->SummonCreature(NPC_BLACK_GUARD, 4032.84f, -3390.24f, 119.73f, 4.71f, TEMPSUMMON_TIMED_OR_DEAD_DESPAWN, 30min);
-
                                 HandleGameObject(ziggurat4GUID, true);
                                 HandleGameObject(ziggurat5GUID, true);
-                                TC_LOG_DEBUG("scripts", "Instance Stratholme: Black guard sentries spawned. Opening gates to baron.");
-                            }
+                                TC_LOG_DEBUG("scripts", "Instance Stratholme: Opening gates to baron.");
                             break;
                         case EVENT_RAT_TRAP_CLOSE:
                         {
@@ -621,7 +600,7 @@ class instance_stratholme : public InstanceMapScript
                 }
             }
 
-            void AfterDataLoad() override
+            void ReadSaveDataMore(std::istringstream& /*data*/) override
             {
                 if (GetBossState(BOSS_BARONESS_ANASTARI) == DONE)
                     ++brokenCrystals;

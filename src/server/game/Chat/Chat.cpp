@@ -19,29 +19,20 @@
 #include "AccountMgr.h"
 #include "CellImpl.h"
 #include "CharacterCache.h"
-#include "ChatCommand.h"
 #include "ChatPackets.h"
-#include "Common.h"
 #include "GridNotifiersImpl.h"
-#include "Group.h"
 #include "Language.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Optional.h"
 #include "Player.h"
-#include "RealmList.h"
+#include "Realm.h"
 #include "StringConvert.h"
 #include "World.h"
 #include "WorldSession.h"
+#include <boost/algorithm/string/replace.hpp>
 
 Player* ChatHandler::GetPlayer() const { return m_session ? m_session->GetPlayer() : nullptr; }
-
-char* ChatHandler::LineFromMessage(char*& pos)
-{
-    char* start = strtok(pos, "\n");
-    pos = nullptr;
-    return start;
-}
 
 char const* ChatHandler::GetTrinityString(uint32 entry) const
 {
@@ -93,7 +84,7 @@ bool ChatHandler::HasLowerSecurityAccount(WorldSession* target, uint32 target_ac
     if (target)
         target_sec = target->GetSecurity();
     else if (target_account)
-        target_sec = AccountMgr::GetSecurity(target_account, sRealmList->GetCurrentRealmId().Realm);
+        target_sec = AccountMgr::GetSecurity(target_account, realm.Id.Realm);
     else
         return true;                                        // caller must report error for (target == nullptr && target_account == 0)
 
@@ -110,11 +101,19 @@ bool ChatHandler::HasLowerSecurityAccount(WorldSession* target, uint32 target_ac
 
 void ChatHandler::SendSysMessage(std::string_view str, bool escapeCharacters)
 {
-    std::string msg(str);
+    std::string msg{ str };
 
     // Replace every "|" with "||" in msg
-    if (escapeCharacters)
-        StringReplaceAll(&msg, "|"sv, "||"sv);
+    if (escapeCharacters && msg.find('|') != std::string::npos)
+    {
+        std::vector<std::string_view> tokens = Trinity::Tokenize(msg, '|', true);
+        std::ostringstream stream;
+        for (size_t i = 0; i < tokens.size() - 1; ++i)
+            stream << tokens[i] << "||";
+        stream << tokens[tokens.size() - 1];
+
+        msg = stream.str();
+    }
 
     WorldPackets::Chat::Chat packet;
     for (std::string_view line : Trinity::Tokenize(str, '\n', true))
@@ -149,18 +148,9 @@ void ChatHandler::SendSysMessage(uint32 entry)
     SendSysMessage(GetTrinityString(entry));
 }
 
-void ChatHandler::SendSysMessage(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept
-{
-    SendSysMessage(StringVPrintf(messageFormat, messageFormatArgs));
-}
-
-std::string ChatHandler::StringVPrintf(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept try
+std::string ChatHandler::StringVPrintf(std::string_view messageFormat, fmt::printf_args messageFormatArgs)
 {
     return fmt::vsprintf<char>(messageFormat, messageFormatArgs);
-}
-catch (std::exception const& formatError)
-{
-    return fmt::format(R"(An error occurred formatting string "{}" : {})", messageFormat, formatError.what());
 }
 
 bool ChatHandler::_ParseCommands(std::string_view text)
@@ -286,28 +276,28 @@ char* ChatHandler::extractKeyFromLink(char* text, char const* linkType, char** s
 
     char* check = strtok(text, "|");                        // skip color
     if (!check)
-        return nullptr;                                     // end of data
+        return nullptr;                                        // end of data
 
-    char* cLinkType = strtok(nullptr, ":");                 // linktype
+    char* cLinkType = strtok(nullptr, ":");                    // linktype
     if (!cLinkType)
-        return nullptr;                                     // end of data
+        return nullptr;                                        // end of data
 
     if (strcmp(cLinkType, linkType) != 0)
     {
-        strtok(nullptr, " ");                               // skip link tail (to allow continue strtok(nullptr, s) use after retturn from function
+        strtok(nullptr, " ");                                  // skip link tail (to allow continue strtok(nullptr, s) use after retturn from function
         SendSysMessage(LANG_WRONG_LINK_TYPE);
         return nullptr;
     }
 
-    char* cKeys = strtok(nullptr, "|");                     // extract keys and values
+    char* cKeys = strtok(nullptr, "|");                        // extract keys and values
     char* cKeysTail = strtok(nullptr, "");
 
     char* cKey = strtok(cKeys, ":|");                       // extract key
     if (something1)
-        *something1 = strtok(nullptr, ":|");                // extract something
+        *something1 = strtok(nullptr, ":|");                   // extract something
 
     strtok(cKeysTail, "]");                                 // restart scan tail and skip name with possible spaces
-    strtok(nullptr, " ");                                   // skip link tail (to allow continue strtok(nullptr, s) use after return from function
+    strtok(nullptr, " ");                                      // skip link tail (to allow continue strtok(nullptr, s) use after return from function
     return cKey;
 }
 
@@ -340,37 +330,37 @@ char* ChatHandler::extractKeyFromLink(char* text, char const* const* linkTypes, 
     {
         char* check = strtok(text, "|");                    // skip color
         if (!check)
-            return nullptr;                                 // end of data
+            return nullptr;                                    // end of data
 
-        tail = strtok(nullptr, "");                         // tail
+        tail = strtok(nullptr, "");                            // tail
     }
     else
         tail = text+1;                                      // skip first |
 
     char* cLinkType = strtok(tail, ":");                    // linktype
     if (!cLinkType)
-        return nullptr;                                     // end of data
+        return nullptr;                                        // end of data
 
     for (int i = 0; linkTypes[i]; ++i)
     {
         if (strcmp(cLinkType, linkTypes[i]) == 0)
         {
-            char* cKeys = strtok(nullptr, "|");             // extract keys and values
+            char* cKeys = strtok(nullptr, "|");                // extract keys and values
             char* cKeysTail = strtok(nullptr, "");
 
             char* cKey = strtok(cKeys, ":|");               // extract key
             if (something1)
-                *something1 = strtok(nullptr, ":|");        // extract something
+                *something1 = strtok(nullptr, ":|");           // extract something
 
             strtok(cKeysTail, "]");                         // restart scan tail and skip name with possible spaces
-            strtok(nullptr, " ");                           // skip link tail (to allow continue strtok(nullptr, s) use after return from function
+            strtok(nullptr, " ");                              // skip link tail (to allow continue strtok(nullptr, s) use after return from function
             if (found_idx)
                 *found_idx = i;
             return cKey;
         }
     }
 
-    strtok(nullptr, " ");                                   // skip link tail (to allow continue strtok(nullptr, s) use after return from function
+    strtok(nullptr, " ");                                      // skip link tail (to allow continue strtok(nullptr, s) use after return from function
     SendSysMessage(LANG_WRONG_LINK_TYPE);
     return nullptr;
 }
@@ -454,17 +444,18 @@ ObjectGuid::LowType ChatHandler::extractLowGuidFromLink(char* text, HighGuid& gu
 
             ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name);
             return guid.GetCounter();
+
         }
         case GUID_LINK_CREATURE:
         {
-            guidHigh = HighGuid::Creature;
-            ObjectGuid::LowType lowguid = Trinity::StringTo<ObjectGuid::LowType>(idS).value_or(UI64LIT(0));
+            guidHigh = HighGuid::Unit;
+            ObjectGuid::LowType lowguid = Trinity::StringTo<ObjectGuid::LowType>(idS).value_or(0);
             return lowguid;
         }
         case GUID_LINK_GAMEOBJECT:
         {
             guidHigh = HighGuid::GameObject;
-            ObjectGuid::LowType lowguid = Trinity::StringTo<ObjectGuid::LowType>(idS).value_or(UI64LIT(0));
+            ObjectGuid::LowType lowguid = Trinity::StringTo<ObjectGuid::LowType>(idS).value_or(0);
             return lowguid;
         }
     }
@@ -487,7 +478,7 @@ std::string ChatHandler::extractPlayerNameFromLink(char* text)
     return name;
 }
 
-bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* player_guid /*= nullptr*/, std::string* player_name /*= nullptr*/)
+bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* player_guid /*=nullptr*/, std::string* player_name /*= nullptr*/)
 {
     if (args && *args)
     {
@@ -600,15 +591,7 @@ LocaleConstant ChatHandler::GetSessionDbLocaleIndex() const
     return m_session->GetSessionDbLocaleIndex();
 }
 
-std::string ChatHandler::playerLink(std::string const& name) const
-{
-    if (m_session)
-        return Trinity::StringFormat("|cffffffff|Hplayer:{0}|h[{0}]|h|r", name);
-    else
-        return name;
-}
-
-std::string ChatHandler::GetNameLink(Player* chr) const
+std::string ChatHandler::GetNameLink(Player const* chr) const
 {
     return playerLink(chr->GetName());
 }
@@ -644,7 +627,7 @@ bool CliHandler::needReportToTarget(Player* /*chr*/) const
     return true;
 }
 
-bool ChatHandler::GetPlayerGroupAndGUIDByName(const char* cname, Player*& player, Group*& group, ObjectGuid& guid, bool offline)
+bool ChatHandler::GetPlayerGroupAndGUIDByName(char const* cname, Player*& player, Group*& group, ObjectGuid& guid, bool offline)
 {
     player = nullptr;
     guid.Clear();
@@ -702,10 +685,12 @@ std::string_view const AddonChannelCommandHandler::PREFIX = "TrinityCore";
 
 bool AddonChannelCommandHandler::ParseCommands(std::string_view str)
 {
-    if (str.length() < 5)
+    if (str.length() < 17)
         return false;
-    char opcode = str[0];
-    echo = &str[1];
+    if (!StringStartsWith(str, "TrinityCore\t"))
+        return false;
+    char opcode = str[12];
+    echo = &str[13];
 
     switch (opcode)
     {
@@ -715,11 +700,11 @@ bool AddonChannelCommandHandler::ParseCommands(std::string_view str)
         case 'h': // h Issue human-readable command
         case 'i': // i Issue command
         {
-            if (!str[5])
+            if (!str[17])
                 return false;
             humanReadable = (opcode == 'h');
-            std::string_view cmd = str.substr(5);
-            if (_ParseCommands(cmd)) // actual command starts at str[5]
+            std::string_view cmd = str.substr(17);
+            if (_ParseCommands(cmd)) // actual command starts at str[17]
             {
                 if (!hadAck)
                     SendAck();
@@ -783,8 +768,7 @@ void AddonChannelCommandHandler::SendSysMessage(std::string_view str, bool escap
     msg.append(echo, 4);
     std::string body(str);
     if (escapeCharacters)
-        StringReplaceAll(&body, "|"sv, "||"sv);
-
+        boost::replace_all(body, "|", "||");
     size_t pos, lastpos;
     for (lastpos = 0, pos = body.find('\n', lastpos); pos != std::string::npos; lastpos = pos + 1, pos = body.find('\n', lastpos))
     {

@@ -37,7 +37,6 @@ namespace WorldPackets
 
         WorldPacket const* GetRawPacket() const { return &_worldPacket; }
         size_t GetSize() const { return _worldPacket.size(); }
-        ConnectionType GetConnection() const { return _worldPacket.GetConnection(); }
 
     protected:
         WorldPacket _worldPacket;
@@ -46,9 +45,9 @@ namespace WorldPackets
     class TC_GAME_API ServerPacket : public Packet
     {
     public:
-        ServerPacket(OpcodeServer opcode, size_t initialSize = 200, ConnectionType connection = CONNECTION_TYPE_DEFAULT);
+        ServerPacket(OpcodeServer opcode, size_t initialSize = 200);
 
-        void Read() final;
+        void Read() override final;
 
         void Clear() { _worldPacket.clear(); }
         WorldPacket&& Move() { return std::move(_worldPacket); }
@@ -63,17 +62,9 @@ namespace WorldPackets
         ClientPacket(WorldPacket&& packet);
         ClientPacket(OpcodeClient expectedOpcode, WorldPacket&& packet);
 
-        WorldPacket const* Write() final;
+        WorldPacket const* Write() override final;
 
         OpcodeClient GetOpcode() const { return OpcodeClient(_worldPacket.GetOpcode()); }
-    };
-
-    class Null final : public ClientPacket
-    {
-    public:
-        Null(WorldPacket&& packet) : ClientPacket(std::move(packet)) { }
-
-        void Read() override { _worldPacket.rfinish(); }
     };
 }
 

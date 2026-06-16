@@ -22,9 +22,7 @@
 #include "GridObject.h"
 #include "DatabaseEnvFwd.h"
 #include "GridDefines.h"
-#include "IteratorPair.h"
-
-struct Loot;
+#include "Loot.h"
 
 enum CorpseType
 {
@@ -42,47 +40,23 @@ enum CorpseFlags
     CORPSE_FLAG_NONE        = 0x00,
     CORPSE_FLAG_BONES       = 0x01,
     CORPSE_FLAG_UNK1        = 0x02,
-    CORPSE_FLAG_PVP         = 0x04,
+    CORPSE_FLAG_UNK2        = 0x04,
     CORPSE_FLAG_HIDE_HELM   = 0x08,
     CORPSE_FLAG_HIDE_CLOAK  = 0x10,
-    CORPSE_FLAG_SKINNABLE   = 0x20,
-    CORPSE_FLAG_FFA_PVP     = 0x40
+    CORPSE_FLAG_LOOTABLE    = 0x20
 };
 
-class TC_GAME_API Corpse final : public WorldObject, public GridObject<Corpse>
+class TC_GAME_API Corpse : public WorldObject, public GridObject<Corpse>
 {
     public:
         explicit Corpse(CorpseType type = CORPSE_BONES);
         ~Corpse();
 
-    protected:
-        void BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void ClearValuesChangesMask() override;
-
-    public:
-        void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
-            UF::CorpseData::Mask const& requestedCorpseMask, Player const* target, bool ignoreNestedChangesMask) const;
-
-        struct ValuesUpdateForPlayerWithMaskSender // sender compatible with MessageDistDeliverer
-        {
-            explicit ValuesUpdateForPlayerWithMaskSender(Corpse const* owner) : Owner(owner), IgnoreNestedChangesMask(false) { }
-
-            Corpse const* Owner;
-            UF::ObjectData::Base ObjectMask;
-            UF::CorpseData::Base CorpseMask;
-            bool IgnoreNestedChangesMask;
-
-            void operator()(Player const* player) const;
-        };
-
         void AddToWorld() override;
         void RemoveFromWorld() override;
 
-        bool Create(ObjectGuid::LowType guidlow, Map* map);
+        bool Create(ObjectGuid::LowType guidlow);
         bool Create(ObjectGuid::LowType guidlow, Player* owner);
-
-        void Update(uint32 diff) override;
 
         void SaveToDB();
         bool LoadCorpseFromDB(ObjectGuid::LowType guid, Field* fields);
@@ -90,37 +64,8 @@ class TC_GAME_API Corpse final : public WorldObject, public GridObject<Corpse>
         void DeleteFromDB(CharacterDatabaseTransaction trans);
         static void DeleteFromDB(ObjectGuid const& ownerGuid, CharacterDatabaseTransaction trans);
 
-        CorpseDynFlags GetCorpseDynamicFlags() const { return CorpseDynFlags(*m_corpseData->DynamicFlags); }
-        void SetCorpseDynamicFlag(CorpseDynFlags dynamicFlags) { SetUpdateFieldFlagValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::DynamicFlags), dynamicFlags); }
-        void RemoveCorpseDynamicFlag(CorpseDynFlags dynamicFlags) { RemoveUpdateFieldFlagValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::DynamicFlags), dynamicFlags); }
-        void ReplaceAllCorpseDynamicFlags(CorpseDynFlags dynamicFlags) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::DynamicFlags), dynamicFlags); }
-
-        ObjectGuid GetCreatorGUID() const override { return m_corpseData->Owner; }
-        ObjectGuid GetOwnerGUID() const override { return m_corpseData->Owner; }
-        void SetOwnerGUID(ObjectGuid owner) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Owner), owner); }
-        void SetPartyGUID(ObjectGuid partyGuid) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::PartyGUID), partyGuid); }
-        void SetGuildGUID(ObjectGuid guildGuid) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::GuildGUID), guildGuid); }
-        void SetDisplayId(uint32 displayId) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::DisplayID), displayId); }
-        void SetRace(uint8 race) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::RaceID), race); }
-        void SetClass(uint8 playerClass) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Class), playerClass); }
-        void SetSex(uint8 sex) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Sex), sex); }
-        void ReplaceAllFlags(uint32 flags) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Flags), flags); }
-        void SetFactionTemplate(int32 factionTemplate) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::FactionTemplate), factionTemplate); }
-        uint32 GetFaction() const override { return m_corpseData->FactionTemplate; }
-        void SetFaction(uint32 faction) override { SetFactionTemplate(faction); }
-        void SetItem(uint32 slot, uint32 item) { SetUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Items, slot), item); }
-
-        template<typename Iter>
-        void SetCustomizations(Trinity::IteratorPair<Iter> customizations)
-        {
-            ClearDynamicUpdateFieldValues(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Customizations));
-            for (auto&& customization : customizations)
-            {
-                UF::ChrCustomizationChoice& newChoice = AddDynamicUpdateFieldValue(m_values.ModifyValue(&Corpse::m_corpseData).ModifyValue(&UF::CorpseData::Customizations));
-                newChoice.ChrCustomizationOptionID = customization.ChrCustomizationOptionID;
-                newChoice.ChrCustomizationChoiceID = customization.ChrCustomizationChoiceID;
-            }
-        }
+        ObjectGuid GetOwnerGUID() const override { return GetGuidValue(CORPSE_FIELD_OWNER); }
+        uint32 GetFaction() const override;
 
         time_t const& GetGhostTime() const { return m_time; }
         void ResetGhostTime();
@@ -129,14 +74,10 @@ class TC_GAME_API Corpse final : public WorldObject, public GridObject<Corpse>
         CellCoord const& GetCellCoord() const { return _cellCoord; }
         void SetCellCoord(CellCoord const& cellCoord) { _cellCoord = cellCoord; }
 
-        std::unique_ptr<Loot> m_loot;
-        Loot* GetLootForPlayer(Player const* /*player*/) const override { return m_loot.get(); }
-
+        Loot loot;                                          // remove insignia ONLY at BG
         Player* lootRecipient;
 
         bool IsExpired(time_t t) const;
-
-        UF::UpdateField<UF::CorpseData, int32(WowCS::EntityFragment::CGObject), TYPEID_CORPSE> m_corpseData;
 
     private:
         CorpseType m_type;

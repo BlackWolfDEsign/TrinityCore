@@ -15,11 +15,12 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_CALENDAR_PACKETS_H
-#define TRINITYCORE_CALENDAR_PACKETS_H
+#ifndef CalendarPackets_h__
+#define CalendarPackets_h__
 
 #include "Packet.h"
 #include "CalendarMgr.h"
+#include "DBCStructure.h"
 #include "ObjectGuid.h"
 #include "Optional.h"
 #include "PacketUtilities.h"
@@ -32,7 +33,7 @@ namespace WorldPackets
         class CalendarGetCalendar final : public ClientPacket
         {
         public:
-            explicit CalendarGetCalendar(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GET, std::move(packet)) { }
+            CalendarGetCalendar(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GET_CALENDAR, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -40,24 +41,33 @@ namespace WorldPackets
         class CalendarGetEvent final : public ClientPacket
         {
         public:
-            explicit CalendarGetEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GET_EVENT, std::move(packet)) { }
+            CalendarGetEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GET_EVENT, std::move(packet)) { }
 
             void Read() override;
 
             uint64 EventID = 0;
         };
 
-        class CalendarCommunityInviteRequest final : public ClientPacket
+        class CalendarGuildFilter final : public ClientPacket
         {
         public:
-            explicit CalendarCommunityInviteRequest(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_COMMUNITY_INVITE, std::move(packet)) { }
+            CalendarGuildFilter(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GUILD_FILTER, std::move(packet)) { }
 
             void Read() override;
 
-            uint64 ClubID = 0;
-            uint8 MinLevel = 1;
-            uint8 MaxLevel = 100;
-            uint8 MaxRankOrder = 0;
+            uint32 MinLevel = 1;
+            uint32 MaxLevel = 100;
+            uint32 MaxRankOrder = 0;
+        };
+
+        class CalendarArenaTeam final : public ClientPacket
+        {
+        public:
+            CalendarArenaTeam(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_ARENA_TEAM, std::move(packet)) { }
+
+            void Read() override;
+
+            uint32 ArenaTeamId = 0;
         };
 
         struct CalendarAddEventInviteInfo
@@ -65,37 +75,33 @@ namespace WorldPackets
             ObjectGuid Guid;
             uint8 Status = 0;
             uint8 Moderator = 0;
-            Optional<ObjectGuid> BnetAccountID;
-            Optional<uint64> RealmAddress;
-            Optional<uint64> CommunityID;
-        };
-
-        struct CalendarAddEventInfo
-        {
-            uint64 ClubID = 0;
-            std::string Title;
-            std::string Description;
-            uint8 EventType = 0;
-            int32 TextureID = 0;
-            WowTime Time;
-            uint16 Flags = 0;
-            Array<CalendarAddEventInviteInfo, CALENDAR_MAX_INVITES> Invites;
         };
 
         class CalendarAddEvent final : public ClientPacket
         {
         public:
-            explicit CalendarAddEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_ADD_EVENT, std::move(packet)) { }
+            CalendarAddEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_ADD_EVENT, std::move(packet)) { }
 
             void Read() override;
 
             uint32 MaxSize = 100;
-            CalendarAddEventInfo EventInfo;
+            std::string Title;
+            std::string Description;
+            uint8 EventType = 0;
+            int32 TextureID = 0;
+            WowTime Time;
+            WowTime LockDate;
+            uint32 Flags = 0;
+            Array<CalendarAddEventInviteInfo, CALENDAR_MAX_INVITES> Invites;
         };
 
-        struct CalendarUpdateEventInfo
+        class CalendarUpdateEvent final : public ClientPacket
         {
-            uint64 ClubID = 0;
+        public:
+            CalendarUpdateEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_UPDATE_EVENT, std::move(packet)) { }
+
+            void Read() override;
+
             uint64 EventID = 0;
             uint64 ModeratorID = 0;
             std::string Title;
@@ -103,50 +109,39 @@ namespace WorldPackets
             uint8 EventType = 0;
             uint32 TextureID = 0;
             WowTime Time;
-            uint16 Flags = 0;
-        };
-
-        class CalendarUpdateEvent final : public ClientPacket
-        {
-        public:
-            explicit CalendarUpdateEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_UPDATE_EVENT, std::move(packet)) { }
-
-            void Read() override;
-
+            WowTime LockDate;
+            uint32 Flags = 0;
             uint32 MaxSize = 0;
-            CalendarUpdateEventInfo EventInfo;
         };
 
         class CalendarRemoveEvent final : public ClientPacket
         {
         public:
-            explicit CalendarRemoveEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_REMOVE_EVENT, std::move(packet)) { }
+            CalendarRemoveEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_REMOVE_EVENT, std::move(packet)) { }
 
             void Read() override;
 
             uint64 ModeratorID = 0;
             uint64 EventID = 0;
-            uint64 ClubID = 0;
-            uint32 Flags = 0;
+            bool IsSignUp = false;
         };
 
         class CalendarCopyEvent final : public ClientPacket
         {
         public:
-            explicit CalendarCopyEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_COPY_EVENT, std::move(packet)) { }
+            CalendarCopyEvent(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_COPY_EVENT, std::move(packet)) { }
 
             void Read() override;
 
             uint64 ModeratorID = 0;
             uint64 EventID = 0;
-            uint64 EventClubID = 0;
             WowTime Date;
         };
 
         class CalendarInviteAdded final : public ServerPacket
         {
         public:
-            explicit CalendarInviteAdded() : ServerPacket(SMSG_CALENDAR_INVITE_ADDED, 43) { }
+            CalendarInviteAdded() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE, 43) { }
 
             WorldPacket const* Write() override;
 
@@ -173,10 +168,10 @@ namespace WorldPackets
 
         struct CalendarSendCalendarRaidLockoutInfo
         {
-            int32 MapID = 0;
-            int16 DifficultyID = 0;
-            int32 ExpireTime = 0;
             uint64 InstanceID = 0;
+            int32 MapID = 0;
+            uint32 DifficultyID = 0;
+            int32 ExpireTime = 0;
         };
 
         struct CalendarSendCalendarEventInfo
@@ -185,16 +180,35 @@ namespace WorldPackets
             std::string EventName;
             uint8 EventType = 0;
             WowTime Date;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             int32 TextureID = 0;
-            uint64 EventClubID = 0;
             ObjectGuid OwnerGuid;
+        };
+
+        struct CalendarSendCalendarRaidResetInfo
+        {
+            int32 MapID = 0;
+            uint32 Duration = 0;
+            int32 Offset = 0;
+        };
+
+        struct CalendarSendCalendarHolidayInfo
+        {
+            int32 HolidayID = 0;
+            int32 Region = 0;
+            int32 Looping = 0;
+            int32 Priority = 0;
+            int32 FilterType = 0;
+            std::string_view TextureFilename;
+            std::array<WowTime, MAX_HOLIDAY_DATES> Date = { };
+            std::array<int32, MAX_HOLIDAY_DURATIONS> Duration = { };
+            std::array<int32, MAX_HOLIDAY_FLAGS> CalendarFlags = { };
         };
 
         class CalendarSendCalendar final : public ServerPacket
         {
         public:
-            explicit CalendarSendCalendar() : ServerPacket(SMSG_CALENDAR_SEND_CALENDAR, 338) { }
+            CalendarSendCalendar() : ServerPacket(SMSG_CALENDAR_SEND_CALENDAR, 338) { }
 
             WorldPacket const* Write() override;
 
@@ -202,6 +216,10 @@ namespace WorldPackets
             std::vector<CalendarSendCalendarInviteInfo> Invites;
             std::vector<CalendarSendCalendarRaidLockoutInfo> RaidLockouts;
             std::vector<CalendarSendCalendarEventInfo> Events;
+            time_t ServerNow = time_t(0);
+            time_t RaidOrigin = time_t(0);
+            std::vector<CalendarSendCalendarRaidResetInfo> RaidResets;
+            std::vector<CalendarSendCalendarHolidayInfo> Holidays;
         };
 
         struct CalendarEventInviteInfo
@@ -219,16 +237,16 @@ namespace WorldPackets
         class CalendarSendEvent final : public ServerPacket
         {
         public:
-            explicit CalendarSendEvent() : ServerPacket(SMSG_CALENDAR_SEND_EVENT, 93) { }
+            CalendarSendEvent() : ServerPacket(SMSG_CALENDAR_SEND_EVENT, 93) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid OwnerGuid;
-            uint64 EventClubID = 0;
+            ObjectGuid::LowType EventGuildID = 0;
             uint64 EventID = 0;
             WowTime Date;
             WowTime LockDate;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             int32 TextureID = 0;
             uint8 GetEventType = 0;
             uint8 EventType = 0;
@@ -240,29 +258,27 @@ namespace WorldPackets
         class CalendarInviteAlert final : public ServerPacket
         {
         public:
-            explicit CalendarInviteAlert() : ServerPacket(SMSG_CALENDAR_INVITE_ALERT, 80) { }
+            CalendarInviteAlert() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_ALERT, 80) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid OwnerGuid;
-            uint64 EventClubID = 0;
             ObjectGuid InvitedByGuid;
             uint64 InviteID = 0;
             uint64 EventID = 0;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             WowTime Date;
             int32 TextureID = 0;
             uint8 Status = 0;
-            uint8 EventType = 0;
+            uint32 EventType = 0;
             uint8 ModeratorStatus = 0;
             std::string EventName;
-            bool Unknown_1100 = false;
         };
 
         class CalendarInvite final : public ClientPacket
         {
         public:
-            explicit CalendarInvite(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_INVITE, std::move(packet)) { }
+            CalendarInvite(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_INVITE, std::move(packet)) { }
 
             void Read() override;
 
@@ -270,14 +286,13 @@ namespace WorldPackets
             bool IsSignUp = false;
             bool Creating = true;
             uint64 EventID = 0;
-            uint64 ClubID = 0;
             std::string Name;
         };
 
         class CalendarRSVP final : public ClientPacket
         {
         public:
-            explicit CalendarRSVP(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_RSVP, std::move(packet)) { }
+            CalendarRSVP(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_RSVP, std::move(packet)) { }
 
             void Read() override;
 
@@ -289,11 +304,11 @@ namespace WorldPackets
         class CalendarInviteStatus final : public ServerPacket
         {
         public:
-            explicit CalendarInviteStatus() : ServerPacket(SMSG_CALENDAR_INVITE_STATUS, 41) { }
+            CalendarInviteStatus() : ServerPacket(SMSG_CALENDAR_EVENT_STATUS, 41) { }
 
             WorldPacket const* Write() override;
 
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             uint64 EventID = 0;
             uint8 Status = 0;
             bool ClearPending = false;
@@ -305,20 +320,20 @@ namespace WorldPackets
         class CalendarInviteRemoved final : public ServerPacket
         {
         public:
-            explicit CalendarInviteRemoved() : ServerPacket(SMSG_CALENDAR_INVITE_REMOVED, 29) { }
+            CalendarInviteRemoved() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_REMOVED, 29) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid InviteGuid;
             uint64 EventID = 0;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             bool ClearPending = false;
         };
 
         class CalendarModeratorStatus final : public ServerPacket
         {
         public:
-            explicit CalendarModeratorStatus() : ServerPacket(SMSG_CALENDAR_MODERATOR_STATUS, 26) { }
+            CalendarModeratorStatus() : ServerPacket(SMSG_CALENDAR_EVENT_MODERATOR_STATUS_ALERT, 26) { }
 
             WorldPacket const* Write() override;
 
@@ -331,20 +346,20 @@ namespace WorldPackets
         class CalendarInviteRemovedAlert final : public ServerPacket
         {
         public:
-            explicit CalendarInviteRemovedAlert() : ServerPacket(SMSG_CALENDAR_INVITE_REMOVED_ALERT, 17) { }
+            CalendarInviteRemovedAlert() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_REMOVED_ALERT, 17) { }
 
             WorldPacket const* Write() override;
 
             uint64 EventID = 0;
             WowTime Date;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             uint8 Status = 0;
         };
 
         class CalendarClearPendingAction final : public ServerPacket
         {
         public:
-            explicit CalendarClearPendingAction() : ServerPacket(SMSG_CALENDAR_CLEAR_PENDING_ACTION, 0) { }
+            CalendarClearPendingAction() : ServerPacket(SMSG_CALENDAR_CLEAR_PENDING_ACTION, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -352,14 +367,13 @@ namespace WorldPackets
         class CalendarEventUpdatedAlert final : public ServerPacket
         {
         public:
-            explicit CalendarEventUpdatedAlert() : ServerPacket(SMSG_CALENDAR_EVENT_UPDATED_ALERT, 32) { }
+            CalendarEventUpdatedAlert() : ServerPacket(SMSG_CALENDAR_EVENT_UPDATED_ALERT, 32) { }
 
             WorldPacket const* Write() override;
 
-            uint64 EventClubID = 0;
             uint64 EventID = 0;
             WowTime Date;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             WowTime LockDate;
             WowTime OriginalDate;
             int32 TextureID = 0;
@@ -372,7 +386,7 @@ namespace WorldPackets
         class CalendarEventRemovedAlert final : public ServerPacket
         {
         public:
-            explicit CalendarEventRemovedAlert() : ServerPacket(SMSG_CALENDAR_EVENT_REMOVED_ALERT, 13) { }
+            CalendarEventRemovedAlert() : ServerPacket(SMSG_CALENDAR_EVENT_REMOVED_ALERT, 13) { }
 
             WorldPacket const* Write() override;
 
@@ -384,8 +398,8 @@ namespace WorldPackets
         class CalendarSendNumPending final : public ServerPacket
         {
         public:
-            explicit CalendarSendNumPending() : ServerPacket(SMSG_CALENDAR_SEND_NUM_PENDING, 4) { }
-            explicit CalendarSendNumPending(uint32 numPending) : ServerPacket(SMSG_CALENDAR_SEND_NUM_PENDING, 4), NumPending(numPending) { }
+            CalendarSendNumPending() : ServerPacket(SMSG_CALENDAR_SEND_NUM_PENDING, 4) { }
+            CalendarSendNumPending(uint32 numPending) : ServerPacket(SMSG_CALENDAR_SEND_NUM_PENDING, 4), NumPending(numPending) { }
 
             WorldPacket const* Write() override;
 
@@ -395,7 +409,7 @@ namespace WorldPackets
         class CalendarGetNumPending final : public ClientPacket
         {
         public:
-            explicit CalendarGetNumPending(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GET_NUM_PENDING, std::move(packet)) { }
+            CalendarGetNumPending(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_GET_NUM_PENDING, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -403,19 +417,18 @@ namespace WorldPackets
         class CalendarEventSignUp final : public ClientPacket
         {
         public:
-            explicit CalendarEventSignUp(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_SIGN_UP, std::move(packet)) { }
+            CalendarEventSignUp(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_SIGNUP, std::move(packet)) { }
 
             void Read() override;
 
             bool Tentative = false;
             uint64 EventID = 0;
-            uint64 ClubID = 0;
         };
 
         class CalendarRemoveInvite final : public ClientPacket
         {
         public:
-            explicit CalendarRemoveInvite(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_REMOVE_INVITE, std::move(packet)) { }
+            CalendarRemoveInvite(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_REMOVE_INVITE, std::move(packet)) { }
 
             void Read() override;
 
@@ -428,7 +441,7 @@ namespace WorldPackets
         class CalendarStatus final : public ClientPacket
         {
         public:
-            explicit CalendarStatus(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_STATUS, std::move(packet)) { }
+            CalendarStatus(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_STATUS, std::move(packet)) { }
 
             void Read() override;
 
@@ -442,19 +455,19 @@ namespace WorldPackets
         class SetSavedInstanceExtend final : public ClientPacket
         {
         public:
-            explicit SetSavedInstanceExtend(WorldPacket&& packet) : ClientPacket(CMSG_SET_SAVED_INSTANCE_EXTEND, std::move(packet)) { }
+            SetSavedInstanceExtend(WorldPacket&& packet) : ClientPacket(CMSG_SET_SAVED_INSTANCE_EXTEND, std::move(packet)) { }
 
             void Read() override;
 
             int32 MapID = 0;
             bool Extend = false;
-            int16 DifficultyID = 0;
+            uint32 DifficultyID = 0;
         };
 
         class CalendarModeratorStatusQuery final : public ClientPacket
         {
         public:
-            explicit CalendarModeratorStatusQuery(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_MODERATOR_STATUS, std::move(packet)) { }
+            CalendarModeratorStatusQuery(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_EVENT_MODERATOR_STATUS, std::move(packet)) { }
 
             void Read() override;
 
@@ -468,24 +481,25 @@ namespace WorldPackets
         class CalendarCommandResult final : public ServerPacket
         {
         public:
-            explicit CalendarCommandResult() : ServerPacket(SMSG_CALENDAR_COMMAND_RESULT, 3) { }
+            CalendarCommandResult() : ServerPacket(SMSG_CALENDAR_COMMAND_RESULT, 3) { }
+            CalendarCommandResult(uint8 command, uint8 result, std::string const& name) : ServerPacket(SMSG_CALENDAR_COMMAND_RESULT, 3), Command(command), Result(result), Name(name) { }
 
             WorldPacket const* Write() override;
 
-            uint8 Command = 0;
-            uint8 Result = 0;
+            uint32 Command = 0;
+            uint32 Result = 0;
             std::string Name;
         };
 
         class CalendarRaidLockoutAdded final : public ServerPacket
         {
         public:
-            explicit CalendarRaidLockoutAdded() : ServerPacket(SMSG_CALENDAR_RAID_LOCKOUT_ADDED, 8 + 4 + 4 + 4 + 4) { }
+            CalendarRaidLockoutAdded() : ServerPacket(SMSG_CALENDAR_RAID_LOCKOUT_ADDED, 8 + 4 + 4 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
             uint64 InstanceID = 0;
-            int16 DifficultyID = 0;
+            uint32 DifficultyID = 0;
             int32 TimeRemaining = 0;
             WowTime ServerTime;
             int32 MapID = 0;
@@ -494,25 +508,26 @@ namespace WorldPackets
         class CalendarRaidLockoutRemoved final : public ServerPacket
         {
         public:
-            explicit CalendarRaidLockoutRemoved() : ServerPacket(SMSG_CALENDAR_RAID_LOCKOUT_REMOVED, 8 + 4 + 4) { }
+            CalendarRaidLockoutRemoved() : ServerPacket(SMSG_CALENDAR_RAID_LOCKOUT_REMOVED, 8 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
             uint64 InstanceID = 0;
             int32 MapID = 0;
-            int16 DifficultyID = 0;
+            uint32 DifficultyID = 0;
+            int32 TimeRemaining = 0;
         };
 
         class CalendarRaidLockoutUpdated final : public ServerPacket
         {
         public:
-            explicit CalendarRaidLockoutUpdated() : ServerPacket(SMSG_CALENDAR_RAID_LOCKOUT_UPDATED, 20) { }
+            CalendarRaidLockoutUpdated() : ServerPacket(SMSG_CALENDAR_RAID_LOCKOUT_UPDATED, 20) { }
 
             WorldPacket const* Write() override;
 
             WowTime ServerTime;
             int32 MapID = 0;
-            int16 DifficultyID = 0;
+            uint32 DifficultyID = 0;
             int32 NewTimeRemaining = 0;
             int32 OldTimeRemaining = 0;
         };
@@ -525,10 +540,10 @@ namespace WorldPackets
             uint8 Level = 100;
         };
 
-        class CalendarCommunityInvite final : public ServerPacket
+        class CalendarEventInitialInvites final : public ServerPacket
         {
         public:
-            explicit CalendarCommunityInvite() : ServerPacket(SMSG_CALENDAR_COMMUNITY_INVITE, 17) { }
+            CalendarEventInitialInvites(bool guild) : ServerPacket(guild ? SMSG_CALENDAR_FILTER_GUILD : SMSG_CALENDAR_ARENA_TEAM, 17) { }
 
             WorldPacket const* Write() override;
 
@@ -538,12 +553,12 @@ namespace WorldPackets
         class CalendarInviteStatusAlert final : public ServerPacket
         {
         public:
-            explicit CalendarInviteStatusAlert() : ServerPacket(SMSG_CALENDAR_INVITE_STATUS_ALERT, 5) { }
+            CalendarInviteStatusAlert() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_STATUS_ALERT, 5) { }
 
             WorldPacket const* Write() override;
 
             uint64 EventID = 0;
-            uint16 Flags = 0;
+            uint32 Flags = 0;
             WowTime Date;
             uint8 Status = 0;
         };
@@ -551,8 +566,8 @@ namespace WorldPackets
         class CalendarInviteNotesAlert final : public ServerPacket
         {
         public:
-            explicit CalendarInviteNotesAlert() : ServerPacket(SMSG_CALENDAR_INVITE_NOTES_ALERT, 9) { }
-            explicit CalendarInviteNotesAlert(uint64 eventID, std::string const& notes) : ServerPacket(SMSG_CALENDAR_INVITE_NOTES_ALERT, 8 + notes.size()), EventID(eventID), Notes(notes) { }
+            CalendarInviteNotesAlert() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_NOTES_ALERT, 9) { }
+            CalendarInviteNotesAlert(uint64 eventID, std::string const& notes) : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_NOTES_ALERT, 8 + notes.size()), EventID(eventID), Notes(notes) { }
 
             WorldPacket const* Write() override;
 
@@ -563,7 +578,7 @@ namespace WorldPackets
         class CalendarInviteNotes final : public ServerPacket
         {
         public:
-            explicit CalendarInviteNotes() : ServerPacket(SMSG_CALENDAR_INVITE_NOTES, 26) { }
+            CalendarInviteNotes() : ServerPacket(SMSG_CALENDAR_EVENT_INVITE_NOTES, 26) { }
 
             WorldPacket const* Write() override;
 
@@ -576,7 +591,7 @@ namespace WorldPackets
         class CalendarComplain final : public ClientPacket
         {
         public:
-            explicit CalendarComplain(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_COMPLAIN, std::move(packet)) { }
+            CalendarComplain(WorldPacket&& packet) : ClientPacket(CMSG_CALENDAR_COMPLAIN, std::move(packet)) { }
 
             void Read() override;
 
@@ -587,4 +602,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_CALENDAR_PACKETS_H
+#endif // CalendarPackets_h__

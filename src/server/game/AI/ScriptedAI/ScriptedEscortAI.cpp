@@ -34,7 +34,7 @@ enum Points
     POINT_HOME          = 0xFFFFFE
 };
 
-EscortAI::EscortAI(Creature* creature) noexcept : ScriptedAI(creature), _pauseTimer(2500ms), _playerCheckTimer(1000), _escortState(STATE_ESCORT_NONE), _maxPlayerDistance(DEFAULT_MAX_PLAYER_DISTANCE),
+EscortAI::EscortAI(Creature* creature) : ScriptedAI(creature), _pauseTimer(2500ms), _playerCheckTimer(1000), _escortState(STATE_ESCORT_NONE), _maxPlayerDistance(DEFAULT_MAX_PLAYER_DISTANCE),
     _escortQuest(nullptr), _activeAttacker(true), _instantRespawn(false), _returnToStart(false), _despawnAtEnd(true), _despawnAtFar(true),
     _hasImmuneToNPCFlags(false), _started(false), _ended(false), _resume(false)
 {
@@ -60,9 +60,12 @@ void EscortAI::JustDied(Unit* /*killer*/)
     {
         if (Group* group = player->GetGroup())
         {
-            for (GroupReference const& groupRef : group->GetMembers())
-                if (groupRef.GetSource()->IsInMap(player))
-                    groupRef.GetSource()->FailQuest(_escortQuest->GetQuestId());
+            for (GroupReference* groupRef = group->GetFirstMember(); groupRef != nullptr; groupRef = groupRef->next())
+            {
+                if (Player* member = groupRef->GetSource())
+                    if (member->IsInMap(player))
+                        member->FailQuest(_escortQuest->GetQuestId());
+            }
         }
         else
             player->FailQuest(_escortQuest->GetQuestId());
@@ -94,8 +97,7 @@ void EscortAI::EnterEvadeMode(EvadeReason /*why*/)
 {
     me->RemoveAllAuras();
     me->CombatStop(true);
-    if (!me->IsTapListNotClearedOnEvade())
-        me->SetTappedBy(nullptr);
+    me->SetLootRecipient(nullptr);
 
     EngagementOver();
 
@@ -140,13 +142,13 @@ void EscortAI::MovementInform(uint32 type, uint32 id)
     }
     else if (type == WAYPOINT_MOTION_TYPE)
     {
-        ASSERT(id < _path.Nodes.size(), "EscortAI::MovementInform: referenced movement id (%u) points to non-existing node in loaded path (%s)", id, me->GetGUID().ToString().c_str());
-        WaypointNode waypoint = _path.Nodes[id];
+        ASSERT(id < _path.nodes.size(), "EscortAI::MovementInform: referenced movement id (%u) points to non-existing node in loaded path (%s)", id, me->GetGUID().ToString().c_str());
+        WaypointNode waypoint = _path.nodes[id];
 
-        TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::MovementInform: waypoint node {} reached ({})", waypoint.Id, me->GetGUID().ToString());
+        TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::MovementInform: waypoint node {} reached ({})", waypoint.id, me->GetGUID().ToString());
 
         // last point
-        if (id == _path.Nodes.size() - 1)
+        if (id == _path.nodes.size() - 1)
         {
             _started = false;
             _ended = true;
@@ -174,19 +176,23 @@ void EscortAI::UpdateAI(uint32 diff)
                     if (_despawnAtEnd)
                     {
                         TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::UpdateAI: reached end of waypoints, despawning at end ({})", me->GetGUID().ToString());
-                        if (_returnToStart)
-                        {
-                            Position respawnPosition = me->GetRespawnPosition();
-                            me->GetMotionMaster()->MovePoint(POINT_HOME, respawnPosition);
-                            TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::UpdateAI: returning to spawn location: {} ({})", respawnPosition, me->GetGUID().ToString());
-                        }
-                        else if (_instantRespawn)
+                        if (_instantRespawn)
                             me->Respawn(true);
                         else
                             me->DespawnOrUnsummon();
                     }
+                    else if (_returnToStart)
+                    {
+                        Position respawnPosition;
+                        float orientation = 0.f;
+                        me->GetRespawnPosition(respawnPosition.m_positionX, respawnPosition.m_positionY, respawnPosition.m_positionZ, &orientation);
+                        respawnPosition.SetOrientation(orientation);
+                        me->GetMotionMaster()->MovePoint(POINT_HOME, respawnPosition);
+                        TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::UpdateAI: returning to spawn location: {} ({})", respawnPosition.ToString(), me->GetGUID().ToString());
+                    }
+                    else
+                        RemoveEscortState(STATE_ESCORT_ESCORTING);
                     TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::UpdateAI: reached end of waypoints ({})", me->GetGUID().ToString());
-                    RemoveEscortState(STATE_ESCORT_ESCORTING);
                     return;
                 }
 
@@ -244,25 +250,38 @@ void EscortAI::UpdateAI(uint32 diff)
 
 void EscortAI::UpdateEscortAI(uint32 /*diff*/)
 {
-    UpdateVictim();
+    if (!UpdateVictim())
+        return;
+
+    DoMeleeAttackIfReady();
 }
 
 void EscortAI::AddWaypoint(uint32 id, float x, float y, float z, bool run)
 {
-    AddWaypoint(id, x, y, z, 0.0f, {}, run);
+    AddWaypoint(id, x, y, z, 0.0f, 0s, run);
 }
 
-void EscortAI::AddWaypoint(uint32 id, float x, float y, float z, float orientation/* = 0*/, Optional<Milliseconds> waitTime/* = {}*/, bool run /*= false*/)
+void EscortAI::AddWaypoint(uint32 id, float x, float y, float z, float orientation/* = 0*/, Milliseconds waitTime/* = 0s*/, bool run /*= false*/)
 {
     Trinity::NormalizeMapCoord(x);
     Trinity::NormalizeMapCoord(y);
 
-    _path.Nodes.emplace_back(id, x, y, z, orientation, waitTime, run ? WaypointMoveType::Run : WaypointMoveType::Walk);
+    WaypointNode waypoint;
+    waypoint.id = id;
+    waypoint.x = x;
+    waypoint.y = y;
+    waypoint.z = z;
+    waypoint.orientation = orientation;
+    waypoint.moveType = run ? WAYPOINT_MOVE_TYPE_RUN : WAYPOINT_MOVE_TYPE_WALK;
+    waypoint.delay = waitTime.count();
+    waypoint.eventId = 0;
+    waypoint.eventChance = 100;
+    _path.nodes.push_back(std::move(waypoint));
 }
 
 void EscortAI::ResetPath()
 {
-    _path.Nodes.clear();
+    _path.nodes.clear();
 }
 
 void EscortAI::LoadPath(uint32 pathId)
@@ -279,7 +298,7 @@ void EscortAI::LoadPath(uint32 pathId)
 /// @todo get rid of this many variables passed in function.
 void EscortAI::Start(bool isActiveAttacker /* = true*/, ObjectGuid playerGUID /* = 0 */, Quest const* quest /* = nullptr */, bool instantRespawn /* = false */, bool canLoopPath /* = false */)
 {
-    if (_path.Nodes.empty())
+    if (_path.nodes.empty())
     {
         TC_LOG_ERROR("scripts.ai.escortai", "EscortAI::Start: (script: {}) path is empty ({})", me->GetScriptName(), me->GetGUID().ToString());
         return;
@@ -304,9 +323,9 @@ void EscortAI::Start(bool isActiveAttacker /* = true*/, ObjectGuid playerGUID /*
         return;
     }
 
-    if (_path.Nodes.empty())
+    if (_path.nodes.empty())
     {
-        TC_LOG_ERROR("scripts.ai.escortai", "EscortAI::Start: (script: {}) is set to return home after waypoint end and instant respawn at waypoint end. Creature will never despawn ({})", me->GetScriptName(), me->GetGUID().ToString());
+        TC_LOG_ERROR("scripts.ai.escortai", "EscortAI::Start: (script: {}) starts with 0 waypoints (possible missing entry in script_waypoint. Quest: {}) ({})", me->GetScriptName(), quest ? quest->GetQuestId() : 0, me->GetGUID());
         return;
     }
 
@@ -325,7 +344,6 @@ void EscortAI::Start(bool isActiveAttacker /* = true*/, ObjectGuid playerGUID /*
 
     // disable npcflags
     me->ReplaceAllNpcFlags(UNIT_NPC_FLAG_NONE);
-    me->ReplaceAllNpcFlags2(UNIT_NPC_FLAG_2_NONE);
     if (me->IsImmuneToNPC())
     {
         _hasImmuneToNPCFlags = true;
@@ -333,7 +351,7 @@ void EscortAI::Start(bool isActiveAttacker /* = true*/, ObjectGuid playerGUID /*
     }
 
     TC_LOG_DEBUG("scripts.ai.escortai", "EscortAI::Start: (script: {}) started with {} waypoints. ActiveAttacker = {}, Player = {} ({})",
-        me->GetScriptName(), uint32(_path.Nodes.size()), _activeAttacker, _playerGUID.ToString(), me->GetGUID().ToString());
+        me->GetScriptName(), uint32(_path.nodes.size()), _activeAttacker, _playerGUID.ToString(), me->GetGUID().ToString());
 
     _started = false;
     AddEscortState(STATE_ESCORT_ESCORTING);
@@ -372,7 +390,7 @@ bool EscortAI::AssistPlayerInCombatAgainst(Unit* who)
         return false;
 
     // experimental (unknown) flag not present
-    if (!(me->GetCreatureDifficulty()->TypeFlags & CREATURE_TYPE_FLAG_CAN_ASSIST))
+    if (!(me->GetCreatureTemplate()->type_flags & CREATURE_TYPE_FLAG_CAN_ASSIST))
         return false;
 
     // not a player
@@ -412,9 +430,12 @@ bool EscortAI::IsPlayerOrGroupInRange()
     {
         if (Group* group = player->GetGroup())
         {
-            for (GroupReference const& groupRef : group->GetMembers())
-                if (me->IsWithinDistInMap(groupRef.GetSource(), GetMaxPlayerDistance()))
-                    return true;
+            for (GroupReference* groupRef = group->GetFirstMember(); groupRef != nullptr; groupRef = groupRef->next())
+            {
+                if (Player* member = groupRef->GetSource())
+                    if (me->IsWithinDistInMap(member, GetMaxPlayerDistance()))
+                        return true;
+            }
         }
         else if (me->IsWithinDistInMap(player, GetMaxPlayerDistance()))
             return true;

@@ -15,20 +15,14 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_VEHICLE_DEFINES_H
-#define TRINITYCORE_VEHICLE_DEFINES_H
+#ifndef __TRINITY_VEHICLEDEFINES_H
+#define __TRINITY_VEHICLEDEFINES_H
 
 #include "Define.h"
 #include "Duration.h"
-#include "EnumFlag.h"
-#include "ObjectGuid.h"
-#include "Optional.h"
-#include "Position.h"
-#include <map>
 #include <vector>
+#include <map>
 
-class Map;
-class WorldObject;
 struct VehicleSeatEntry;
 
 enum PowerType
@@ -38,29 +32,7 @@ enum PowerType
     POWER_HEAT                                   = 101,
     POWER_OOZE                                   = 121,
     POWER_BLOOD                                  = 141,
-    POWER_WRATH                                  = 142,
-    POWER_ARCANE_ENERGY                          = 143,
-    POWER_LIFE_ENERGY                            = 144,
-    POWER_SUN_ENERGY                             = 145,
-    POWER_SWING_VELOCITY                         = 146,
-    POWER_SHADOWFLAME_ENERGY                     = 147,
-    POWER_BLUE_POWER                             = 148,
-    POWER_PURPLE_POWER                           = 149,
-    POWER_GREEN_POWER                            = 150,
-    POWER_ORANGE_POWER                           = 151,
-    POWER_ENERGY_2                               = 153,
-    POWER_ARCANEENERGY                           = 161,
-    POWER_WIND_POWER_1                           = 162,
-    POWER_WIND_POWER_2                           = 163,
-    POWER_WIND_POWER_3                           = 164,
-    POWER_FUEL                                   = 165,
-    POWER_SUN_POWER                              = 166,
-    POWER_TWILIGHT_ENERGY                        = 169,
-    POWER_VENOM                                  = 174,
-    POWER_ORANGE_POWER_2                         = 176,
-    POWER_CONSUMING_FLAME                        = 177,
-    POWER_PYROCLASTIC_FRENZY                     = 178,
-    POWER_FLASHFIRE                              = 179,
+    POWER_WRATH                                  = 142
 };
 
 enum VehicleFlags
@@ -90,25 +62,15 @@ enum class VehicleExitParameters
     VehicleExitParamMax
 };
 
-enum class VehicleCustomFlags : uint32
-{
-    None                        = 0x0,
-    DontForceParachuteOnExit    = 0x1
-};
-
-DEFINE_ENUM_FLAG(VehicleCustomFlags);
-
 struct PassengerInfo
 {
     ObjectGuid Guid;
     bool IsUninteractible;
-    bool IsGravityDisabled;
 
     void Reset()
     {
         Guid.Clear();
         IsUninteractible = false;
-        IsGravityDisabled = false;
     }
 };
 
@@ -143,21 +105,18 @@ struct VehicleSeat
 
 struct VehicleAccessory
 {
-    VehicleAccessory(uint32 entry, int8 seatId, bool isMinion, uint8 summonType, uint32 summonTime, Optional<uint32> rideSpellID) :
-        AccessoryEntry(entry), IsMinion(isMinion), SummonTime(summonTime), SeatId(seatId), SummonedType(summonType), RideSpellID(rideSpellID) { }
+    VehicleAccessory(uint32 entry, int8 seatId, bool isMinion, uint8 summonType, uint32 summonTime) :
+        AccessoryEntry(entry), IsMinion(isMinion), SummonTime(summonTime), SeatId(seatId), SummonedType(summonType) { }
     uint32 AccessoryEntry;
     bool IsMinion;
     uint32 SummonTime;
     int8 SeatId;
     uint8 SummonedType;
-    Optional<uint32> RideSpellID;
 };
 
 struct VehicleTemplate
 {
     Milliseconds DespawnDelay = Milliseconds::zero();
-    Optional<float> Pitch;
-    EnumFlag<VehicleCustomFlags> CustomFlags = VehicleCustomFlags::None;
 };
 
 typedef std::vector<VehicleAccessory> VehicleAccessoryList;
@@ -172,23 +131,36 @@ protected:
     virtual ~TransportBase() { }
 
 public:
-    virtual ObjectGuid GetTransportGUID() const = 0;
-
     /// This method transforms supplied transport offsets into global coordinates
-    virtual Position GetPositionWithOffset(Position const& offset) const = 0;
+    virtual void CalculatePassengerPosition(float& x, float& y, float& z, float* o = nullptr) const = 0;
 
     /// This method transforms supplied global coordinates into local offsets
-    virtual Position GetPositionOffsetTo(Position const& endPos) const = 0;
+    virtual void CalculatePassengerOffset(float& x, float& y, float& z, float* o = nullptr) const = 0;
 
-    virtual float GetTransportOrientation() const = 0;
+protected:
+    static void CalculatePassengerPosition(float& x, float& y, float& z, float* o, float transX, float transY, float transZ, float transO)
+    {
+        float inx = x, iny = y, inz = z;
+        if (o)
+            *o = Position::NormalizeOrientation(transO + *o);
 
-    virtual void AddPassenger(WorldObject* passenger, Position const& offset) = 0;
+        x = transX + inx * std::cos(transO) - iny * std::sin(transO);
+        y = transY + iny * std::cos(transO) + inx * std::sin(transO);
+        z = transZ + inz;
+    }
 
-    virtual TransportBase* RemovePassenger(WorldObject* passenger) = 0;
+    static void CalculatePassengerOffset(float& x, float& y, float& z, float* o, float transX, float transY, float transZ, float transO)
+    {
+        if (o)
+            *o = Position::NormalizeOrientation(*o - transO);
 
-    void UpdatePassengerPosition(Map* map, WorldObject* passenger, Position const& position, bool setHomePosition);
-
-    virtual int32 GetMapIdForSpawning() const = 0;
+        z -= transZ;
+        y -= transY;    // y = searchedY * std::cos(o) + searchedX * std::sin(o)
+        x -= transX;    // x = searchedX * std::cos(o) + searchedY * std::sin(o + pi)
+        float inx = x, iny = y;
+        y = (iny - inx * std::tan(transO)) / (std::cos(transO) + std::sin(transO) * std::tan(transO));
+        x = (inx + iny * std::tan(transO)) / (std::cos(transO) + std::sin(transO) * std::tan(transO));
+    }
 };
 
 #endif

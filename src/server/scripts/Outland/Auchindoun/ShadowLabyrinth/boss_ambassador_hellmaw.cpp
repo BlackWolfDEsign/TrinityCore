@@ -136,7 +136,7 @@ struct boss_ambassador_hellmaw : public EscortAI
 
         if (me->HasAura(SPELL_BANISH))
         {
-            EnterEvadeMode(EvadeReason::Other);
+            EnterEvadeMode(EVADE_REASON_OTHER);
             return;
         }
 
@@ -164,6 +164,8 @@ struct boss_ambassador_hellmaw : public EscortAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:

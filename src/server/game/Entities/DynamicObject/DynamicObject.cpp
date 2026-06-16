@@ -21,25 +21,23 @@
 #include "Log.h"
 #include "Map.h"
 #include "ObjectAccessor.h"
-#include "PhasingHandler.h"
 #include "Player.h"
-#include "ScriptMgr.h"
 #include "SpellAuras.h"
-#include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "ScriptMgr.h"
 #include "Transport.h"
 #include "Unit.h"
 #include "UpdateData.h"
-#include "WorldPacket.h"
 
 DynamicObject::DynamicObject(bool isWorldObject) : WorldObject(isWorldObject),
     _aura(nullptr), _removedAura(nullptr), _caster(nullptr), _duration(0), _isViewpoint(false)
 {
+    m_objectType |= TYPEMASK_DYNAMICOBJECT;
     m_objectTypeId = TYPEID_DYNAMICOBJECT;
 
-    m_updateFlag.Stationary = true;
+    m_updateFlag = (UPDATEFLAG_LOWGUID | UPDATEFLAG_STATIONARY_POSITION | UPDATEFLAG_POSITION);
 
-    m_entityFragments.Add(WowCS::EntityFragment::Tag_DynamicObject, false);
+    m_valuesCount = DYNAMICOBJECT_END;
 }
 
 DynamicObject::~DynamicObject()
@@ -56,7 +54,7 @@ void DynamicObject::AddToWorld()
     ///- Register the dynamicObject for guid lookup and for caster
     if (!IsInWorld())
     {
-        GetMap()->GetObjectsStore().Insert<DynamicObject>(this);
+        GetMap()->GetObjectsStore().Insert<DynamicObject>(GetGUID(), this);
         WorldObject::AddToWorld();
         BindToCaster();
     }
@@ -79,11 +77,12 @@ void DynamicObject::RemoveFromWorld()
 
         UnbindFromCaster();
         WorldObject::RemoveFromWorld();
-        GetMap()->GetObjectsStore().Remove<DynamicObject>(this);
+        GetMap()->GetObjectsStore().Remove<DynamicObject>(GetGUID());
+
     }
 }
 
-bool DynamicObject::CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type, SpellCastVisual spellVisual)
+bool DynamicObject::CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caster, SpellInfo const* spell, Position const& pos, float radius, DynamicObjectType type)
 {
     SetMap(caster->GetMap());
     Relocate(pos);
@@ -93,31 +92,30 @@ bool DynamicObject::CreateDynamicObject(ObjectGuid::LowType guidlow, Unit* caste
         return false;
     }
 
-    _Create(ObjectGuid::Create<HighGuid::DynamicObject>(GetMapId(), spell->Id, guidlow));
-    PhasingHandler::InheritPhaseShift(this, caster);
-
-    UpdatePositionData();
-    SetZoneScript();
+    WorldObject::_Create(ObjectGuid::Create<HighGuid::DynamicObject>(guidlow));
+    SetPhaseMask(caster->GetPhaseMask(), false);
 
     SetEntry(spell->Id);
     SetObjectScale(1.0f);
-    auto dynamicObjectData = m_values.ModifyValue(&DynamicObject::m_dynamicObjectData);
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::Caster), caster->GetGUID());
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::Type), type);
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::SpellVisual).ModifyValue(&UF::SpellCastVisual::SpellXSpellVisualID), spellVisual.SpellXSpellVisualID);
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::SpellVisual).ModifyValue(&UF::SpellCastVisual::ScriptVisualID), spellVisual.ScriptVisualID);
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::SpellID), spell->Id);
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::Radius), radius);
-    SetUpdateFieldValue(dynamicObjectData.ModifyValue(&UF::DynamicObjectData::CastTime), GameTime::GetGameTimeMS());
+    SetGuidValue(DYNAMICOBJECT_CASTER, caster->GetGUID());
+    SetByteValue(DYNAMICOBJECT_BYTES, 0, type);
+    SetUInt32Value(DYNAMICOBJECT_SPELLID, spell->Id);
+    SetFloatValue(DYNAMICOBJECT_RADIUS, radius);
+    SetUInt32Value(DYNAMICOBJECT_CASTTIME, GameTime::GetGameTimeMS());
 
     if (IsStoredInWorldObjectGridContainer())
         setActive(true);    //must before add to map to be put in world container
 
-    TransportBase* transport = caster->GetTransport();
+    Transport* transport = caster->GetTransport();
     if (transport)
     {
+        float x, y, z, o;
+        pos.GetPosition(x, y, z, o);
+        transport->CalculatePassengerOffset(x, y, z, &o);
+        m_movementInfo.transport.pos.Relocate(x, y, z, o);
+
         // This object must be added to transport before adding to map for the client to properly display it
-        transport->AddPassenger(this, transport->GetPositionOffsetTo(pos));
+        transport->AddPassenger(this);
     }
 
     if (!GetMap()->AddToMap(this))
@@ -165,7 +163,11 @@ void DynamicObject::Update(uint32 p_time)
 void DynamicObject::Remove()
 {
     if (IsInWorld())
+    {
+        SendObjectDeSpawnAnim(GetGUID());
+        RemoveFromWorld();
         AddObjectToRemoveList();
+    }
 }
 
 int32 DynamicObject::GetDuration() const
@@ -246,67 +248,5 @@ void DynamicObject::UnbindFromCaster()
 
 SpellInfo const* DynamicObject::GetSpellInfo() const
 {
-    return sSpellMgr->GetSpellInfo(GetSpellId(), GetMap()->GetDifficultyID());
-}
-
-void DynamicObject::BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const
-{
-    m_objectData->WriteCreate(flags, data, target, this);
-    m_dynamicObjectData->WriteCreate(flags, data, target, this);
-}
-
-void DynamicObject::BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const
-{
-    data << uint32(m_values.GetChangedObjectTypeMask());
-
-    if (m_values.HasChanged(TYPEID_OBJECT))
-        m_objectData->WriteUpdate(flags, data, target, this);
-
-    if (m_values.HasChanged(TYPEID_DYNAMICOBJECT))
-        m_dynamicObjectData->WriteUpdate(flags, data, target, this);
-}
-
-void DynamicObject::BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
-    UF::DynamicObjectData::Mask const& requestedDynamicObjectMask, Player const* target, bool ignoreNestedChangesMask) const
-{
-    UF::UpdateFieldFlag flags = GetUpdateFieldFlagsFor(target);
-    UpdateMask<NUM_CLIENT_OBJECT_TYPES> valuesMask;
-    if (requestedObjectMask.IsAnySet())
-        valuesMask.Set(TYPEID_OBJECT);
-
-    if (requestedDynamicObjectMask.IsAnySet())
-        valuesMask.Set(TYPEID_DYNAMICOBJECT);
-
-    ByteBuffer& buffer = PrepareValuesUpdateBuffer(data);
-    std::size_t sizePos = buffer.wpos();
-    buffer << uint32(0);
-    BuildEntityFragmentsForValuesUpdateForPlayerWithMask(buffer, flags);
-    buffer << uint32(valuesMask.GetBlock(0));
-
-    if (valuesMask[TYPEID_OBJECT])
-        m_objectData->WriteUpdate(requestedObjectMask, buffer, target, this, ignoreNestedChangesMask);
-
-    if (valuesMask[TYPEID_DYNAMICOBJECT])
-        m_dynamicObjectData->WriteUpdate(requestedDynamicObjectMask, buffer, target, this, ignoreNestedChangesMask);
-
-    buffer.put<uint32>(sizePos, buffer.wpos() - sizePos - 4);
-
-    data->AddUpdateBlock();
-}
-
-void DynamicObject::ValuesUpdateForPlayerWithMaskSender::operator()(Player const* player) const
-{
-    UpdateData udata(Owner->GetMapId());
-    WorldPacket packet;
-
-    Owner->BuildValuesUpdateForPlayerWithMask(&udata, ObjectMask.GetChangesMask(), DynamicObjectMask.GetChangesMask(), player, IgnoreNestedChangesMask);
-
-    udata.BuildPacket(&packet);
-    player->SendDirectMessage(&packet);
-}
-
-void DynamicObject::ClearValuesChangesMask()
-{
-    m_values.ClearChangesMask(&DynamicObject::m_dynamicObjectData);
-    WorldObject::ClearValuesChangesMask();
+    return sSpellMgr->GetSpellInfo(GetSpellId());
 }

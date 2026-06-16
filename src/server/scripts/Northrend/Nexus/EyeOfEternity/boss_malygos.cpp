@@ -22,8 +22,10 @@ Script Data End */
 #include "ScriptMgr.h"
 #include "CombatAI.h"
 #include "Containers.h"
+#include "CreatureTextMgr.h"
 #include "eye_of_eternity.h"
 #include "GameObject.h"
+#include "GameObjectAI.h"
 #include "GridNotifiers.h"
 #include "InstanceScript.h"
 #include "Map.h"
@@ -100,7 +102,7 @@ enum Spells
     SPELL_RANDOM_PORTAL                      = 56047,
     SPELL_PORTAL_BEAM                        = 56046, // Malygos cast on portal to activate it during PHASE_NOT_STARTED
 
-    // Phase I
+    //Phase I
     SPELL_BERSERK                            = 60670,
     SPELL_MALYGOS_BERSERK                    = 47008, // it's the berserk spell that will hit only Malygos after 10 min of 60670
     SPELL_PORTAL_VISUAL_CLOSED               = 55949,
@@ -369,7 +371,7 @@ struct boss_malygos : public BossAI
 
         me->SetDisableGravity(true);
         me->SetImmuneToAll(true);
-        me->SetUninteractible(false);
+        me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
         // TO DO: find what in core is making boss slower than in retail (when correct speed data) or find missing movement flag update or forced spline change
         me->SetSpeedRate(MOVE_FLIGHT, _flySpeed * 0.25f);
         if (_despawned)
@@ -377,6 +379,7 @@ struct boss_malygos : public BossAI
 
         SetPhase(PHASE_NOT_STARTED, true);
         me->SetReactState(REACT_PASSIVE);
+        instance->DoStopTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
         instance->SetBossState(DATA_MALYGOS_EVENT, NOT_STARTED);
     }
 
@@ -399,7 +402,7 @@ struct boss_malygos : public BossAI
         {
             _summonDeaths = value;
 
-            if (GetDifficulty() == DIFFICULTY_10_N)
+            if (GetDifficulty() == RAID_DIFFICULTY_10MAN_NORMAL)
             {
                 if (_summonDeaths == MAX_SUMMONS_PHASE_TWO_10MAN)
                 {
@@ -407,7 +410,7 @@ struct boss_malygos : public BossAI
                     DoAction(ACTION_HANDLE_P_THREE_INTRO);
                 }
             }
-            else if (GetDifficulty() == DIFFICULTY_25_N)
+            else if (GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
             {
                 if (_summonDeaths == MAX_SUMMONS_PHASE_TWO_25MAN)
                 {
@@ -504,7 +507,9 @@ struct boss_malygos : public BossAI
                 break;
             case ACTION_HANDLE_RESPAWN:
                 // Teleport to spawn position, we can't use normal relocate
-                me->NearTeleportTo(me->GetRespawnPosition());
+                float x, y, z, o;
+                me->GetRespawnPosition(x, y, z, &o);
+                me->NearTeleportTo(x, y, z, o);
                 // Respawn Iris
                 instance->SetData(DATA_RESPAWN_IRIS, 0);
                 _despawned = false;
@@ -520,7 +525,6 @@ struct boss_malygos : public BossAI
         events.Reset();
         events.SetPhase(phase);
         _phase = phase;
-        me->SetCanMelee(phase != PHASE_THREE);
         if (setEvents)
             SetPhaseEvents();
     }
@@ -559,7 +563,7 @@ struct boss_malygos : public BossAI
         me->setActive(true);
         if (!instance->CheckRequiredBosses(DATA_MALYGOS_EVENT))
         {
-            EnterEvadeMode(EvadeReason::Other);
+            EnterEvadeMode(EVADE_REASON_OTHER);
             return;
         }
 
@@ -567,7 +571,7 @@ struct boss_malygos : public BossAI
 
         Talk(SAY_START_P_ONE);
         DoCast(SPELL_BERSERK); // periodic aura, first tick in 10 minutes
-        instance->TriggerGameEvent(ACHIEV_TIMED_START_EVENT);
+        instance->DoStartTimedAchievement(ACHIEVEMENT_TIMED_TYPE_EVENT, ACHIEV_TIMED_START_EVENT);
     }
 
     void EnterEvadeMode(EvadeReason /*why*/) override
@@ -679,7 +683,7 @@ struct boss_malygos : public BossAI
                 if (!_firstCyclicMovementStarted)
                 {
                     _firstCyclicMovementStarted = true;
-                    me->SetUninteractible(true);
+                    me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     if (Creature* alexstraszaBunny = ObjectAccessor::GetCreature(*me, instance->GetGuidData(DATA_ALEXSTRASZA_BUNNY_GUID)))
                         me->SetFacingToObject(alexstraszaBunny);
                     events.ScheduleEvent(EVENT_SUMMON_ARCANE_BOMB, 1s, 0, PHASE_TWO);
@@ -823,7 +827,7 @@ struct boss_malygos : public BossAI
 
                     if (_arcaneReinforcements)
                     {
-                        for (uint8 rangeDisks = 0; rangeDisks < (GetDifficulty() == DIFFICULTY_10_N ? 4 : 5); rangeDisks++)
+                        for (uint8 rangeDisks = 0; rangeDisks < (GetDifficulty() == RAID_DIFFICULTY_10MAN_NORMAL ? 4 : 5); rangeDisks++)
                         {
                             Creature* casterDiskSummon = me->SummonCreature(NPC_HOVER_DISK_CASTER, RangeHoverDisksSpawnPositions[rangeDisks]);
 
@@ -839,7 +843,7 @@ struct boss_malygos : public BossAI
 
                         _arcaneReinforcements = false;
 
-                        if (GetDifficulty() == DIFFICULTY_25_N)
+                        if (GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
                             events.ScheduleEvent(EVENT_DELAYED_REINFORCEMENTS, 1s, 0, PHASE_TWO);
                     }
                     break;
@@ -913,13 +917,13 @@ struct boss_malygos : public BossAI
                     me->GetMap()->SetZoneOverrideLight(AREA_EYE_OF_ETERNITY, LIGHT_DEFAULT, LIGHT_OBSCURE_ARCANE_RUNES, 1s);
                     DoCast(me, SPELL_CLEAR_ALL_DEBUFFS);
                     DoCast(me, SPELL_IMMUNE_CURSES);
-                    me->SetUninteractible(false);
+                    me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                     me->SetReactState(REACT_AGGRESSIVE);
                     DoZoneInCombat();
                     SetPhase(PHASE_THREE, true);
                     break;
                 case EVENT_SURGE_OF_POWER_P_THREE:
-                    if (GetDifficulty() == DIFFICULTY_10_N)
+                    if (GetDifficulty() == RAID_DIFFICULTY_10MAN_NORMAL)
                     {
                         if (Unit* tempSurgeTarget = SelectTarget(SelectTargetMethod::Random, 0, 0.0f, false, true, SPELL_RIDE_RED_DRAGON_BUDDY))
                         {
@@ -936,7 +940,7 @@ struct boss_malygos : public BossAI
                             }
                         }
                     }
-                    else if (GetDifficulty() == DIFFICULTY_25_N)
+                    else if (GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
                     {
                         for (ObjectGuid& guid : _surgeTargetGUID)
                             guid.Clear();
@@ -962,6 +966,9 @@ struct boss_malygos : public BossAI
             if (me->HasUnitState(UNIT_STATE_CASTING) && _phase != PHASE_NOT_STARTED)
                 return;
         }
+
+        if (_phase != PHASE_THREE)
+            DoMeleeAttackIfReady();
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -1125,7 +1132,7 @@ struct npc_melee_hover_disk : public VehicleAI
             {
 
                 me->SetHomePosition(me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation());
-                me->SetUninteractible(false);
+                me->RemoveUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
                 me->SetDisableGravity(false);
                 me->SetCanFly(false);
             }
@@ -1155,7 +1162,7 @@ struct npc_melee_hover_disk : public VehicleAI
             if (vehicleTemp->GetPassenger(0) && vehicleTemp->GetPassenger(0)->GetTypeId() == TYPEID_PLAYER)
             {
                 vehicleTemp->RemoveAllPassengers();
-                me->SetUninteractible(true);
+                me->SetUnitFlag(UNIT_FLAG_UNINTERACTIBLE);
             }
         }
 
@@ -1286,6 +1293,8 @@ struct npc_nexus_lord : public ScriptedAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -1470,6 +1479,8 @@ struct npc_static_field : public ScriptedAI
 // 56046 - Portal Beam
 class spell_malygos_portal_beam : public AuraScript
 {
+    PrepareAuraScript(spell_malygos_portal_beam);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1502,6 +1513,8 @@ class spell_malygos_portal_beam : public AuraScript
 // 56047 - Random Portal
 class spell_malygos_random_portal : public SpellScript
 {
+    PrepareSpellScript(spell_malygos_random_portal);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1546,6 +1559,8 @@ class IsCreatureVehicleCheck
 // 57459, 61693, 61694 - Arcane Storm
 class spell_malygos_arcane_storm : public SpellScript
 {
+    PrepareSpellScript(spell_malygos_arcane_storm);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1566,10 +1581,10 @@ class spell_malygos_arcane_storm : public SpellScript
         {
             // Resize list only to objects that are vehicles.
             IsCreatureVehicleCheck check(true);
-            Trinity::Containers::RandomResize(targets, check, (malygos->GetMap()->GetDifficultyID() == DIFFICULTY_10_N ? 4 : 10));
+            Trinity::Containers::RandomResize(targets, check, (malygos->GetMap()->GetDifficulty() == RAID_DIFFICULTY_10MAN_NORMAL ? 4 : 10));
         }
         else
-            Trinity::Containers::RandomResize(targets, (malygos->GetMap()->GetDifficultyID() == DIFFICULTY_10_N ? 4 : 10));
+            Trinity::Containers::RandomResize(targets, (malygos->GetMap()->GetDifficulty() == RAID_DIFFICULTY_10MAN_NORMAL ? 4 : 10));
     }
 
     void HandleVisual(SpellEffIndex /*effIndex*/)
@@ -1591,6 +1606,8 @@ class spell_malygos_arcane_storm : public SpellScript
 // 56105 - Vortex
 class spell_malygos_vortex_dummy : public SpellScript
 {
+    PrepareSpellScript(spell_malygos_vortex_dummy);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1616,6 +1633,8 @@ class spell_malygos_vortex_dummy : public SpellScript
 // 55873 - Vortex
 class spell_malygos_vortex_visual : public AuraScript
 {
+    PrepareAuraScript(spell_malygos_vortex_visual);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1678,6 +1697,8 @@ class ExactDistanceCheck
 // 56438 - Arcane Overload
 class spell_arcane_overload : public SpellScript
 {
+    PrepareSpellScript(spell_arcane_overload);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1687,7 +1708,7 @@ class spell_arcane_overload : public SpellScript
     {
         Creature* arcaneOverload = GetCaster()->ToCreature();
         targets.remove_if(ExactDistanceCheck(arcaneOverload,
-            GetEffectInfo(EFFECT_0).CalcRadius(arcaneOverload).Max * arcaneOverload->GetObjectScale()));
+            GetEffectInfo(EFFECT_0).CalcRadius(arcaneOverload) * arcaneOverload->GetObjectScale()));
     }
 
     void Register() override
@@ -1699,6 +1720,8 @@ class spell_arcane_overload : public SpellScript
 // 61210 - Align Disk Aggro
 class spell_nexus_lord_align_disk_aggro : public SpellScript
 {
+    PrepareSpellScript(spell_nexus_lord_align_disk_aggro);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1738,6 +1761,8 @@ class IsPlayerOnHoverDisk
 // 56397 - Arcane Barrage
 class spell_scion_of_eternity_arcane_barrage : public SpellScript
 {
+    PrepareSpellScript(spell_scion_of_eternity_arcane_barrage);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT && GetCaster()->GetInstanceScript() != nullptr;
@@ -1793,8 +1818,7 @@ class spell_scion_of_eternity_arcane_barrage : public SpellScript
     void TriggerDamageSpellFromPlayer()
     {
         if (Player* hitTarget = GetHitPlayer())
-            hitTarget->CastSpell(hitTarget, SPELL_ARCANE_BARRAGE_DAMAGE, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
-                .SetOriginalCaster(GetCaster()->GetGUID()));
+            hitTarget->CastSpell(hitTarget, SPELL_ARCANE_BARRAGE_DAMAGE, GetCaster()->GetGUID());
     }
 
     void Register() override
@@ -1807,6 +1831,8 @@ class spell_scion_of_eternity_arcane_barrage : public SpellScript
 // 58842 - Destroy Platform Channel
 class spell_malygos_destroy_platform_channel : public AuraScript
 {
+    PrepareAuraScript(spell_malygos_destroy_platform_channel);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1834,6 +1860,8 @@ class spell_malygos_destroy_platform_channel : public AuraScript
 // 59084 - Destroy Platform Boom Visual
 class spell_alexstrasza_bunny_destroy_platform_boom_visual : public SpellScript
 {
+    PrepareSpellScript(spell_alexstrasza_bunny_destroy_platform_boom_visual);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1859,6 +1887,8 @@ class spell_alexstrasza_bunny_destroy_platform_boom_visual : public SpellScript
 // 59099 - Destroy Platform Event
 class spell_alexstrasza_bunny_destroy_platform_event : public SpellScript
 {
+    PrepareSpellScript(spell_alexstrasza_bunny_destroy_platform_event);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1887,6 +1917,8 @@ class spell_alexstrasza_bunny_destroy_platform_event : public SpellScript
 // 56070 - Summon Red Dragon Buddy
 class spell_wyrmrest_skytalon_summon_red_dragon_buddy : public SpellScript
 {
+    PrepareSpellScript(spell_wyrmrest_skytalon_summon_red_dragon_buddy);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_PLAYER;
@@ -1908,6 +1940,8 @@ class spell_wyrmrest_skytalon_summon_red_dragon_buddy : public SpellScript
 // 56072 - Ride Red Dragon Buddy
 class spell_wyrmrest_skytalon_ride_red_dragon_buddy_trigger : public SpellScript
 {
+    PrepareSpellScript(spell_wyrmrest_skytalon_ride_red_dragon_buddy_trigger);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1916,7 +1950,7 @@ class spell_wyrmrest_skytalon_ride_red_dragon_buddy_trigger : public SpellScript
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
         if (Unit* target = GetHitUnit())
-            target->CastSpell(GetCaster(), GetEffectValueAsInt(), true);
+            target->CastSpell(GetCaster(), GetEffectValue(), true);
     }
 
     void Register() override
@@ -1928,6 +1962,8 @@ class spell_wyrmrest_skytalon_ride_red_dragon_buddy_trigger : public SpellScript
 // 60939 - Surge of Power
 class spell_malygos_surge_of_power_warning_selector_25 : public SpellScript
 {
+    PrepareSpellScript(spell_malygos_surge_of_power_warning_selector_25);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -1979,6 +2015,8 @@ class spell_malygos_surge_of_power_warning_selector_25 : public SpellScript
 // 60936 - Surge of Power
 class spell_malygos_surge_of_power_25 : public SpellScript
 {
+    PrepareSpellScript(spell_malygos_surge_of_power_25);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -2018,6 +2056,8 @@ class spell_malygos_surge_of_power_25 : public SpellScript
 // 61028 - Alexstrasza's Gift Beam
 class spell_alexstrasza_gift_beam : public AuraScript
 {
+    PrepareAuraScript(spell_alexstrasza_gift_beam);
+
     bool Load() override
     {
         return GetCaster()->GetTypeId() == TYPEID_UNIT;
@@ -2050,6 +2090,8 @@ class spell_alexstrasza_gift_beam : public AuraScript
 // 61023 - Alexstrasza's Gift Visual
 class spell_alexstrasza_gift_beam_visual : public AuraScript
 {
+    PrepareAuraScript(spell_alexstrasza_gift_beam_visual);
+
 public:
     spell_alexstrasza_gift_beam_visual()
     {
@@ -2066,10 +2108,10 @@ private:
     {
         if (Creature* target = GetTarget()->ToCreature())
         {
-            if (target->GetMap()->GetDifficultyID() == DIFFICULTY_10_N)
-                _alexstraszaGift = target->SummonGameObject(GO_ALEXSTRASZA_S_GIFT_10, *target, QuaternionData::fromEulerAnglesZYX(target->GetOrientation(), 0.0f, 0.0f), 0s);
-            else if (target->GetMap()->GetDifficultyID() == DIFFICULTY_25_N)
-                _alexstraszaGift = target->SummonGameObject(GO_ALEXSTRASZA_S_GIFT_25, *target, QuaternionData::fromEulerAnglesZYX(target->GetOrientation(), 0.0f, 0.0f), 0s);
+            if (target->GetMap()->GetDifficulty() == RAID_DIFFICULTY_10MAN_NORMAL)
+                _alexstraszaGift = target->SummonGameObject(GO_ALEXSTRASZA_S_GIFT_10, *target, QuaternionData(), 0s);
+            else if (target->GetMap()->GetDifficulty() == RAID_DIFFICULTY_25MAN_NORMAL)
+                _alexstraszaGift = target->SummonGameObject(GO_ALEXSTRASZA_S_GIFT_25, *target, QuaternionData(), 0s);
         }
     }
 

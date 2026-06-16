@@ -17,6 +17,7 @@
 
 #include "ScriptMgr.h"
 #include "InstanceScript.h"
+#include "Map.h"
 #include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "pit_of_saron.h"
@@ -43,7 +44,7 @@ enum Events
 
 bool ScheduledIcicleSummons::Execute(uint64 /*time*/, uint32 /*diff*/)
 {
-    if (roll_chance(12))
+    if (roll_chance_i(12))
     {
         _trigger->CastSpell(_trigger, SPELL_ICICLE_SUMMON, true);
         _trigger->m_Events.AddEvent(new ScheduledIcicleSummons(_trigger), _trigger->m_Events.CalculateTime(randtime(20s, 35s)));
@@ -100,6 +101,8 @@ struct npc_ymirjar_flamebearer: public ScriptedAI
                     break;
             }
         }
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -141,6 +144,8 @@ struct npc_iceborn_protodrake: public ScriptedAI
         }
         else
             _frostBreathCooldown -= diff;
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -187,6 +192,8 @@ struct npc_geist_ambusher: public ScriptedAI
         }
         else
             _leapingFaceMaulCooldown -= diff;
+
+        DoMeleeAttackIfReady();
     }
 
 private:
@@ -197,14 +204,14 @@ struct npc_pit_of_saron_icicle : public PassiveAI
 {
     npc_pit_of_saron_icicle(Creature* creature) : PassiveAI(creature)
     {
-        me->SetDisplayFromModel(0);
+        me->SetDisplayId(me->GetCreatureTemplate()->Modelid1);
     }
 
     void IsSummonedBy(WorldObject* summoner) override
     {
         _summonerGUID = summoner->GetGUID();
 
-        _scheduler.Schedule(Milliseconds(3650), [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(Milliseconds(3650), [this](TaskContext /*context*/)
         {
             DoCastSelf(SPELL_ICICLE_FALL_TRIGGER, true);
             DoCastSelf(SPELL_ICICLE_FALL_VISUAL);
@@ -227,6 +234,8 @@ private:
 // 70827 - Ice Shards
 class spell_pos_ice_shards : public SpellScript
 {
+    PrepareSpellScript(spell_pos_ice_shards);
+
     bool Load() override
     {
         // This script should execute only in Pit of Saron
@@ -283,7 +292,7 @@ public:
             instance->SetData(DATA_CAVERN_ACTIVE, 0);
 
             if (!instance->GetData(DATA_ICE_SHARDS_HIT))
-                instance->DoUpdateCriteria(CriteriaType::BeSpellTarget, SPELL_DONT_LOOK_UP_ACHIEV_CREDIT, 0, player);
+                instance->DoUpdateAchievementCriteria(ACHIEVEMENT_CRITERIA_TYPE_BE_SPELL_TARGET, SPELL_DONT_LOOK_UP_ACHIEV_CREDIT, 0, player);
         }
 
         return true;

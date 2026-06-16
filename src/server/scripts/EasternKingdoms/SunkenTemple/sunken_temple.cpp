@@ -30,7 +30,9 @@ EndContentData */
 #include "GameObject.h"
 #include "GameObjectAI.h"
 #include "InstanceScript.h"
+#include "Map.h"
 #include "Player.h"
+#include "ScriptedCreature.h"
 #include "SpellAuraEffects.h"
 #include "SpellScript.h"
 #include "sunken_temple.h"
@@ -97,6 +99,8 @@ enum HexOfJammalan
 // 12479 - Hex of Jammal'an
 class spell_sunken_temple_hex_of_jammalan : public AuraScript
 {
+    PrepareAuraScript(spell_sunken_temple_hex_of_jammalan);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_HEX_OF_JAMMALAN_TRANSFORM, SPELL_HEX_OF_JAMMALAN_CHARM });
@@ -126,6 +130,8 @@ class spell_sunken_temple_hex_of_jammalan : public AuraScript
 // 12480 - Hex of Jammal'an
 class spell_sunken_temple_hex_of_jammalan_transform : public AuraScript
 {
+    PrepareAuraScript(spell_sunken_temple_hex_of_jammalan_transform);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_HEX_OF_JAMMALAN_CHARM });

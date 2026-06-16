@@ -18,7 +18,6 @@
 #include "ScriptMgr.h"
 #include "CharacterCache.h"
 #include "Chat.h"
-#include "ChatCommand.h"
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "GroupMgr.h"
@@ -41,7 +40,7 @@ void PrintPlayerInfo(ChatHandler* handler, Player const* player)
     std::string const& state = lfg::GetStateString(sLFGMgr->GetState(guid));
     handler->PSendSysMessage(LANG_LFG_PLAYER_INFO, player->GetName().c_str(),
         state.c_str(), uint8(dungeons.size()), lfg::ConcatenateDungeons(dungeons).c_str(),
-        lfg::GetRolesString(sLFGMgr->GetRoles(guid)).c_str());
+        lfg::GetRolesString(sLFGMgr->GetRoles(guid)).c_str(), sLFGMgr->GetComment(guid).c_str());
 }
 
 class lfg_commandscript : public CommandScript
@@ -49,7 +48,7 @@ class lfg_commandscript : public CommandScript
 public:
     lfg_commandscript() : CommandScript("lfg_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable lfgCommandTable =
         {
@@ -97,7 +96,7 @@ public:
         else
         {
             CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GROUP_MEMBER);
-            stmt->setUInt64(0, player->GetGUID().GetCounter());
+            stmt->setUInt32(0, player->GetGUID().GetCounter());
             PreparedQueryResult resultGroup = CharacterDatabase.Query(stmt);
             if (resultGroup)
                 groupTarget = sGroupMgr->GetGroupByDbStoreId((*resultGroup)[0].GetUInt32());

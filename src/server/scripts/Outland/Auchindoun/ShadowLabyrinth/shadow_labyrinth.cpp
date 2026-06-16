@@ -16,7 +16,9 @@
  */
 
 #include "ScriptMgr.h"
+#include "SpellMgr.h"
 #include "SpellScript.h"
+#include "SpellAuraEffects.h"
 #include "Unit.h"
 
 enum Spells
@@ -27,16 +29,18 @@ enum Spells
 // 33493 - Mark of Malice
 class spell_mark_of_malice : public AuraScript
 {
+    PrepareAuraScript(spell_mark_of_malice);
+
     bool Validate(SpellInfo const* /*spellInfo*/) override
     {
         return ValidateSpellInfo({ SPELL_MARK_OF_MALICE_TRIGGERED });
     }
 
-    void HandleProc(AuraEffect* aurEff, ProcEventInfo& /*eventInfo*/)
+    void HandleProc(AuraEffect const* aurEff, ProcEventInfo& /*eventInfo*/)
     {
         PreventDefaultAction();
         // just drop charges
-        if (GetCharges() > 1)
+        if (aurEff->GetBase()->GetCharges() > 1)
             return;
 
         GetTarget()->CastSpell(GetTarget(), SPELL_MARK_OF_MALICE_TRIGGERED, aurEff);
