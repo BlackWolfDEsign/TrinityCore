@@ -15,8 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_EQUIPMENT_SET_PACKETS_H
-#define TRINITYCORE_EQUIPMENT_SET_PACKETS_H
+#pragma once
 
 #include "Packet.h"
 #include "EquipmentSet.h"
@@ -29,7 +28,7 @@ namespace WorldPackets
         class EquipmentSetID final : public ServerPacket
         {
         public:
-            explicit EquipmentSetID() : ServerPacket(SMSG_EQUIPMENT_SET_ID, 8 + 4 + 4) { }
+            EquipmentSetID() : ServerPacket(SMSG_EQUIPMENT_SET_ID, 8 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -41,7 +40,7 @@ namespace WorldPackets
         class LoadEquipmentSet final : public ServerPacket
         {
         public:
-            explicit LoadEquipmentSet() : ServerPacket(SMSG_LOAD_EQUIPMENT_SET, 4) { }
+            LoadEquipmentSet() : ServerPacket(SMSG_LOAD_EQUIPMENT_SET, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -51,7 +50,7 @@ namespace WorldPackets
         class SaveEquipmentSet final : public ClientPacket
         {
         public:
-            explicit SaveEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_SAVE_EQUIPMENT_SET, std::move(packet)) { }
+            SaveEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_SAVE_EQUIPMENT_SET, std::move(packet)) { }
 
             void Read() override;
 
@@ -61,7 +60,7 @@ namespace WorldPackets
         class DeleteEquipmentSet final : public ClientPacket
         {
         public:
-            explicit DeleteEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_DELETE_EQUIPMENT_SET, std::move(packet)) { }
+            DeleteEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_DELETE_EQUIPMENT_SET, std::move(packet)) { }
 
             void Read() override;
 
@@ -71,7 +70,7 @@ namespace WorldPackets
         class UseEquipmentSet final : public ClientPacket
         {
         public:
-            explicit UseEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_USE_EQUIPMENT_SET, std::move(packet)) { }
+            UseEquipmentSet(WorldPacket&& packet) : ClientPacket(CMSG_USE_EQUIPMENT_SET, std::move(packet)) { }
 
             void Read() override;
 
@@ -90,7 +89,7 @@ namespace WorldPackets
         class UseEquipmentSetResult final : public ServerPacket
         {
         public:
-            explicit UseEquipmentSetResult() : ServerPacket(SMSG_USE_EQUIPMENT_SET_RESULT, 8 + 1) { }
+            UseEquipmentSetResult() : ServerPacket(SMSG_USE_EQUIPMENT_SET_RESULT, 8 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -99,5 +98,3 @@ namespace WorldPackets
         };
     }
 }
-
-#endif // TRINITYCORE_EQUIPMENT_SET_PACKETS_H

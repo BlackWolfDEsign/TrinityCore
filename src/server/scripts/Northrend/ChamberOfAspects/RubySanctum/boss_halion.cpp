@@ -937,7 +937,7 @@ class npc_orb_carrier : public CreatureScript
                         if (northOrb && northOrb->GetTypeId() == TYPEID_UNIT)
                             northOrb->ToCreature()->AI()->Talk(EMOTE_WARN_LASER);
 
-                        scheduler.Schedule(Seconds(5), [this](TaskContext const& /*context*/)
+                        scheduler.Schedule(Seconds(5), [this](TaskContext /*context*/)
                         {
                             DoAction(ACTION_SHOOT);
                         });
@@ -1284,7 +1284,7 @@ class npc_living_inferno : public CreatureScript
 
                 // SMSG_SPELL_GO for the living ember stuff isn't even sent to the client - Blizzard on drugs.
                 if (me->GetMap()->GetDifficultyID() == DIFFICULTY_25_HC)
-                    scheduler.Schedule(Seconds(3), [this](TaskContext const& /*context*/)
+                    scheduler.Schedule(Seconds(3), [this](TaskContext /*context*/)
                     {
                         me->CastSpell(me, SPELL_SPAWN_LIVING_EMBERS, true);
                     });
@@ -1616,7 +1616,7 @@ class spell_halion_damage_aoe_summon : public SpellScriptLoader
 
             void Register() override
             {
-                OnEffectLaunch += SpellEffectFn(spell_halion_damage_aoe_summon_SpellScript::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
+                OnEffectHit += SpellEffectFn(spell_halion_damage_aoe_summon_SpellScript::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
             }
         };
 
@@ -1704,8 +1704,8 @@ class spell_halion_clear_debuffs : public SpellScriptLoader
 
             void HandleScript(SpellEffIndex /*effIndex*/)
             {
-                if (GetHitUnit()->HasAura(GetEffectInfo().CalcValueAsInt()))
-                    GetHitUnit()->RemoveAurasDueToSpell(GetEffectInfo().CalcValueAsInt());
+                if (GetHitUnit()->HasAura(GetEffectInfo().CalcValue()))
+                    GetHitUnit()->RemoveAurasDueToSpell(GetEffectInfo().CalcValue());
             }
 
             void Register() override

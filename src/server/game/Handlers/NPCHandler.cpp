@@ -122,8 +122,9 @@ void WorldSession::SendTrainerList(Creature* npc, uint32 trainerId)
         return;
     }
 
-    _player->PlayerTalkClass->GetInteractionData().StartInteraction(npc->GetGUID(), PlayerInteractionType::Trainer);
-    _player->PlayerTalkClass->GetInteractionData().GetTrainer()->Id = trainerId;
+    _player->PlayerTalkClass->GetInteractionData().Reset();
+    _player->PlayerTalkClass->GetInteractionData().SourceGuid = npc->GetGUID();
+    _player->PlayerTalkClass->GetInteractionData().TrainerId = trainerId;
     trainer->SendSpells(npc, _player, GetSessionDbLocaleIndex());
 }
 
@@ -142,10 +143,10 @@ void WorldSession::HandleTrainerBuySpellOpcode(WorldPackets::NPC::TrainerBuySpel
     if (GetPlayer()->HasUnitState(UNIT_STATE_DIED))
         GetPlayer()->RemoveAurasByType(SPELL_AURA_FEIGN_DEATH);
 
-    if (!_player->PlayerTalkClass->GetInteractionData().IsInteractingWith(packet.TrainerGUID, PlayerInteractionType::Trainer))
+    if (_player->PlayerTalkClass->GetInteractionData().SourceGuid != packet.TrainerGUID)
         return;
 
-    if (_player->PlayerTalkClass->GetInteractionData().GetTrainer()->Id != uint32(packet.TrainerID))
+    if (_player->PlayerTalkClass->GetInteractionData().TrainerId != uint32(packet.TrainerID))
         return;
 
     Trainer::Trainer const* trainer = sObjectMgr->GetTrainer(packet.TrainerID);
@@ -197,7 +198,7 @@ void WorldSession::HandleGossipSelectOptionOpcode(WorldPackets::NPC::GossipSelec
         return;
 
     // Prevent cheating on C++ scripted menus
-    if (!_player->PlayerTalkClass->GetInteractionData().IsInteractingWith(packet.GossipUnit, PlayerInteractionType::Gossip))
+    if (_player->PlayerTalkClass->GetInteractionData().SourceGuid != packet.GossipUnit)
         return;
 
     Creature* unit = nullptr;
@@ -294,9 +295,9 @@ void WorldSession::SendSpiritResurrect()
 
     // get corpse nearest graveyard
     WorldSafeLocsEntry const* corpseGrave = nullptr;
+    WorldLocation corpseLocation = _player->GetCorpseLocation();
     if (_player->HasCorpse())
     {
-        WorldLocation const& corpseLocation = _player->GetCorpseLocation();
         corpseGrave = sObjectMgr->GetClosestGraveyard(corpseLocation, _player->GetTeam(), _player);
     }
 
@@ -371,15 +372,9 @@ void WorldSession::SendPetStableResult(StableResult result)
 
 void WorldSession::HandleSetPetSlot(WorldPackets::NPC::SetPetSlot& setPetSlot)
 {
-    if (!CheckStableMaster(setPetSlot.StableMaster))
+    if (!CheckStableMaster(setPetSlot.StableMaster) || setPetSlot.DestSlot >= PET_SAVE_LAST_STABLE_SLOT)
     {
-        SendPetStableResult(StableResult::NotStableMaster);
-        return;
-    }
-
-    if (setPetSlot.DestSlot >= PET_SAVE_LAST_STABLE_SLOT)
-    {
-        SendPetStableResult(StableResult::InvalidSlot);
+        SendPetStableResult(StableResult::InternalError);
         return;
     }
 

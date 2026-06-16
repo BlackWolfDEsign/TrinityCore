@@ -14,6 +14,7 @@
 #    CRYPTOGRAPHY
 #    UPDATE SETTINGS
 #    HOTSWAP SETTINGS
+#    WARDEN SETTINGS
 #    PLAYER INTERACTION
 #    CREATURE SETTINGS
 #    SPAWN/RESPAWN SETTINGS
@@ -702,7 +703,7 @@ DeclinedNames = 0
 #    Expansion
 #        Description: Allow server to use content from expansions. Checks for expansion-related
 #                     map files, client compatibility and class/race character creation.
-#        Default:     11 - (Expansion 11)
+#        Default:     3 - (Expansion 3)
 #                     10 - (Expansion 10)
 #                     9 - (Expansion 9)
 #                     8 - (Expansion 8)
@@ -715,7 +716,7 @@ DeclinedNames = 0
 #                     1 - (Expansion 1)
 #                     0 - (Disabled, Ignore and disable expansion content (maps, races, classes)
 
-Expansion = 11
+Expansion = 3
 
 #
 #    MinPlayerName
@@ -778,7 +779,7 @@ CharacterCreating.Disabled = 0
 #
 #    CharacterCreating.Disabled.RaceMask
 #        Description: Mask of races which cannot be created by players.
-#        Example:     1536 - (512 + 1024, Blood Elf and Draenei races are disabled)
+#        Example:     1536 - (1024 + 512, Blood Elf and Draenei races are disabled)
 #        Default:     0    - (Enabled, All races are allowed)
 #                     1    - (Disabled, Human)
 #                     2    - (Disabled, Orc)
@@ -795,12 +796,6 @@ CharacterCreating.Disabled = 0
 #                     4096 - (Disabled, Vulpera)
 #                     8192 - (Disabled, Maghar Orc)
 #                     16384 - (Disabled, Mechagnome)
-#                     32768 - (Disabled, Dracthyr Horde)
-#                     65536 - (Disabled, Dracthyr Alliance)
-#                     131072 - (Disabled, Earthen Horde)
-#                     262144 - (Disabled, Earthen Alliance)
-#                     524288 - (Disabled, Haranir Horde)
-#                     1048576 - (Disabled, Haranir Alliance)
 #                     2097152 - (Disabled, Worgen)
 #                     8388608 - (Disabled, Pandaren Neutral)
 #                     16777216 - (Disabled, Pandaren Alliance)
@@ -831,7 +826,6 @@ CharacterCreating.Disabled.RaceMask = 0
 #                     512  - (Disabled, Monk)
 #                     1024 - (Disabled, Druid)
 #                     2048 - (Disabled, Demon Hunter)
-#                     4096 - (Disabled, Evoker)
 
 CharacterCreating.Disabled.ClassMask = 0
 
@@ -850,32 +844,6 @@ CharactersPerAccount = 60
 #        Default:     60
 
 CharactersPerRealm = 60
-
-#
-#    CharacterCreating.EvokersPerRealm
-#        Description: Limit number of evokers per account on this realm.
-#        Range:       1-60
-#        Default:     1
-
-CharacterCreating.EvokersPerRealm = 1
-
-#
-#    CharacterCreating.MinLevelForDemonHunter
-#        Description: Limit creating demon hunters only for account with another
-#                     character of specific level.
-#        Default:     0  - (Disabled, No requirement)
-#                     1  - (Enabled, Requires at least another level 1 character)
-
-CharacterCreating.MinLevelForDemonHunter = 0
-
-#
-#    CharacterCreating.MinLevelForEvoker
-#        Description: Limit creating evokers only for account with another
-#                     character of specific level.
-#        Default:     50  - (Enabled, Requires at least another level 50 character)
-#                     0  - (Disabled, No requirement)
-
-CharacterCreating.MinLevelForEvoker = 0
 
 #
 #    CharacterCreating.DisableAlliedRaceAchievementRequirement
@@ -900,9 +868,9 @@ SkipCinematics = 0
 #        Description: Maximum level that can be reached by players.
 #        Important:   Levels beyond 110 are not recommended at all.
 #        Range:       1-255
-#        Default:     90
+#        Default:     85
 
-MaxPlayerLevel = 90
+MaxPlayerLevel = 85
 
 #
 #    MinDualSpecLevel
@@ -923,33 +891,9 @@ StartPlayerLevel = 1
 #    StartDeathKnightPlayerLevel
 #        Description: Starting level for death knights after creation.
 #        Range:       1-MaxPlayerLevel
-#        Default:     8
+#        Default:     55
 
-StartDeathKnightPlayerLevel = 8
-
-#
-#    StartDemonHunterPlayerLevel
-#        Description: Staring level for demon hunters after creation.
-#        Range:       1-MaxPlayerLevel
-#        Default:     8
-
-StartDemonHunterPlayerLevel = 8
-
-#
-#    StartEvokerPlayerLevel
-#        Description: Staring level for evokers after creation.
-#        Range:       1-MaxPlayerLevel
-#        Default:     10
-
-StartEvokerPlayerLevel = 10
-
-#
-#    StartAlliedRacePlayerLevel
-#        Description: Staring level for allied races after creation.
-#        Range:       1-MaxPlayerLevel
-#        Default:     10
-
-StartAlliedRacePlayerLevel = 10
+StartDeathKnightPlayerLevel = 55
 
 #
 #    StartPlayerMoney
@@ -958,38 +902,6 @@ StartAlliedRacePlayerLevel = 10
 #                     100 - (1 Silver)
 
 StartPlayerMoney = 0
-
-#
-#    StartDeathKnightPlayerMoney
-#        Description: Amount of money (in Copper) that a death knight character has after creation.
-#        Default:     2000
-#                     100 - (1 Silver)
-
-StartDeathKnightPlayerMoney = 2000
-
-#
-#    StartDemonHunterPlayerMoney
-#        Description: Amount of money (in Copper) that a demon hunter character has after creation.
-#        Default:     0
-#                     100 - (1 Silver)
-
-StartDemonHunterPlayerMoney = 0
-
-#
-#    StartEvokerPlayerMoney
-#        Description: Amount of money (in Copper) that a evoker character has after creation.
-#        Default:     0
-#                     100 - (1 Silver)
-
-StartEvokerPlayerMoney = 0
-
-#
-#    StartAlliedRacePlayerMoney
-#        Description: Amount of money (in Copper) that a allied race character has after creation.
-#        Default:     10000
-#                     100 - (1 Silver)
-
-StartAlliedRacePlayerMoney = 10000
 
 #
 #    RecruitAFriend.MaxLevel
@@ -1383,8 +1295,9 @@ Command.LookupMaxResults = 0
 #     DungeonFinder.OptionsMask
 #        Description: Dungeon and raid finder system.
 #        Value is a bitmask consisting of:
-#           LFG_OPTION_ENABLE_DUNGEON_FINDER = 1,     Enable the dungeon finder browser
-#           LFG_OPTION_ENABLE_RAID_BROWSER   = 2,     Enable the raid browser
+#           LFG_OPTION_ENABLE_DUNGEON_FINDER = 1,     Enable the dungeon finder
+#           LFG_OPTION_ENABLE_RAID_FINDER    = 2,     Enable the raid finder
+#           LFG_OPTION_ENABLE_PREMADE_GROUP  = 4      Enable the premade groups browser
 #        Default:     1
 
 DungeonFinder.OptionsMask = 1
@@ -1401,9 +1314,9 @@ DBC.EnforceItemAttributes = 1
 #
 #   AccountInstancesPerHour
 #        Description: Controls the max amount of different instances player can enter within hour.
-#        Default:     10
+#        Default:     5
 
-AccountInstancesPerHour = 10
+AccountInstancesPerHour = 5
 
 #
 #   Account.PasswordChangeSecurity
@@ -1431,7 +1344,15 @@ BirthdayTime = 1222964635
 #
 #
 
-CacheDataQueries = 1
+ CacheDataQueries = 1
+
+#
+#   FeatureSystem.BpayStore.Enabled
+#        Description: Not yet implemented
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+FeatureSystem.BpayStore.Enabled = 0
 
 #
 #   FeatureSystem.CharacterUndelete.Enabled
@@ -1614,6 +1535,70 @@ HotSwap.EnablePrefixCorrection = 1
 #                     "Debug" - Debug builds only
 
 HotSwap.ReCompilerBuildType = ""
+
+#
+###################################################################################################
+
+###################################################################################################
+# WARDEN SETTINGS
+#
+#    Warden.Enabled
+#        Description: Enable Warden anti-cheat system.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+
+Warden.Enabled = 0
+
+#
+#    Warden.NumInjectionChecks
+#    Warden.NumLuaSandboxChecks
+#    Warden.NumClientModChecks
+#        Description: Number of Warden checks of the respective category that are sent per cycle.
+#        Default:     9 - (Warden.NumInjectionChecks)
+#        Default:     1 - (Warden.NumLuaSandboxChecks)
+#        Default:     1 - (Warden.NumClientModChecks)
+#                     0 - (Disable category)
+
+Warden.NumInjectionChecks = 9
+Warden.NumLuaSandboxChecks = 1
+Warden.NumClientModChecks = 1
+
+#
+#    Warden.ClientResponseDelay
+#        Description: Time (in seconds) before client is getting disconnecting for not responding.
+#        Default:     600 - (10 Minutes)
+#                     0 - (Disabled, client won't be kicked)
+
+Warden.ClientResponseDelay = 600
+
+#
+#    Warden.ClientCheckHoldOff
+#        Description: Time (in seconds) to wait before sending the next check request to the client.
+#                     A low number increases traffic and load on client and server side.
+#        Default:     30 - (30 Seconds)
+#                     0  - (Send check as soon as possible)
+
+Warden.ClientCheckHoldOff = 30
+
+#
+#    Warden.ClientCheckFailAction
+#        Description: Default action being taken if a client check failed. Actions can be
+#                     overwritten for each single check via warden_action table in characters
+#                     database.
+#        Default:     0 - (Disabled, Logging only)
+#                     1 - (Kick)
+#                     2 - (Ban)
+
+Warden.ClientCheckFailAction = 0
+
+#
+#    Warden.BanDuration
+#        Description: Time (in seconds) an account will be banned if ClientCheckFailAction is set
+#                     to ban.
+#        Default:     86400 - (24 hours)
+#                     0     - (Permanent ban)
+
+Warden.BanDuration = 86400
 
 #
 ###################################################################################################
@@ -2259,12 +2244,8 @@ GM.AllowInvite = 0
 
 #
 #    GM.LowerSecurity
-#        Description: Disallow lower security levels to use commands on higher security level
-#                     characters. Regardless of this value, lower security check is always
-#                     enabled for accounts without RBAC_PERM_CAN_IGNORE_LOWER_SECURITY_CHECK.
-#                     This option also does not affect "strong" checks, such as in
-#                     certain .account and .rbac commands, which are always enabled.
-#
+#        Description: Allow lower security levels to use commands on higher security level
+#                     characters.
 #        Default:     0 - (Disabled)
 #                     1 - (Enabled)
 
@@ -2537,6 +2518,13 @@ Rate.Auction.Cut     = 1
 #        Default:     1
 
 Rate.Honor = 1
+
+#
+#    Rate.Talent
+#        Description: Talent point rate.
+#        Default:     1
+
+Rate.Talent = 1
 
 #
 #    Rate.Reputation.Gain
@@ -2848,21 +2836,24 @@ Battleground.Random.ResetHour = 6
 #     Battleground.RewardWinnerConquestLast
 #     Battleground.RewardLoserHonorFirst
 #     Battleground.RewardLoserHonorLast
+#     Battleground.RatedRewardWinnerConquest
 #        Description: Random Battlegrounds / call to the arms rewards.
-#        Default:     30 - Battleground.RewardWinnerHonorFirst
-#                     25 - Battleground.RewardWinnerArenaFirst
-#                     15 - Battleground.RewardWinnerHonorLast
-#                     0  - Battleground.RewardWinnerArenaLast
-#                     5  - Battleground.RewardLoserHonorFirst
-#                     5  - Battleground.RewardLoserHonorLast
+#        Default:     54000 - Battleground.RewardWinnerHonorFirst
+#                     12000 - Battleground.RewardWinnerConquestFirst
+#                     54000 - Battleground.RewardWinnerHonorLast
+#                     10000 - Battleground.RewardWinnerConquestLast
+#                     9000  - Battleground.RewardLoserHonorFirst
+#                     9000  - Battleground.RewardLoserHonorLast
+#                     75000 - Battleground.RatedRewardWinnerConquest
 #
 
-Battleground.RewardWinnerHonorFirst     = 27000
-Battleground.RewardWinnerConquestFirst  = 10000
-Battleground.RewardWinnerHonorLast      = 13500
-Battleground.RewardWinnerConquestLast   = 5000
-Battleground.RewardLoserHonorFirst      = 4500
-Battleground.RewardLoserHonorLast       = 3500
+Battleground.RewardWinnerHonorFirst     = 54000
+Battleground.RewardWinnerConquestFirst  = 12000
+Battleground.RewardWinnerHonorLast      = 54000
+Battleground.RewardWinnerConquestLast   = 10000
+Battleground.RewardLoserHonorFirst      = 9000
+Battleground.RewardLoserHonorLast       = 9000
+Battleground.RatedRewardWinnerConquest  = 75000
 
 #
 #    Battleground.ReportAFK
@@ -3042,9 +3033,9 @@ Arena.QueueAnnouncer.Enable = 0
 #
 #    Arena.ArenaSeason.ID
 #        Description: Current arena season id shown in clients.
-#        Default:     32
+#        Default:     9
 
-Arena.ArenaSeason.ID = 32
+Arena.ArenaSeason.ID = 9
 
 #
 #    Arena.ArenaSeason.InProgress
@@ -3245,14 +3236,6 @@ CharDelete.MinLevel = 0
 #                     1+ - (Only characters with the specified level will use the unlinking method)
 
 CharDelete.DeathKnight.MinLevel = 0
-
-#
-#    CharDelete.DemonHunter.MinLevel
-#        Description: Required level to use the unlinking method if enabled for demon hunters.
-#        Default:     0  - (Same method for every level)
-#                     1+ - (Only characters with the specified level will use the unlinking method)
-
-CharDelete.DemonHunter.MinLevel = 0
 
 #
 #    CharDelete.KeepDays
@@ -3517,10 +3500,10 @@ GameObject.CheckInvalidPosition = 0
 #
 #     Loot.EnableAELoot
 #        Description: Enables AE loot which will allow looting all creatures within a 30 yards radius at once
-#        Default:     1  - (AE loot enabled)
-#                     0  - (AE loot disabled)
+#        Default:     1  - (AE loot disabled)
+#                     0  - (AE loot enabled)
 
-Loot.EnableAELoot = 1
+Loot.EnableAELoot = 0
 
 #
 ###################################################################################################
@@ -4209,6 +4192,7 @@ Logger.mmaps=3,Server
 #Logger.spells.effect.nospell=3,Console Server
 #Logger.sql.dev=3,Console Server
 #Logger.sql.driver=3,Console Server
+#Logger.warden=3,Console Server
 
 #
 #    Log.Async.Enable

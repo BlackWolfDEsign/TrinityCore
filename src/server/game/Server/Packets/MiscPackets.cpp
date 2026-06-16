@@ -16,12 +16,9 @@
  */
 
 #include "MiscPackets.h"
-#include "PacketOperators.h"
-#include "Player.h"
+#include "Common.h"
 
-namespace WorldPackets::Misc
-{
-WorldPacket const* BindPointUpdate::Write()
+WorldPacket const* WorldPackets::Misc::BindPointUpdate::Write()
 {
     _worldPacket << BindPosition;
     _worldPacket << uint32(BindMapID);
@@ -30,22 +27,14 @@ WorldPacket const* BindPointUpdate::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* PlayerBound::Write()
-{
-    _worldPacket << BinderID;
-    _worldPacket << uint32(AreaID);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* InvalidatePlayer::Write()
+WorldPacket const* WorldPackets::Misc::InvalidatePlayer::Write()
 {
     _worldPacket << Guid;
 
     return &_worldPacket;
 }
 
-WorldPacket const* LoginSetTimeSpeed::Write()
+WorldPacket const* WorldPackets::Misc::LoginSetTimeSpeed::Write()
 {
     _worldPacket << ServerTime;
     _worldPacket << GameTime;
@@ -56,28 +45,28 @@ WorldPacket const* LoginSetTimeSpeed::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SetCurrency::Write()
+WorldPacket const* WorldPackets::Misc::SetCurrency::Write()
 {
     _worldPacket << int32(Type);
     _worldPacket << int32(Quantity);
     _worldPacket << uint32(Flags);
-    _worldPacket << Size<uint32>(Toasts);
+    _worldPacket << uint32(Toasts.size());
 
-    for (Item::UiEventToast const& toast : Toasts)
+    for (WorldPackets::Item::UiEventToast const& toast : Toasts)
         _worldPacket << toast;
 
-    _worldPacket << OptionalInit(WeeklyQuantity);
-    _worldPacket << OptionalInit(TrackedQuantity);
-    _worldPacket << OptionalInit(MaxQuantity);
-    _worldPacket << OptionalInit(TotalEarned);
-    _worldPacket << Bits<1>(SuppressChatLog);
-    _worldPacket << OptionalInit(QuantityChange);
-    _worldPacket << OptionalInit(QuantityGainSource);
-    _worldPacket << OptionalInit(QuantityLostSource);
-    _worldPacket << OptionalInit(FirstCraftOperationID);
-    _worldPacket << OptionalInit(NextRechargeTime);
-    _worldPacket << OptionalInit(RechargeCycleStartTime);
-    _worldPacket << OptionalInit(OverflownCurrencyID);
+    _worldPacket.WriteBit(WeeklyQuantity.has_value());
+    _worldPacket.WriteBit(TrackedQuantity.has_value());
+    _worldPacket.WriteBit(MaxQuantity.has_value());
+    _worldPacket.WriteBit(TotalEarned.has_value());
+    _worldPacket.WriteBit(SuppressChatLog);
+    _worldPacket.WriteBit(QuantityChange.has_value());
+    _worldPacket.WriteBit(QuantityGainSource.has_value());
+    _worldPacket.WriteBit(QuantityLostSource.has_value());
+    _worldPacket.WriteBit(FirstCraftOperationID.has_value());
+    _worldPacket.WriteBit(NextRechargeTime.has_value());
+    _worldPacket.WriteBit(RechargeCycleStartTime.has_value());
+    _worldPacket.WriteBit(OverflownCurrencyID.has_value());
     _worldPacket.FlushBits();
 
     if (WeeklyQuantity)
@@ -116,34 +105,28 @@ WorldPacket const* SetCurrency::Write()
     return &_worldPacket;
 }
 
-void SetCurrencyFlags::Read()
-{
-    _worldPacket >> CurrencyID;
-    _worldPacket >> As<uint8>(Flags);
-}
-
-void SetSelection::Read()
+void WorldPackets::Misc::SetSelection::Read()
 {
     _worldPacket >> Selection;
 }
 
-WorldPacket const* SetupCurrency::Write()
+WorldPacket const* WorldPackets::Misc::SetupCurrency::Write()
 {
-    _worldPacket << Size<uint32>(Data);
+    _worldPacket << uint32(Data.size());
 
     for (Record const& data : Data)
     {
         _worldPacket << int32(data.Type);
         _worldPacket << int32(data.Quantity);
-        _worldPacket << uint8(data.Flags);
 
-        _worldPacket << OptionalInit(data.WeeklyQuantity);
-        _worldPacket << OptionalInit(data.MaxWeeklyQuantity);
-        _worldPacket << OptionalInit(data.TrackedQuantity);
-        _worldPacket << OptionalInit(data.MaxQuantity);
-        _worldPacket << OptionalInit(data.TotalEarned);
-        _worldPacket << OptionalInit(data.NextRechargeTime);
-        _worldPacket << OptionalInit(data.RechargeCycleStartTime);
+        _worldPacket.WriteBit(data.WeeklyQuantity.has_value());
+        _worldPacket.WriteBit(data.MaxWeeklyQuantity.has_value());
+        _worldPacket.WriteBit(data.TrackedQuantity.has_value());
+        _worldPacket.WriteBit(data.MaxQuantity.has_value());
+        _worldPacket.WriteBit(data.TotalEarned.has_value());
+        _worldPacket.WriteBit(data.NextRechargeTime.has_value());
+        _worldPacket.WriteBit(data.RechargeCycleStartTime.has_value());
+        _worldPacket.WriteBits(uint8(data.Flags), 5);
         _worldPacket.FlushBits();
 
         if (data.WeeklyQuantity)
@@ -165,75 +148,67 @@ WorldPacket const* SetupCurrency::Write()
     return &_worldPacket;
 }
 
-void ViolenceLevel::Read()
+void WorldPackets::Misc::ViolenceLevel::Read()
 {
     _worldPacket >> ViolenceLvl;
 }
 
-WorldPacket const* TimeSyncRequest::Write()
+WorldPacket const* WorldPackets::Misc::TimeSyncRequest::Write()
 {
     _worldPacket << SequenceIndex;
 
     return &_worldPacket;
 }
 
-void TimeSyncResponse::Read()
+void WorldPackets::Misc::TimeSyncResponse::Read()
 {
     _worldPacket >> SequenceIndex;
     _worldPacket >> ClientTime;
 }
 
-WorldPacket const* TriggerCinematic::Write()
-{
-    _worldPacket << uint32(CinematicID);
-    _worldPacket << ConversationGuid;
-
-    return &_worldPacket;
-}
-
-WorldPacket const* TriggerMovie::Write()
-{
-    _worldPacket << uint32(MovieID);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* ServerTimeOffset::Write()
+WorldPacket const* WorldPackets::Misc::ServerTimeOffset::Write()
 {
     _worldPacket << Time;
 
     return &_worldPacket;
 }
 
-WorldPacket const* TutorialFlags::Write()
+WorldPacket const* WorldPackets::Misc::TriggerMovie::Write()
 {
-    _worldPacket.append(TutorialData);
+    _worldPacket << uint32(MovieID);
+
+    return &_worldPacket;
+}
+WorldPacket const* WorldPackets::Misc::TriggerCinematic::Write()
+{
+    _worldPacket << uint32(CinematicID);
 
     return &_worldPacket;
 }
 
-void TutorialSetFlag::Read()
+WorldPacket const* WorldPackets::Misc::TutorialFlags::Write()
 {
-    _worldPacket >> Bits<2>(Action);
+    _worldPacket.append(TutorialData, MAX_ACCOUNT_TUTORIAL_VALUES);
+
+    return &_worldPacket;
+}
+
+void WorldPackets::Misc::TutorialSetFlag::Read()
+{
+    Action = _worldPacket.ReadBits(2);
 
     if (Action == TUTORIAL_ACTION_UPDATE)
         _worldPacket >> TutorialBit;
 }
 
-WorldPacket const* WorldServerInfo::Write()
+WorldPacket const* WorldPackets::Misc::WorldServerInfo::Write()
 {
-    _worldPacket << int16(DifficultyID);
-    _worldPacket << HouseGUID;
-    _worldPacket << HouseOwnerAccountGUID;
-    _worldPacket << HouseCosmeticOwnerGUID;
-    _worldPacket << NeighborhoodGUID;
-    _worldPacket << Bits<1>(IsTournamentRealm);
-    _worldPacket << Bits<1>(XRealmPvpAlert);
-    _worldPacket << Bits<1>(BlockExitingLoadingScreen);
-    _worldPacket << OptionalInit(RestrictedAccountMaxLevel);
-    _worldPacket << OptionalInit(RestrictedAccountMaxMoney);
-    _worldPacket << OptionalInit(InstanceGroupSize);
-    _worldPacket.FlushBits();
+    _worldPacket << uint32(DifficultyID);
+    _worldPacket.WriteBit(IsTournamentRealm);
+    _worldPacket.WriteBit(XRealmPvpAlert);
+    _worldPacket.WriteBit(RestrictedAccountMaxLevel.has_value());
+    _worldPacket.WriteBit(RestrictedAccountMaxMoney.has_value());
+    _worldPacket.WriteBit(InstanceGroupSize.has_value());
 
     if (RestrictedAccountMaxLevel)
         _worldPacket << uint32(*RestrictedAccountMaxLevel);
@@ -244,43 +219,43 @@ WorldPacket const* WorldServerInfo::Write()
     if (InstanceGroupSize)
         _worldPacket << uint32(*InstanceGroupSize);
 
+    _worldPacket.FlushBits();
+
     return &_worldPacket;
 }
 
-void SetDungeonDifficulty::Read()
+void WorldPackets::Misc::SetDungeonDifficulty::Read()
 {
     _worldPacket >> DifficultyID;
 }
 
-void SetRaidDifficulty::Read()
+void WorldPackets::Misc::SetRaidDifficulty::Read()
 {
+    _worldPacket >> DifficultyID;
     _worldPacket >> Legacy;
-    _worldPacket >> DifficultyID;
 }
 
-WorldPacket const* DungeonDifficultySet::Write()
+WorldPacket const* WorldPackets::Misc::DungeonDifficultySet::Write()
 {
-    _worldPacket << int16(DifficultyID);
-
+    _worldPacket << int32(DifficultyID);
     return &_worldPacket;
 }
 
-WorldPacket const* RaidDifficultySet::Write()
+WorldPacket const* WorldPackets::Misc::RaidDifficultySet::Write()
 {
-    _worldPacket << int32(Legacy);
-    _worldPacket << int16(DifficultyID);
-
+    _worldPacket << int32(DifficultyID);
+    _worldPacket << uint8(Legacy);
     return &_worldPacket;
 }
 
-WorldPacket const* CorpseReclaimDelay::Write()
+WorldPacket const* WorldPackets::Misc::CorpseReclaimDelay::Write()
 {
     _worldPacket << Remaining;
 
     return &_worldPacket;
 }
 
-WorldPacket const* DeathReleaseLoc::Write()
+WorldPacket const* WorldPackets::Misc::DeathReleaseLoc::Write()
 {
     _worldPacket << MapID;
     _worldPacket << Loc;
@@ -288,103 +263,116 @@ WorldPacket const* DeathReleaseLoc::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* PreRessurect::Write()
+WorldPacket const* WorldPackets::Misc::PreRessurect::Write()
 {
     _worldPacket << PlayerGUID;
 
     return &_worldPacket;
 }
 
-void ReclaimCorpse::Read()
+void WorldPackets::Misc::ReclaimCorpse::Read()
 {
     _worldPacket >> CorpseGUID;
 }
 
-void RepopRequest::Read()
+void WorldPackets::Misc::RepopRequest::Read()
 {
-    _worldPacket >> Bits<1>(CheckInstance);
+    CheckInstance = _worldPacket.ReadBit();
 }
 
-WorldPacket const* RequestCemeteryListResponse::Write()
+WorldPacket const* WorldPackets::Misc::RequestCemeteryListResponse::Write()
 {
-    _worldPacket << Bits<1>(IsGossipTriggered);
+    _worldPacket.WriteBit(IsGossipTriggered);
     _worldPacket.FlushBits();
 
-    _worldPacket << Size<uint32>(CemeteryID);
+    _worldPacket << uint32(CemeteryID.size());
     for (uint32 cemetery : CemeteryID)
         _worldPacket << cemetery;
 
     return &_worldPacket;
 }
 
-void ResurrectResponse::Read()
+void WorldPackets::Misc::ResurrectResponse::Read()
 {
     _worldPacket >> Resurrecter;
     _worldPacket >> Response;
 }
 
-WorldPacket const* Weather::Write()
+WorldPackets::Misc::Weather::Weather() : ServerPacket(SMSG_WEATHER, 4 + 4 + 1) { }
+
+WorldPackets::Misc::Weather::Weather(WeatherState weatherID, float intensity /*= 0.0f*/, bool abrupt /*= false*/)
+    : ServerPacket(SMSG_WEATHER, 4 + 4 + 1), Abrupt(abrupt), Intensity(intensity), WeatherID(weatherID) { }
+
+WorldPacket const* WorldPackets::Misc::Weather::Write()
 {
     _worldPacket << uint32(WeatherID);
     _worldPacket << float(Intensity);
-    _worldPacket << Bits<1>(Abrupt);
-    _worldPacket.FlushBits();
+    _worldPacket.WriteBit(Abrupt);
 
+    _worldPacket.FlushBits();
     return &_worldPacket;
 }
 
-void StandStateChange::Read()
+void WorldPackets::Misc::StandStateChange::Read()
 {
     _worldPacket >> As<uint8>(StandState);
 }
 
-WorldPacket const* StandStateUpdate::Write()
+WorldPacket const* WorldPackets::Misc::StandStateUpdate::Write()
 {
-    _worldPacket << As<uint8>(State);
+    _worldPacket << uint8(State);
     _worldPacket << uint32(AnimKitID);
 
     return &_worldPacket;
 }
 
-WorldPacket const* SetAnimTier::Write()
+WorldPacket const* WorldPackets::Misc::SetAnimTier::Write()
 {
     _worldPacket << Unit;
-    _worldPacket << uint8(Tier);
+    _worldPacket.WriteBits(Tier, 3);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* StartMirrorTimer::Write()
+WorldPacket const* WorldPackets::Misc::PlayerBound::Write()
+{
+    _worldPacket << BinderID;
+    _worldPacket << uint32(AreaID);
+
+    return &_worldPacket;
+}
+
+WorldPacket const* WorldPackets::Misc::StartMirrorTimer::Write()
 {
     _worldPacket << uint8(Timer);
     _worldPacket << int32(Value);
     _worldPacket << int32(MaxValue);
     _worldPacket << int32(Scale);
     _worldPacket << int32(SpellID);
-    _worldPacket << Bits<1>(Paused);
+    _worldPacket.WriteBit(Paused);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* PauseMirrorTimer::Write()
+WorldPacket const* WorldPackets::Misc::PauseMirrorTimer::Write()
 {
     _worldPacket << uint8(Timer);
-    _worldPacket << Bits<1>(Paused);
+    _worldPacket.WriteBit(Paused);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* StopMirrorTimer::Write()
+WorldPacket const* WorldPackets::Misc::StopMirrorTimer::Write()
 {
     _worldPacket << uint8(Timer);
 
     return &_worldPacket;
 }
 
-WorldPacket const* ExplorationExperience::Write()
+WorldPacket const* WorldPackets::Misc::ExplorationExperience::Write()
 {
     _worldPacket << int32(AreaID);
     _worldPacket << int32(Experience);
@@ -392,7 +380,7 @@ WorldPacket const* ExplorationExperience::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* LevelUpInfo::Write()
+WorldPacket const* WorldPackets::Misc::LevelUpInfo::Write()
 {
     _worldPacket << int32(Level);
     _worldPacket << int32(HealthDelta);
@@ -409,23 +397,23 @@ WorldPacket const* LevelUpInfo::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* PlayMusic::Write()
+WorldPacket const* WorldPackets::Misc::PlayMusic::Write()
 {
     _worldPacket << uint32(SoundKitID);
 
     return &_worldPacket;
 }
 
-void RandomRollClient::Read()
+void WorldPackets::Misc::RandomRollClient::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> Min;
     _worldPacket >> Max;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* RandomRoll::Write()
+WorldPacket const* WorldPackets::Misc::RandomRoll::Write()
 {
     _worldPacket << Roller;
     _worldPacket << RollerWowAccount;
@@ -436,33 +424,32 @@ WorldPacket const* RandomRoll::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* EnableBarberShop::Write()
+WorldPacket const* WorldPackets::Misc::EnableBarberShop::Write()
 {
-    _worldPacket << uint32(CustomizationFeatureMask);
+    _worldPacket << uint8(CustomizationScope);
 
     return &_worldPacket;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PhaseShiftDataPhase const& phaseShiftDataPhase)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Misc::PhaseShiftDataPhase const& phaseShiftDataPhase)
 {
     data << uint32(phaseShiftDataPhase.PhaseFlags);
     data << uint16(phaseShiftDataPhase.Id);
-
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PhaseShiftData const& phaseShiftData)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Misc::PhaseShiftData const& phaseShiftData)
 {
     data << uint32(phaseShiftData.PhaseShiftFlags);
-    data << WorldPackets::Size<uint32>(phaseShiftData.Phases);
+    data << uint32(phaseShiftData.Phases.size());
     data << phaseShiftData.PersonalGUID;
-    for (PhaseShiftDataPhase const& phaseShiftDataPhase : phaseShiftData.Phases)
+    for (WorldPackets::Misc::PhaseShiftDataPhase const& phaseShiftDataPhase : phaseShiftData.Phases)
         data << phaseShiftDataPhase;
 
     return data;
 }
 
-WorldPacket const* PhaseShiftChange::Write()
+WorldPacket const* WorldPackets::Misc::PhaseShiftChange::Write()
 {
     _worldPacket << Client;
     _worldPacket << Phaseshift;
@@ -481,31 +468,31 @@ WorldPacket const* PhaseShiftChange::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* ZoneUnderAttack::Write()
+WorldPacket const* WorldPackets::Misc::ZoneUnderAttack::Write()
 {
     _worldPacket << int32(AreaID);
 
     return &_worldPacket;
 }
 
-WorldPacket const* DurabilityDamageDeath::Write()
+WorldPacket const* WorldPackets::Misc::DurabilityDamageDeath::Write()
 {
     _worldPacket << int32(Percent);
 
     return &_worldPacket;
 }
 
-void ObjectUpdateFailed::Read()
+void WorldPackets::Misc::ObjectUpdateFailed::Read()
 {
     _worldPacket >> ObjectGUID;
 }
 
-void ObjectUpdateRescued::Read()
+void WorldPackets::Misc::ObjectUpdateRescued::Read()
 {
     _worldPacket >> ObjectGUID;
 }
 
-WorldPacket const* PlayObjectSound::Write()
+WorldPacket const* WorldPackets::Misc::PlayObjectSound::Write()
 {
     _worldPacket << int32(SoundKitID);
     _worldPacket << SourceObjectGUID;
@@ -516,7 +503,7 @@ WorldPacket const* PlayObjectSound::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* PlaySound::Write()
+WorldPacket const* WorldPackets::Misc::PlaySound::Write()
 {
     _worldPacket << int32(SoundKitID);
     _worldPacket << SourceObjectGuid;
@@ -525,7 +512,7 @@ WorldPacket const* PlaySound::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* PlaySpeakerbotSound::Write()
+WorldPacket const* WorldPackets::Misc::PlaySpeakerbotSound::Write()
 {
     _worldPacket << SourceObjectGUID;
     _worldPacket << int32(SoundKitID);
@@ -533,26 +520,26 @@ WorldPacket const* PlaySpeakerbotSound::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* StopSpeakerbotSound::Write()
+WorldPacket const* WorldPackets::Misc::StopSpeakerbotSound::Write()
 {
     _worldPacket << SourceObjectGUID;
 
     return &_worldPacket;
 }
 
-void FarSight::Read()
+void WorldPackets::Misc::FarSight::Read()
 {
-    _worldPacket >> Bits<1>(Enable);
+    Enable = _worldPacket.ReadBit();
 }
 
-void SaveCUFProfiles::Read()
+void WorldPackets::Misc::SaveCUFProfiles::Read()
 {
-    _worldPacket >> Size<uint32>(CUFProfiles);
+    CUFProfiles.resize(_worldPacket.read<uint32>());
     for (std::unique_ptr<CUFProfile>& cufProfile : CUFProfiles)
     {
         cufProfile = std::make_unique<CUFProfile>();
 
-        _worldPacket >> SizedString::BitsSize<7>(cufProfile->ProfileName);
+        uint8 strLen = _worldPacket.ReadBits(7);
 
         // Bool Options
         for (uint8 option = 0; option < CUF_BOOL_OPTIONS_COUNT; option++)
@@ -573,44 +560,44 @@ void SaveCUFProfiles::Read()
         _worldPacket >> cufProfile->BottomOffset;
         _worldPacket >> cufProfile->LeftOffset;
 
-        _worldPacket >> SizedString::Data(cufProfile->ProfileName);
+        cufProfile->ProfileName = _worldPacket.ReadString(strLen);
     }
 }
 
-WorldPacket const* LoadCUFProfiles::Write()
+WorldPacket const* WorldPackets::Misc::LoadCUFProfiles::Write()
 {
-    _worldPacket << Size<uint32>(CUFProfiles);
+    _worldPacket << uint32(CUFProfiles.size());
 
     for (CUFProfile const* cufProfile : CUFProfiles)
     {
-        _worldPacket << SizedString::BitsSize<7>(cufProfile->ProfileName);
+        _worldPacket.WriteBits(cufProfile->ProfileName.size(), 7);
 
         // Bool Options
         for (uint8 option = 0; option < CUF_BOOL_OPTIONS_COUNT; option++)
             _worldPacket.WriteBit(cufProfile->BoolOptions[option]);
 
         // Other Options
-        _worldPacket << uint16(cufProfile->FrameHeight);
-        _worldPacket << uint16(cufProfile->FrameWidth);
+        _worldPacket << cufProfile->FrameHeight;
+        _worldPacket << cufProfile->FrameWidth;
 
-        _worldPacket << uint8(cufProfile->SortBy);
-        _worldPacket << uint8(cufProfile->HealthText);
+        _worldPacket << cufProfile->SortBy;
+        _worldPacket << cufProfile->HealthText;
 
-        _worldPacket << uint8(cufProfile->TopPoint);
-        _worldPacket << uint8(cufProfile->BottomPoint);
-        _worldPacket << uint8(cufProfile->LeftPoint);
+        _worldPacket << cufProfile->TopPoint;
+        _worldPacket << cufProfile->BottomPoint;
+        _worldPacket << cufProfile->LeftPoint;
 
-        _worldPacket << uint16(cufProfile->TopOffset);
-        _worldPacket << uint16(cufProfile->BottomOffset);
-        _worldPacket << uint16(cufProfile->LeftOffset);
+        _worldPacket << cufProfile->TopOffset;
+        _worldPacket << cufProfile->BottomOffset;
+        _worldPacket << cufProfile->LeftOffset;
 
-        _worldPacket << SizedString::Data(cufProfile->ProfileName);
+        _worldPacket.WriteString(cufProfile->ProfileName);
     }
 
     return &_worldPacket;
 }
 
-WorldPacket const* PlayOneShotAnimKit::Write()
+WorldPacket const* WorldPackets::Misc::PlayOneShotAnimKit::Write()
 {
     _worldPacket << Unit;
     _worldPacket << uint16(AnimKitID);
@@ -618,7 +605,7 @@ WorldPacket const* PlayOneShotAnimKit::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SetAIAnimKit::Write()
+WorldPacket const* WorldPackets::Misc::SetAIAnimKit::Write()
 {
     _worldPacket << Unit;
     _worldPacket << uint16(AnimKitID);
@@ -626,7 +613,7 @@ WorldPacket const* SetAIAnimKit::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SetMovementAnimKit::Write()
+WorldPacket const* WorldPackets::Misc::SetMovementAnimKit::Write()
 {
     _worldPacket << Unit;
     _worldPacket << uint16(AnimKitID);
@@ -634,7 +621,7 @@ WorldPacket const* SetMovementAnimKit::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SetMeleeAnimKit::Write()
+WorldPacket const* WorldPackets::Misc::SetMeleeAnimKit::Write()
 {
     _worldPacket << Unit;
     _worldPacket << uint16(AnimKitID);
@@ -642,57 +629,52 @@ WorldPacket const* SetMeleeAnimKit::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SetPlayHoverAnim::Write()
+WorldPacket const* WorldPackets::Misc::SetPlayHoverAnim::Write()
 {
     _worldPacket << UnitGUID;
-    _worldPacket << Bits<1>(PlayHoverAnim);
+    _worldPacket.WriteBit(PlayHoverAnim);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-void SetPvP::Read()
+void WorldPackets::Misc::SetPvP::Read()
 {
-    _worldPacket >> Bits<1>(EnablePVP);
+    EnablePVP = _worldPacket.ReadBit();
 }
 
-void SetWarMode::Read()
+WorldPacket const* WorldPackets::Misc::AccountHeirloomUpdate::Write()
 {
-    _worldPacket >> Bits<1>(Enable);
-}
-
-WorldPacket const* AccountHeirloomUpdate::Write()
-{
-    _worldPacket << Bits<1>(IsFullUpdate);
+    _worldPacket.WriteBit(IsFullUpdate);
     _worldPacket.FlushBits();
 
-    _worldPacket << int8(ItemCollectionType);
+    _worldPacket << int32(Unk);
 
     // both lists have to have the same size
-    _worldPacket << Size<uint32>(*Heirlooms);
-    _worldPacket << Size<uint32>(*Heirlooms);
+    _worldPacket << uint32(Heirlooms->size());
+    _worldPacket << uint32(Heirlooms->size());
 
-    for (auto const& [itemId, _] : *Heirlooms)
-        _worldPacket << int32(itemId);
+    for (auto const& item : *Heirlooms)
+        _worldPacket << int32(item.first);
 
-    for (auto const& [_, data] : *Heirlooms)
-        _worldPacket << uint32(data.flags);
+    for (auto const& flags : *Heirlooms)
+        _worldPacket << uint32(flags.second.flags);
 
     return &_worldPacket;
 }
 
-void MountSpecial::Read()
+void WorldPackets::Misc::MountSpecial::Read()
 {
-    _worldPacket >> Size<uint32>(SpellVisualKitIDs);
+    SpellVisualKitIDs.resize(_worldPacket.read<uint32>());
     _worldPacket >> SequenceVariation;
     for (int32& spellVisualKitId : SpellVisualKitIDs)
         _worldPacket >> spellVisualKitId;
 }
 
-WorldPacket const* SpecialMountAnim::Write()
+WorldPacket const* WorldPackets::Misc::SpecialMountAnim::Write()
 {
     _worldPacket << UnitGUID;
-    _worldPacket << Size<uint32>(SpellVisualKitIDs);
+    _worldPacket << uint32(SpellVisualKitIDs.size());
     _worldPacket << int32(SequenceVariation);
     if (!SpellVisualKitIDs.empty())
         _worldPacket.append(SpellVisualKitIDs.data(), SpellVisualKitIDs.size());
@@ -700,7 +682,7 @@ WorldPacket const* SpecialMountAnim::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* CrossedInebriationThreshold::Write()
+WorldPacket const* WorldPackets::Misc::CrossedInebriationThreshold::Write()
 {
     _worldPacket << Guid;
     _worldPacket << int32(Threshold);
@@ -709,12 +691,12 @@ WorldPacket const* CrossedInebriationThreshold::Write()
     return &_worldPacket;
 }
 
-void SetTaxiBenchmarkMode::Read()
+void WorldPackets::Misc::SetTaxiBenchmarkMode::Read()
 {
-    _worldPacket >> Bits<1>(Enable);
+    Enable = _worldPacket.ReadBit();
 }
 
-WorldPacket const* OverrideLight::Write()
+WorldPacket const* WorldPackets::Misc::OverrideLight::Write()
 {
     _worldPacket << int32(AreaLightID);
     _worldPacket << int32(OverrideLightID);
@@ -723,11 +705,11 @@ WorldPacket const* OverrideLight::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* DisplayGameError::Write()
+WorldPacket const* WorldPackets::Misc::DisplayGameError::Write()
 {
     _worldPacket << uint32(Error);
-    _worldPacket << OptionalInit(Arg);
-    _worldPacket << OptionalInit(Arg2);
+    _worldPacket.WriteBit(Arg.has_value());
+    _worldPacket.WriteBit(Arg2.has_value());
     _worldPacket.FlushBits();
 
     if (Arg)
@@ -739,15 +721,15 @@ WorldPacket const* DisplayGameError::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* AccountMountUpdate::Write()
+WorldPacket const* WorldPackets::Misc::AccountMountUpdate::Write()
 {
-    _worldPacket << Bits<1>(IsFullUpdate);
-    _worldPacket << Size<uint32>(*Mounts);
+    _worldPacket.WriteBit(IsFullUpdate);
+    _worldPacket << uint32(Mounts->size());
 
-    for (auto const& [spellId, flags] : *Mounts)
+    for (auto [spellId, flags] : *Mounts)
     {
         _worldPacket << int32(spellId);
-        _worldPacket << Bits<4>(flags);
+        _worldPacket.WriteBits(flags, 4);
     }
 
     _worldPacket.FlushBits();
@@ -755,64 +737,58 @@ WorldPacket const* AccountMountUpdate::Write()
     return &_worldPacket;
 }
 
-void MountSetFavorite::Read()
+void WorldPackets::Misc::MountSetFavorite::Read()
 {
     _worldPacket >> MountSpellID;
-    _worldPacket >> Bits<1>(IsFavorite);
+    IsFavorite = _worldPacket.ReadBit();
 }
 
-void CloseInteraction::Read()
+void WorldPackets::Misc::CloseInteraction::Read()
 {
     _worldPacket >> SourceGuid;
 }
 
-WorldPacket const* StartTimer::Write()
+WorldPacket const* WorldPackets::Misc::StartTimer::Write()
 {
     _worldPacket << TotalTime;
-    _worldPacket << int32(Type);
     _worldPacket << TimeLeft;
-    _worldPacket << OptionalInit(PlayerGuid);
-    _worldPacket.FlushBits();
-
-    if (PlayerGuid)
-        _worldPacket << *PlayerGuid;
+    _worldPacket << int32(Type);
 
     return &_worldPacket;
 }
 
-void QueryCountdownTimer::Read()
+void WorldPackets::Misc::QueryCountdownTimer::Read()
 {
     _worldPacket >> As<int32>(TimerType);
 }
 
-void ConversationLineStarted::Read()
+void WorldPackets::Misc::ConversationLineStarted::Read()
 {
     _worldPacket >> ConversationGUID;
     _worldPacket >> LineID;
 }
 
-WorldPacket const* SplashScreenShowLatest::Write()
+WorldPacket const* WorldPackets::Misc::SplashScreenShowLatest::Write()
 {
     _worldPacket << int32(UISplashScreenID);
 
     return &_worldPacket;
 }
 
-WorldPacket const* DisplayToast::Write()
+WorldPacket const* WorldPackets::Misc::DisplayToast::Write()
 {
     _worldPacket << uint64(Quantity);
-    _worldPacket << As<uint8>(DisplayToastMethod);
+    _worldPacket << uint32(AsUnderlyingType(DisplayToastMethod));
     _worldPacket << uint32(QuestID);
 
-    _worldPacket << Bits<1>(Mailed);
-    _worldPacket << Bits<2>(Type);
-    _worldPacket << Bits<1>(IsSecondaryResult);
+    _worldPacket.WriteBit(Mailed);
+    _worldPacket.WriteBits(AsUnderlyingType(Type), 2);
+    _worldPacket.WriteBit(IsSecondaryResult);
 
     switch (Type)
     {
         case DisplayToastType::NewItem:
-            _worldPacket << Bits<1>(BonusRoll);
-            _worldPacket << Bits<1>(ForceToast);
+            _worldPacket.WriteBit(BonusRoll);
             _worldPacket << Item;
             _worldPacket << int32(LootSpec);
             _worldPacket << int8(Gender);
@@ -827,26 +803,4 @@ WorldPacket const* DisplayToast::Write()
     _worldPacket.FlushBits();
 
     return &_worldPacket;
-}
-
-WorldPacket const* AccountWarbandSceneUpdate::Write()
-{
-    _worldPacket << Bits<1>(IsFullUpdate);
-    _worldPacket << Size<uint32>(*WarbandScenes);
-    _worldPacket << Size<uint32>(*WarbandScenes);
-    _worldPacket << Size<uint32>(*WarbandScenes);
-
-    for (auto const& [warbandSceneId, _] : *WarbandScenes)
-        _worldPacket << uint32(warbandSceneId);
-
-    for (auto const& [_, data] : *WarbandScenes)
-        _worldPacket << Bits<1>(data.Flags.HasFlag(WarbandSceneCollectionFlags::Favorite));
-
-    for (auto const& [_, data] : *WarbandScenes)
-        _worldPacket << Bits<1>(data.Flags.HasFlag(WarbandSceneCollectionFlags::HasFanfare));
-
-    _worldPacket.FlushBits();
-
-    return &_worldPacket;
-}
 }

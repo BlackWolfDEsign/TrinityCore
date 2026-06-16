@@ -16,12 +16,9 @@
  */
 
 #include "BattlenetPackets.h"
-#include "PacketOperators.h"
 #include "PacketUtilities.h"
 
-namespace WorldPackets::Battlenet
-{
-ByteBuffer& operator<<(ByteBuffer& data, MethodCall const& method)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Battlenet::MethodCall const& method)
 {
     data << uint64(method.Type);
     data << uint64(method.ObjectId);
@@ -29,7 +26,7 @@ ByteBuffer& operator<<(ByteBuffer& data, MethodCall const& method)
     return data;
 }
 
-ByteBuffer& operator>>(ByteBuffer& data, MethodCall& method)
+ByteBuffer& operator>>(ByteBuffer& data, WorldPackets::Battlenet::MethodCall& method)
 {
     data >> method.Type;
     data >> method.ObjectId;
@@ -37,45 +34,45 @@ ByteBuffer& operator>>(ByteBuffer& data, MethodCall& method)
     return data;
 }
 
-WorldPacket const* Notification::Write()
+WorldPacket const* WorldPackets::Battlenet::Notification::Write()
 {
     _worldPacket << Method;
-    _worldPacket << Size<uint32>(Data);
+    _worldPacket << uint32(Data.size());
     _worldPacket.append(Data);
 
     return &_worldPacket;
 }
 
-WorldPacket const* Response::Write()
+WorldPacket const* WorldPackets::Battlenet::Response::Write()
 {
     _worldPacket << uint32(BnetStatus);
     _worldPacket << Method;
-    _worldPacket << Size<uint32>(Data);
+    _worldPacket << uint32(Data.size());
     _worldPacket.append(Data);
 
     return &_worldPacket;
 }
 
-WorldPacket const* ConnectionStatus::Write()
+WorldPacket const* WorldPackets::Battlenet::ConnectionStatus::Write()
 {
-    _worldPacket << Bits<2>(State);
-    _worldPacket << Bits<1>(SuppressNotification);
+    _worldPacket.WriteBits(State, 2);
+    _worldPacket.WriteBit(SuppressNotification);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* ChangeRealmTicketResponse::Write()
+WorldPacket const* WorldPackets::Battlenet::ChangeRealmTicketResponse::Write()
 {
     _worldPacket << uint32(Token);
-    _worldPacket << Bits<1>(Allow);
-    _worldPacket << Size<uint32>(Ticket);
+    _worldPacket.WriteBit(Allow);
+    _worldPacket << uint32(Ticket.size());
     _worldPacket.append(Ticket);
 
     return &_worldPacket;
 }
 
-void Request::Read()
+void WorldPackets::Battlenet::Request::Read()
 {
     uint32 protoSize;
 
@@ -83,7 +80,7 @@ void Request::Read()
     _worldPacket >> protoSize;
 
     if (protoSize > 0xFFFF)
-        OnInvalidArraySize(protoSize, 0xFFFF);
+        throw PacketArrayMaxCapacityException(protoSize, 0xFFFF);
 
     if (protoSize)
     {
@@ -93,9 +90,8 @@ void Request::Read()
     }
 }
 
-void ChangeRealmTicket::Read()
+void WorldPackets::Battlenet::ChangeRealmTicket::Read()
 {
     _worldPacket >> Token;
     _worldPacket.read(Secret.data(), Secret.size());
-}
 }

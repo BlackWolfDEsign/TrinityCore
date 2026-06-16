@@ -24,13 +24,6 @@
 #include "World.h"
 #include "WorldSession.h"
 
-PlayerSocial::PlayerSocial() = default;
-PlayerSocial::PlayerSocial(PlayerSocial const&) = default;
-PlayerSocial::PlayerSocial(PlayerSocial&&) noexcept = default;
-PlayerSocial& PlayerSocial::operator=(PlayerSocial const&) = default;
-PlayerSocial& PlayerSocial::operator=(PlayerSocial&&) noexcept = default;
-PlayerSocial::~PlayerSocial() = default;
-
 uint32 PlayerSocial::GetNumberOfSocialsWithFlag(SocialFlag flag)
 {
     uint32 counter = 0;
@@ -173,17 +166,7 @@ void PlayerSocial::SendSocialList(Player* player, uint32 flags)
 
         SocialMgr::GetFriendInfo(player, v.first, v.second);
 
-        WorldPackets::Social::ContactInfo& contact = contactList.Contacts.emplace_back();
-        contact.Guid = v.first;
-        contact.WowAccountGuid = v.second.WowAccountGuid;
-        contact.VirtualRealmAddr = GetVirtualRealmAddress();
-        contact.NativeRealmAddr = GetVirtualRealmAddress();
-        contact.TypeFlags = v.second.Flags;
-        contact.Notes = v.second.Note;
-        contact.Status = v.second.Status;
-        contact.AreaID = v.second.Area;
-        contact.Level = v.second.Level;
-        contact.ClassID = v.second.Class;
+        contactList.Contacts.emplace_back(v.first, v.second);
     }
 
     player->SendDirectMessage(contactList.Write());
@@ -207,9 +190,6 @@ bool PlayerSocial::HasIgnore(ObjectGuid const& ignoreGuid, ObjectGuid const& ign
 {
     return _HasContact(ignoreGuid, SOCIAL_FLAG_IGNORED) || _ignoredAccounts.find(ignoreAccountGuid) != _ignoredAccounts.end();
 }
-
-SocialMgr::SocialMgr() = default;
-SocialMgr::~SocialMgr() = default;
 
 SocialMgr* SocialMgr::instance()
 {
@@ -272,15 +252,7 @@ void SocialMgr::SendFriendStatus(Player* player, FriendsResult result, ObjectGui
     GetFriendInfo(player, friendGuid, fi);
 
     WorldPackets::Social::FriendStatus friendStatus;
-    friendStatus.VirtualRealmAddress = GetVirtualRealmAddress();
-    friendStatus.Notes = fi.Note;
-    friendStatus.ClassID = fi.Class;
-    friendStatus.Status = fi.Status;
-    friendStatus.Guid = friendGuid;
-    friendStatus.WowAccountGuid = fi.WowAccountGuid;
-    friendStatus.Level = fi.Level;
-    friendStatus.AreaID = fi.Area;
-    friendStatus.FriendResult = result;
+    friendStatus.Initialize(friendGuid, result, fi);
 
     if (broadcast)
         BroadcastToFriendListers(player, friendStatus.Write());

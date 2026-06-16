@@ -153,8 +153,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
             return;
         }
 
-        bool isInRandomBgQueue = _player->InBattlegroundQueueForBattlegroundQueueType(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RB, BattlegroundQueueIdType::Battleground, false, 0))
-            || _player->InBattlegroundQueueForBattlegroundQueueType(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RANDOM_EPIC, BattlegroundQueueIdType::Battleground, false, 0));
+        bool isInRandomBgQueue = _player->InBattlegroundQueueForBattlegroundQueueType(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RB, BattlegroundQueueIdType::Battleground, false, 0));
         if (!BattlegroundMgr::IsRandomBattleground(bgTypeId) && isInRandomBgQueue)
         {
             // player is already in random queue
@@ -192,7 +191,7 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
             return;
 
         BattlegroundQueue& bgQueue = sBattlegroundMgr->GetBattlegroundQueue(bgQueueTypeId);
-        GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, getQueueTeam(), bracketEntry, false, isPremade, 0);
+        GroupQueueInfo* ginfo = bgQueue.AddGroup(_player, nullptr, getQueueTeam(), bracketEntry, false, isPremade, 0, 0);
         uint32 avgTime = bgQueue.GetAverageQueueWaitTime(ginfo, bracketEntry->GetBracketId());
         uint32 queueSlot = _player->AddBattlegroundQueueId(bgQueueTypeId);
 
@@ -220,13 +219,16 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
         if (!err)
         {
             TC_LOG_DEBUG("bg.battleground", "Battleground: the following players are joining as group:");
-            ginfo = bgQueue.AddGroup(_player, grp, getQueueTeam(), bracketEntry, false, isPremade, 0);
+            ginfo = bgQueue.AddGroup(_player, grp, getQueueTeam(), bracketEntry, false, isPremade, 0, 0);
             avgTime = bgQueue.GetAverageQueueWaitTime(ginfo, bracketEntry->GetBracketId());
         }
 
-        for (GroupReference const& itr : grp->GetMembers())
+        for (GroupReference const* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* member = itr.GetSource();
+            Player* member = itr->GetSource();
+            if (!member)
+                continue;   // this should never happen
+
             if (err)
             {
                 WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
@@ -403,7 +405,7 @@ void WorldSession::HandleBattleFieldPortOpcode(WorldPackets::Battleground::Battl
         _player->SetBGTeam(ginfo.Team);
 
         // bg->HandleBeforeTeleportToBattleground(_player);
-        BattlegroundMgr::SendToBattleground(_player, bg);
+        sBattlegroundMgr->SendToBattleground(_player, ginfo.IsInvitedToBGInstanceGUID, bgTypeId);
         // add only in HandleMoveWorldPortAck()
         // bg->AddPlayer(_player, team);
         TC_LOG_DEBUG("bg.battleground", "Battleground: player {} ({}) joined battle for bg {}, bgtype {}, queue {{ BattlemasterListId: {}, Type: {}, Rated: {}, TeamSize: {} }}.",
@@ -540,22 +542,22 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
         return;
 
     Group* grp = _player->GetGroup();
-    if (!grp)
-    {
-        grp = new Group();
-        grp->Create(_player);
-    }
-
     // no group found, error
     if (!grp)
         return;
-
     if (grp->GetLeaderGUID() != _player->GetGUID())
         return;
 
+    uint32 ateamId = _player->GetArenaTeamId(packet.TeamSizeIndex);
+    // check real arenateam existence only here (if it was moved to group->CanJoin .. () then we would ahve to get it twice)
+    ArenaTeam* at = sArenaTeamMgr->GetArenaTeamById(ateamId);
+    if (!at)
+        return;
+
     // get the team rating for queuing
-    uint32 arenaRating = 1; //at->GetRating();
-    uint32 matchmakerRating = 1; //at->GetAverageMMR(grp);
+    uint32 arenaRating = at->GetRating();
+    uint32 matchmakerRating = at->GetAverageMMR(grp);
+    // the arenateam id must match for everyone in the group
 
     if (arenaRating <= 0)
         arenaRating = 1;
@@ -566,21 +568,21 @@ void WorldSession::HandleBattlemasterJoinArena(WorldPackets::Battleground::Battl
     GroupQueueInfo* ginfo = nullptr;
 
     ObjectGuid errorGuid;
-    GroupJoinBattlegroundResult err = ERR_BATTLEGROUND_NONE;
-    if (!sBattlegroundMgr->isArenaTesting())
-        err = grp->CanJoinBattlegroundQueue(bgTemplate, bgQueueTypeId, arenatype, arenatype, true, packet.TeamSizeIndex, errorGuid);
-
+    GroupJoinBattlegroundResult err = grp->CanJoinBattlegroundQueue(bgTemplate, bgQueueTypeId, arenatype, arenatype, true, packet.TeamSizeIndex, errorGuid);
     if (!err)
     {
         TC_LOG_DEBUG("bg.battleground", "Battleground: arena team id {}, leader {} queued with matchmaker rating {} for type {}", _player->GetArenaTeamId(packet.TeamSizeIndex), _player->GetName(), matchmakerRating, arenatype);
 
-        ginfo = bgQueue.AddGroup(_player, grp, Team(_player->GetTeam()), bracketEntry, false, arenaRating, matchmakerRating);
+        ginfo = bgQueue.AddGroup(_player, grp, Team(_player->GetTeam()), bracketEntry, false, arenaRating, matchmakerRating, ateamId);
         avgTime = bgQueue.GetAverageQueueWaitTime(ginfo, bracketEntry->GetBracketId());
     }
 
-    for (GroupReference const& itr : grp->GetMembers())
+    for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player* member = itr.GetSource();
+        Player* member = itr->GetSource();
+        if (!member)
+            continue;
+
         if (err)
         {
             WorldPackets::Battleground::BattlefieldStatusFailed battlefieldStatus;
@@ -639,7 +641,7 @@ void WorldSession::HandleGetPVPOptionsEnabled(WorldPackets::Battleground::GetPVP
     pvpOptionsEnabled.PugBattlegrounds = true;
     pvpOptionsEnabled.WargameBattlegrounds = false;
     pvpOptionsEnabled.WargameArenas = false;
-    pvpOptionsEnabled.RatedArenas = true;
+    pvpOptionsEnabled.RatedArenas = false;
     pvpOptionsEnabled.ArenaSkirmish = false;
     pvpOptionsEnabled.SoloShuffle = false;
     pvpOptionsEnabled.RatedSoloShuffle = false;

@@ -114,7 +114,7 @@ void PacketLog::Initialize()
 
 void PacketLog::LogPacket(WorldPacket const& packet, Direction direction, boost::asio::ip::address const& addr, uint16 port, ConnectionType connectionType)
 {
-    std::scoped_lock lock(_logPacketLock);
+    std::lock_guard<std::mutex> lock(_logPacketLock);
 
     PacketHeader header;
     header.Direction = direction == CLIENT_TO_SERVER ? 0x47534d43 : 0x47534d53;
@@ -145,7 +145,7 @@ void PacketLog::LogPacket(WorldPacket const& packet, Direction direction, boost:
     fwrite(&header, sizeof(header), 1, _file);
     if (size)
     {
-        uint8 const* data = packet.data();
+        uint8 const* data = packet.contents();
         if (direction == CLIENT_TO_SERVER)
             data += 4;
         fwrite(data, 1, size, _file);

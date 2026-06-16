@@ -29,7 +29,6 @@ class InstanceMap;
 class InstanceScenario;
 struct ScenarioEntry;
 struct ScenarioStepEntry;
-enum Difficulty : int16;
 
 struct ScenarioData
 {
@@ -46,7 +45,7 @@ struct ScenarioData
 struct ScenarioDBData
 {
     uint32 MapID;
-    Difficulty DifficultyID;
+    uint8 DifficultyID;
     uint32 Scenario_A;
     uint32 Scenario_H;
 };
@@ -100,19 +99,13 @@ typedef std::unordered_map<uint32, ScenarioPOIVector> ScenarioPOIContainer;
 class TC_GAME_API ScenarioMgr
 {
 private:
-    ScenarioMgr();
-    ~ScenarioMgr();
+    ScenarioMgr() { }
+    ~ScenarioMgr() { }
 
 public:
-    ScenarioMgr(ScenarioMgr const&) = delete;
-    ScenarioMgr(ScenarioMgr&&) = delete;
-    ScenarioMgr& operator=(ScenarioMgr const&) = delete;
-    ScenarioMgr& operator=(ScenarioMgr&&) = delete;
-
     static ScenarioMgr* Instance();
 
-    InstanceScenario* CreateInstanceScenarioForTeam(InstanceMap* map, TeamId team) const;
-    InstanceScenario* CreateInstanceScenario(InstanceMap* map, uint32 scenarioID) const;
+    InstanceScenario* CreateInstanceScenario(InstanceMap* map, TeamId team) const;
 
     void LoadDBData();
     void LoadDB2Data();
@@ -124,6 +117,9 @@ private:
     ScenarioDataContainer _scenarioData;
     ScenarioPOIContainer _scenarioPOIStore;
     ScenarioDBDataContainer _scenarioDBData;
+
+    ScenarioMgr(ScenarioMgr const&) = delete;
+    ScenarioMgr& operator=(ScenarioMgr const&) = delete;
 };
 
 #define sScenarioMgr ScenarioMgr::Instance()

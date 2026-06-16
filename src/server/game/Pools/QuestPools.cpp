@@ -25,9 +25,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-QuestPoolMgr::QuestPoolMgr() = default;
-QuestPoolMgr::~QuestPoolMgr() = default;
-
 /*static*/ QuestPoolMgr* QuestPoolMgr::instance()
 {
     static QuestPoolMgr instance;

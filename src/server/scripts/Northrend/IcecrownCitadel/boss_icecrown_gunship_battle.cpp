@@ -225,7 +225,8 @@ Position const OrgrimsHammerTeleportExit = { 7.461699f, 0.158853f, 35.72989f, 0.
 Position const OrgrimsHammerTeleportPortal = { 47.550990f, -0.101778f, 37.61111f, 0.0f };
 Position const SkybreakerTeleportExit      = { -17.55738f, -0.090421f, 21.18366f, 0.0f };
 
-G3D::Vector3 const MuradinExitPath[] =
+uint32 const MuradinExitPathSize = 10;
+G3D::Vector3 const MuradinExitPath[MuradinExitPathSize] =
 {
     { 8.130936f, -0.2699585f, 20.31728f },
     { 6.380936f, -0.2699585f, 20.31728f },
@@ -239,7 +240,8 @@ G3D::Vector3 const MuradinExitPath[] =
     { -14.88477f, 25.20844f, 21.59985f },
 };
 
-G3D::Vector3 const SaurfangExitPath[] =
+uint32 const SaurfangExitPathSize = 13;
+G3D::Vector3 const SaurfangExitPath[SaurfangExitPathSize] =
 {
     { 30.43987f, 0.1475817f, 36.10674f },
     { 21.36141f, -3.056458f, 35.42970f },
@@ -565,13 +567,18 @@ struct gunship_npc_AI : public ScriptedAI
 
             me->SetReactState(REACT_PASSIVE);
 
-            me->SetTransportHomePosition(Slot->TargetPosition);
-            me->SetHomePosition(me->GetTransport()->GetPositionWithOffset(Slot->TargetPosition));
+            float x, y, z, o;
+            Slot->TargetPosition.GetPosition(x, y, z, o);
 
-            std::function<void(Movement::MoveSplineInit&)> initializer = [pos = Slot->TargetPosition](Movement::MoveSplineInit& init)
+            me->SetTransportHomePosition(Slot->TargetPosition);
+            float hx = x, hy = y, hz = z, ho = o;
+            me->GetTransport()->CalculatePassengerPosition(hx, hy, hz, &ho);
+            me->SetHomePosition(hx, hy, hz, ho);
+
+            std::function<void(Movement::MoveSplineInit&)> initializer = [=](Movement::MoveSplineInit& init)
             {
                 init.DisableTransportPathTransformations();
-                init.MoveTo(pos.GetPositionX(), pos.GetPositionY(), pos.GetPositionZ(), false);
+                init.MoveTo(x, y, z, false);
             };
             me->GetMotionMaster()->LaunchMoveSpline(std::move(initializer), EVENT_CHARGE_PREPATH, MOTION_PRIORITY_NORMAL, POINT_MOTION_TYPE);
         }
@@ -933,8 +940,9 @@ struct npc_high_overlord_saurfang_igb : public ScriptedAI
         {
             std::function<void(Movement::MoveSplineInit&)> initializer = [](Movement::MoveSplineInit& init)
             {
+                Movement::PointsArray path(SaurfangExitPath, SaurfangExitPath + SaurfangExitPathSize);
                 init.DisableTransportPathTransformations();
-                init.MovebyPath(SaurfangExitPath);
+                init.MovebyPath(path, 0);
             };
             me->GetMotionMaster()->LaunchMoveSpline(std::move(initializer), 0, MOTION_PRIORITY_NORMAL, POINT_MOTION_TYPE);
 
@@ -1189,8 +1197,9 @@ struct npc_muradin_bronzebeard_igb : public ScriptedAI
         {
             std::function<void(Movement::MoveSplineInit&)> initializer = [](Movement::MoveSplineInit& init)
             {
+                Movement::PointsArray path(MuradinExitPath, MuradinExitPath + MuradinExitPathSize);
                 init.DisableTransportPathTransformations();
-                init.MovebyPath(MuradinExitPath);
+                init.MovebyPath(path, 0);
             };
             me->GetMotionMaster()->LaunchMoveSpline(std::move(initializer), 0, MOTION_PRIORITY_NORMAL, POINT_MOTION_TYPE);
 
@@ -1408,21 +1417,23 @@ struct npc_gunship_boarding_addAI : public gunship_npc_AI
         if (pointId == EVENT_CHARGE_PREPATH && Slot)
         {
             Position const& otherTransportPos = Instance->GetData(DATA_TEAM_IN_INSTANCE) == HORDE ? OrgrimsHammerTeleportExit : SkybreakerTeleportExit;
-            TransportBase const* myTransport = me->GetTransport();
+            float x, y, z, o;
+            otherTransportPos.GetPosition(x, y, z, o);
+
+            TransportBase* myTransport = me->GetTransport();
             if (!myTransport)
                 return;
 
-            if (Transport const* destTransport = ObjectAccessor::GetTransport(*me, Instance->GetGuidData(DATA_ICECROWN_GUNSHIP_BATTLE)))
-            {
-                Position globalPosition = destTransport->GetPositionWithOffset(otherTransportPos);
+            if (Transport* destTransport = ObjectAccessor::GetTransport(*me, Instance->GetGuidData(DATA_ICECROWN_GUNSHIP_BATTLE)))
+                destTransport->CalculatePassengerPosition(x, y, z, &o);
 
-                float angle = frand(0, float(M_PI) * 2.0f);
-                globalPosition.m_positionX += 2.0f * std::cos(angle);
-                globalPosition.m_positionY += 2.0f * std::sin(angle);
+            float angle = frand(0, float(M_PI) * 2.0f);
+            x += 2.0f * std::cos(angle);
+            y += 2.0f * std::sin(angle);
 
-                me->SetHomePosition(globalPosition);
-                me->SetTransportHomePosition(myTransport->GetPositionOffsetTo(globalPosition));
-            }
+            me->SetHomePosition(x, y, z, o);
+            myTransport->CalculatePassengerOffset(x, y, z, &o);
+            me->SetTransportHomePosition(x, y, z, o);
 
             me->m_Events.AddEvent(new BattleExperienceEvent(me), me->m_Events.CalculateTime(BattleExperienceEvent::ExperiencedTimes[0]));
             DoCast(me, SPELL_BATTLE_EXPERIENCE, true);
@@ -1963,7 +1974,10 @@ class spell_igb_teleport_to_enemy_ship : public SpellScript
         if (!dest || !target || !target->GetTransport())
             return;
 
-        target->m_movementInfo.transport.pos.Relocate(target->GetTransport()->GetPositionOffsetTo(*dest));
+        float x, y, z, o;
+        dest->GetPosition(x, y, z, o);
+        target->GetTransport()->CalculatePassengerOffset(x, y, z, &o);
+        target->m_movementInfo.transport.pos.Relocate(x, y, z, o);
     }
 
     void Register() override
@@ -1999,7 +2013,7 @@ class spell_igb_burning_pitch_selector : public SpellScript
     void HandleDummy(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()), TRIGGERED_NONE);
+        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), TRIGGERED_NONE);
     }
 
     void Register() override
@@ -2017,7 +2031,7 @@ class spell_igb_burning_pitch : public SpellScript
         PreventHitDefaultEffect(effIndex);
         CastSpellExtraArgs args(TRIGGERED_FULL_MASK);
         args.AddSpellBP0(8000);
-        GetCaster()->CastSpell(nullptr, GetEffectValueAsInt(), args);
+        GetCaster()->CastSpell(nullptr, GetEffectValue(), args);
         GetHitUnit()->CastSpell(GetHitUnit(), SPELL_BURNING_PITCH, TRIGGERED_FULL_MASK);
     }
 
@@ -2043,7 +2057,7 @@ class spell_igb_rocket_artillery : public SpellScript
     void HandleScript(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()), TRIGGERED_NONE);
+        GetCaster()->CastSpell(GetHitUnit(), uint32(GetEffectValue()), TRIGGERED_NONE);
     }
 
     void Register() override

@@ -15,9 +15,12 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include "loadlib.h"
 #include <CascLib.h>
-#include <algorithm>
+
+u_map_fcc MverMagic = { { 'R','E','V','M' } };
 
 ChunkedFile::ChunkedFile()
 {
@@ -86,12 +89,14 @@ bool ChunkedFile::loadFile(std::shared_ptr<CASC::Storage const> mpq, uint32 file
 
 bool ChunkedFile::prepareLoadedData()
 {
-    FileChunk const* chunk = GetChunk("MVER");
+    FileChunk* chunk = GetChunk("MVER");
     if (!chunk)
         return false;
 
     // Check version
     file_MVER* version = chunk->As<file_MVER>();
+    if (version->fcc != MverMagic.fcc)
+        return false;
     if (version->ver != FILE_FORMAT_VERSION)
         return false;
     return true;
@@ -99,6 +104,9 @@ bool ChunkedFile::prepareLoadedData()
 
 void ChunkedFile::free()
 {
+    for (auto& chunk : chunks)
+        delete chunk.second;
+
     chunks.clear();
 
     delete[] data;
@@ -106,18 +114,18 @@ void ChunkedFile::free()
     data_size = 0;
 }
 
-u_map_fcc constexpr InterestingChunks[] =
+u_map_fcc InterestingChunks[] =
 {
-    { .fcc_txt = { 'R', 'E', 'V', 'M' } },
-    { .fcc_txt = { 'N', 'I', 'A', 'M' } },
-    { .fcc_txt = { 'O', '2', 'H', 'M' } },
-    { .fcc_txt = { 'K', 'N', 'C', 'M' } },
-    { .fcc_txt = { 'T', 'V', 'C', 'M' } },
-    { .fcc_txt = { 'O', 'M', 'W', 'M' } },
-    { .fcc_txt = { 'Q', 'L', 'C', 'M' } },
-    { .fcc_txt = { 'O', 'B', 'F', 'M' } },
-    { .fcc_txt = { 'D', 'H', 'P', 'M' } },
-    { .fcc_txt = { 'D', 'I', 'A', 'M' } }
+    { { 'R', 'E', 'V', 'M' } },
+    { { 'N', 'I', 'A', 'M' } },
+    { { 'O', '2', 'H', 'M' } },
+    { { 'K', 'N', 'C', 'M' } },
+    { { 'T', 'V', 'C', 'M' } },
+    { { 'O', 'M', 'W', 'M' } },
+    { { 'Q', 'L', 'C', 'M' } },
+    { { 'O', 'B', 'F', 'M' } },
+    { { 'D', 'H', 'P', 'M' } },
+    { { 'D', 'I', 'A', 'M' } }
 };
 
 bool IsInterestingChunk(u_map_fcc const& fcc)
@@ -135,16 +143,18 @@ void ChunkedFile::parseChunks()
     // Make sure there's enough data to read u_map_fcc struct and the uint32 size after it
     while (ptr <= GetData() + GetDataSize() - 8)
     {
-        u_map_fcc& header = *(u_map_fcc*)ptr;
+        u_map_fcc header = *(u_map_fcc*)ptr;
         if (IsInterestingChunk(header))
         {
             uint32 size = *(uint32*)(ptr + 4);
             if (size <= data_size)
             {
-                std::ranges::reverse(header.fcc_txt);
+                std::swap(header.fcc_txt[0], header.fcc_txt[3]);
+                std::swap(header.fcc_txt[1], header.fcc_txt[2]);
 
-                FileChunk& chunk = chunks.emplace(std::piecewise_construct, std::forward_as_tuple(header.fcc_txt, 4), std::forward_as_tuple(ptr, size))->second;
-                chunk.parseSubChunks();
+                FileChunk* chunk = new FileChunk(ptr, size);
+                chunk->parseSubChunks();
+                chunks.insert({ std::string(header.fcc_txt, 4), chunk });
             }
 
             // move to next chunk
@@ -155,32 +165,40 @@ void ChunkedFile::parseChunks()
     }
 }
 
-FileChunk const* ChunkedFile::GetChunk(std::string_view name) const
+FileChunk* ChunkedFile::GetChunk(std::string const& name)
 {
     auto range = chunks.equal_range(name);
     if (std::distance(range.first, range.second) == 1)
-        return &range.first->second;
+        return range.first->second;
 
     return nullptr;
 }
 
-FileChunk::~FileChunk() = default;
+FileChunk::~FileChunk()
+{
+    for (auto& subchunk : subchunks)
+        delete subchunk.second;
+
+    subchunks.clear();
+}
 
 void FileChunk::parseSubChunks()
 {
     uint8* ptr = data + 8; // skip self
     while (ptr < data + size)
     {
-        u_map_fcc& header = *(u_map_fcc*)ptr;
+        u_map_fcc header = *(u_map_fcc*)ptr;
         if (IsInterestingChunk(header))
         {
             uint32 subsize = *(uint32*)(ptr + 4);
             if (subsize < size)
             {
-                std::ranges::reverse(header.fcc_txt);
+                std::swap(header.fcc_txt[0], header.fcc_txt[3]);
+                std::swap(header.fcc_txt[1], header.fcc_txt[2]);
 
-                FileChunk& chunk = subchunks.emplace(std::piecewise_construct, std::forward_as_tuple(header.fcc_txt, 4), std::forward_as_tuple(ptr, subsize))->second;
-                chunk.parseSubChunks();
+                FileChunk* chunk = new FileChunk(ptr, subsize);
+                chunk->parseSubChunks();
+                subchunks.insert({ std::string(header.fcc_txt, 4), chunk });
             }
 
             // move to next chunk
@@ -191,11 +209,11 @@ void FileChunk::parseSubChunks()
     }
 }
 
-FileChunk const* FileChunk::GetSubChunk(std::string_view name) const
+FileChunk* FileChunk::GetSubChunk(std::string const& name)
 {
     auto range = subchunks.equal_range(name);
     if (std::distance(range.first, range.second) == 1)
-        return &range.first->second;
+        return range.first->second;
 
     return nullptr;
 }

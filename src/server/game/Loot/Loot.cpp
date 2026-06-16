@@ -47,6 +47,11 @@ LootItem::LootItem(LootStoreItem const& li) : itemid(li.itemid), conditions(li.c
         case LootStoreItem::Type::Item:
         {
             randomBonusListId = GenerateItemRandomBonusListId(itemid);
+            randomPropertiesId = GenerateItemRandomPropertiesId(itemid);
+            if (randomPropertiesId < 0)
+                if (int32 propertySeed = static_cast<int32>(GenerateEnchSuffixFactor(itemid)))
+                    randomPropertiesSeed = propertySeed;
+
             type = LootItemType::Item;
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemid);
             freeforall = proto && proto->HasFlag(ITEM_FLAG_MULTI_DROP);
@@ -151,9 +156,6 @@ bool LootItem::ItemAllowedForPlayer(Player const* player, Loot const* loot, uint
 
     if (strictUsabilityCheck)
     {
-        if ((pProto->IsWeapon() || pProto->IsArmor()) && !pProto->IsUsableByLootSpecialization(player, true))
-            return false;
-
         if (player->CanRollNeedForItem(pProto, nullptr, false) != EQUIP_ERR_OK)
             return false;
     }
@@ -499,7 +501,7 @@ bool LootRoll::TryToStart(Map* map, Loot& loot, uint32 lootListId, uint16 enchan
         m_voteMask = ROLL_ALL_TYPE_MASK;
         if (itemTemplate->HasFlag(ITEM_FLAG2_CAN_ONLY_ROLL_GREED))
             m_voteMask = RollMask(m_voteMask & ~ROLL_FLAG_TYPE_NEED);
-        if (Optional<uint16> disenchantSkillRequired = GetItemDisenchantSkillRequired(); !disenchantSkillRequired || disenchantSkillRequired > enchantingSkill)
+        if (ItemDisenchantLootEntry const* disenchant = GetItemDisenchantLoot(); !disenchant || disenchant->SkillRequired > enchantingSkill)
             m_voteMask = RollMask(m_voteMask & ~ROLL_FLAG_TYPE_DISENCHANT);
 
         if (playerCount > 1)                                    // check if more than one player can loot this item
@@ -522,7 +524,7 @@ bool LootRoll::PlayerVote(Player* player, RollVote vote)
 {
     ObjectGuid const& playerGuid = player->GetGUID();
     RollVoteMap::iterator voterItr = m_rollVoteMap.find(playerGuid);
-    if (voterItr == m_rollVoteMap.end() || voterItr->second.Vote != RollVote::NotEmitedYet)
+    if (voterItr == m_rollVoteMap.end())
         return false;
 
     voterItr->second.Vote = vote;
@@ -623,7 +625,7 @@ bool LootRoll::AllPlayerVoted(RollVoteMap::const_iterator& winnerItr)
     return notVoted == 0;
 }
 
-Optional<uint32> LootRoll::GetItemDisenchantLootId() const
+ItemDisenchantLootEntry const* LootRoll::GetItemDisenchantLoot() const
 {
     WorldPackets::Item::ItemInstance itemInstance;
     itemInstance.Initialize(*m_lootItem);
@@ -631,43 +633,11 @@ Optional<uint32> LootRoll::GetItemDisenchantLootId() const
     BonusData bonusData;
     bonusData.Initialize(itemInstance);
     if (!bonusData.CanDisenchant)
-        return {};
-
-    if (bonusData.DisenchantLootId)
-        return bonusData.DisenchantLootId;
+        return nullptr;
 
     ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(m_lootItem->itemid);
-
-    // ignore temporary item level scaling (pvp or timewalking)
-    uint32 itemLevel = Item::GetItemLevel(itemTemplate, bonusData, bonusData.RequiredLevel, 0, 0, 0, 0, false, 0);
-
-    ItemDisenchantLootEntry const* disenchantLoot = Item::GetBaseDisenchantLoot(itemTemplate, bonusData.Quality, itemLevel);
-    if (!disenchantLoot)
-        return {};
-
-    return disenchantLoot->ID;
-}
-
-Optional<uint16> LootRoll::GetItemDisenchantSkillRequired() const
-{
-    WorldPackets::Item::ItemInstance itemInstance;
-    itemInstance.Initialize(*m_lootItem);
-
-    BonusData bonusData;
-    bonusData.Initialize(itemInstance);
-    if (!bonusData.CanDisenchant)
-        return {};
-
-    ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(m_lootItem->itemid);
-
-    // ignore temporary item level scaling (pvp or timewalking)
-    uint32 itemLevel = Item::GetItemLevel(itemTemplate, bonusData, bonusData.RequiredLevel, 0, 0, 0, 0, false, 0);
-
-    ItemDisenchantLootEntry const* disenchantLoot = Item::GetBaseDisenchantLoot(itemTemplate, bonusData.Quality, itemLevel);
-    if (!disenchantLoot)
-        return {};
-
-    return disenchantLoot->SkillRequired;
+    uint32 itemLevel = Item::GetItemLevel(itemTemplate, bonusData, 1, 0, 0, 0, 0, false);
+    return Item::GetDisenchantLoot(itemTemplate, bonusData.Quality, itemLevel);
 }
 
 // terminate the roll
@@ -695,8 +665,9 @@ void LootRoll::Finish(RollVoteMap::const_iterator winnerItr)
 
             if (winnerItr->second.Vote == RollVote::Disenchant)
             {
+                ItemDisenchantLootEntry const* disenchant = ASSERT_NOTNULL(GetItemDisenchantLoot());
                 Loot loot(m_map, m_loot->GetOwnerGUID(), LOOT_DISENCHANTING, nullptr);
-                loot.FillLoot(*GetItemDisenchantLootId(), LootTemplates_Disenchant, player, true, false, LOOT_MODE_DEFAULT, ItemContext::NONE);
+                loot.FillLoot(disenchant->ID, LootTemplates_Disenchant, player, true, false, LOOT_MODE_DEFAULT, ItemContext::NONE);
                 if (!loot.AutoStore(player, NULL_BAG, NULL_SLOT, true))
                 {
                     for (uint32 i = 0; i < loot.items.size(); ++i)
@@ -884,12 +855,10 @@ bool Loot::FillLoot(uint32 lootId, LootStore const& store, Player* lootOwner, bo
         if (loot_type == LOOT_CORPSE)
             roundRobinPlayer = lootOwner->GetGUID();
 
-        for (GroupReference const& itr : group->GetMembers())
-        {
-            Player* member = itr.GetSource(); // should actually be looted object instead of lootOwner but looter has to be really close so doesnt really matter
-            if (member->IsAtGroupRewardDistance(lootOwner))
-                FillNotNormalLootFor(member);
-        }
+        for (GroupReference const* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+            if (Player* player = itr->GetSource())    // should actually be looted object instead of lootOwner but looter has to be really close so doesnt really matter
+                if (player->IsAtGroupRewardDistance(lootOwner))
+                    FillNotNormalLootFor(player);
 
         for (LootItem& item : items)
         {
@@ -973,7 +942,7 @@ void Loot::AddItem(LootStoreItem const& item)
     }
 }
 
-bool Loot::AutoStore(Player* player, uint8 bag, uint8 slot, bool broadcast, bool pushed, bool createdByPlayer)
+bool Loot::AutoStore(Player* player, uint8 bag, uint8 slot, bool broadcast, bool createdByPlayer)
 {
     bool allLooted = true;
     for (uint32 i = 0; i < items.size(); ++i)
@@ -1011,13 +980,11 @@ bool Loot::AutoStore(Player* player, uint8 bag, uint8 slot, bool broadcast, bool
                     continue;
                 }
 
-                if (Item* pItem = player->StoreNewItem(dest, lootItem->itemid, true, lootItem->randomBonusListId, GuidSet(), lootItem->context, &lootItem->BonusListIDs))
+                if (Item* pItem = player->StoreNewItem(dest, lootItem->itemid, true, lootItem->randomBonusListId, lootItem->randomPropertiesId, GuidSet(), lootItem->context, &lootItem->BonusListIDs))
                 {
-                    player->SendNewItem(pItem, lootItem->count, pushed, createdByPlayer, broadcast, GetDungeonEncounterId());
+                    player->SendNewItem(pItem, lootItem->count, false, createdByPlayer, broadcast, GetDungeonEncounterId());
                     player->ApplyItemLootedSpell(pItem, true);
                 }
-                else
-                    player->ApplyItemLootedSpell(sObjectMgr->GetItemTemplate(lootItem->itemid));
 
                 break;
             }

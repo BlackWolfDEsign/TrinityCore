@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_TRADE_PACKETS_H
-#define TRINITYCORE_TRADE_PACKETS_H
+#ifndef TradePackets_h__
+#define TradePackets_h__
 
 #include "Packet.h"
 #include "ItemPacketsCommon.h"
@@ -30,7 +30,7 @@ namespace WorldPackets
         class AcceptTrade final : public ClientPacket
         {
         public:
-            explicit AcceptTrade(WorldPacket&& packet) : ClientPacket(CMSG_ACCEPT_TRADE, std::move(packet)) { }
+            AcceptTrade(WorldPacket&& packet) : ClientPacket(CMSG_ACCEPT_TRADE, std::move(packet)) { }
 
             void Read() override;
 
@@ -40,7 +40,7 @@ namespace WorldPackets
         class BeginTrade final : public ClientPacket
         {
         public:
-            explicit BeginTrade(WorldPacket&& packet) : ClientPacket(CMSG_BEGIN_TRADE, std::move(packet)) { }
+            BeginTrade(WorldPacket&& packet) : ClientPacket(CMSG_BEGIN_TRADE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -48,7 +48,7 @@ namespace WorldPackets
         class BusyTrade final : public ClientPacket
         {
         public:
-            explicit BusyTrade(WorldPacket&& packet) : ClientPacket(CMSG_BUSY_TRADE, std::move(packet)) { }
+            BusyTrade(WorldPacket&& packet) : ClientPacket(CMSG_BUSY_TRADE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -56,7 +56,7 @@ namespace WorldPackets
         class CancelTrade final : public ClientPacket
         {
         public:
-            explicit CancelTrade(WorldPacket&& packet) : ClientPacket(CMSG_CANCEL_TRADE, std::move(packet)) { }
+            CancelTrade(WorldPacket&& packet) : ClientPacket(CMSG_CANCEL_TRADE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -64,7 +64,7 @@ namespace WorldPackets
         class ClearTradeItem final : public ClientPacket
         {
         public:
-            explicit ClearTradeItem(WorldPacket&& packet) : ClientPacket(CMSG_CLEAR_TRADE_ITEM, std::move(packet)) { }
+            ClearTradeItem(WorldPacket&& packet) : ClientPacket(CMSG_CLEAR_TRADE_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -74,7 +74,7 @@ namespace WorldPackets
         class IgnoreTrade final : public ClientPacket
         {
         public:
-            explicit IgnoreTrade(WorldPacket&& packet) : ClientPacket(CMSG_IGNORE_TRADE, std::move(packet)) { }
+            IgnoreTrade(WorldPacket&& packet) : ClientPacket(CMSG_IGNORE_TRADE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -82,28 +82,17 @@ namespace WorldPackets
         class InitiateTrade final : public ClientPacket
         {
         public:
-            explicit InitiateTrade(WorldPacket&& packet) : ClientPacket(CMSG_INITIATE_TRADE, std::move(packet)) { }
+            InitiateTrade(WorldPacket&& packet) : ClientPacket(CMSG_INITIATE_TRADE, std::move(packet)) { }
 
             void Read() override;
 
             ObjectGuid Guid;
         };
 
-        class SetTradeCurrency final : public ClientPacket
-        {
-        public:
-            explicit SetTradeCurrency(WorldPacket&& packet) : ClientPacket(CMSG_SET_TRADE_CURRENCY, std::move(packet)) { }
-
-            void Read() override;
-
-            uint32 Type = 0;
-            uint32 Quantity = 0;
-        };
-
         class SetTradeGold final : public ClientPacket
         {
         public:
-            explicit SetTradeGold(WorldPacket&& packet) : ClientPacket(CMSG_SET_TRADE_GOLD, std::move(packet)) { }
+            SetTradeGold(WorldPacket&& packet) : ClientPacket(CMSG_SET_TRADE_GOLD, std::move(packet)) { }
 
             void Read() override;
 
@@ -113,7 +102,7 @@ namespace WorldPackets
         class SetTradeItem final : public ClientPacket
         {
         public:
-            explicit SetTradeItem(WorldPacket&& packet) : ClientPacket(CMSG_SET_TRADE_ITEM, std::move(packet)) { }
+            SetTradeItem(WorldPacket&& packet) : ClientPacket(CMSG_SET_TRADE_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -125,7 +114,7 @@ namespace WorldPackets
         class UnacceptTrade final : public ClientPacket
         {
         public:
-            explicit UnacceptTrade(WorldPacket&& packet) : ClientPacket(CMSG_UNACCEPT_TRADE, std::move(packet)) { }
+            UnacceptTrade(WorldPacket&& packet) : ClientPacket(CMSG_UNACCEPT_TRADE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -133,7 +122,7 @@ namespace WorldPackets
         class TradeStatus final : public ServerPacket
         {
         public:
-            explicit TradeStatus() : ServerPacket(SMSG_TRADE_STATUS, 1 + 1 + 16 + 4 + 4 + 1 + 4 + 4 + 4 + 1) { }
+            TradeStatus() : ServerPacket(SMSG_TRADE_STATUS, 1 + 1 + 16 + 4 + 4 + 1 + 4 + 4 + 4 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -174,7 +163,7 @@ namespace WorldPackets
         class TradeUpdated final : public ServerPacket
         {
         public:
-            explicit TradeUpdated() : ServerPacket(SMSG_TRADE_UPDATED, 8 + 4 + 1 + 4 + 7 * sizeof(UnwrappedTradeItem) + 4 + 4 + 4 + 4) { }
+            TradeUpdated() : ServerPacket(SMSG_TRADE_UPDATED, 8 + 4 + 1 + 4 + 7 * sizeof(UnwrappedTradeItem) + 4 + 4 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -191,4 +180,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_TRADE_PACKETS_H
+#endif // TradePackets_h__

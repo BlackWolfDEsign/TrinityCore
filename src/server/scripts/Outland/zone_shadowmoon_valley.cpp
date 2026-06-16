@@ -1622,7 +1622,7 @@ class spell_shadowmoon_quest_credit_crazed_colossus : public SpellScript
     {
         return ValidateSpellInfo(
         {
-            uint32(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()),
+            uint32(spellInfo->GetEffect(EFFECT_0).CalcValue()),
             SPELL_KILL_CREDIT_CRAZED_COLOSSUS
         });
     }
@@ -1630,7 +1630,7 @@ class spell_shadowmoon_quest_credit_crazed_colossus : public SpellScript
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
         Unit* target = GetHitUnit();
-        if (target->HasAura(uint32(GetEffectValueAsInt())))
+        if (target->HasAura(uint32(GetEffectValue())))
             target->CastSpell(target, SPELL_KILL_CREDIT_CRAZED_COLOSSUS);
     }
 

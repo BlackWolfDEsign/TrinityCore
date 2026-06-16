@@ -22,13 +22,6 @@
 #include <algorithm>
 #include <cctype>
 
-Realm::Realm() = default;
-Realm::Realm(Realm const& other) = default;
-Realm::Realm(Realm&& other) noexcept = default;
-Realm& Realm::operator=(Realm const& other) = default;
-Realm& Realm::operator=(Realm&& other) noexcept = default;
-Realm::~Realm() = default;
-
 void Realm::SetName(std::string name)
 {
     Name = name;

@@ -16,6 +16,7 @@
  */
 
 #include "ScriptMgr.h"
+#include "Creature.h"
 #include "InstanceScript.h"
 #include "the_eye.h"
 
@@ -26,13 +27,14 @@
 3 - Kael'thas
 */
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_ARCANE_DOOR_LEFT,  DATA_KAELTHAS, EncounterDoorBehavior::OpenWhenNotInProgress/*, BOUNDARY_SW  */ },
     { GO_ARCANE_DOOR_RIGHT, DATA_KAELTHAS, EncounterDoorBehavior::OpenWhenNotInProgress/*, BOUNDARY_SE  */ },
+    {                    0,             0, EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_ALAR,        DATA_ALAR        },
     { NPC_VOID_REAVER, DATA_VOID_REAVER },
@@ -42,16 +44,18 @@ static constexpr ObjectData creatureData[] =
     { NPC_SANGUINAR,   DATA_SANGUINAR   },
     { NPC_TELONICUS,   DATA_TELONICUS   },
     { NPC_THALADRED,   DATA_THALADRED   },
+    { 0,               0                } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_KAEL_STATUE_RIGHT,      DATA_KAEL_STATUE_RIGHT     },
     { GO_KAEL_STATUE_LEFT,       DATA_KAEL_STATUE_LEFT      },
     { GO_TEMPEST_BRIDDGE_WINDOW, DATA_TEMPEST_BRIDGE_WINDOW },
+    {                         0, 0                          } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_KAELTHAS, {{ 733 }} },
     { DATA_ALAR, {{ 730 }} },

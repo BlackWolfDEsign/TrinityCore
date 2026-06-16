@@ -287,7 +287,7 @@ class spell_anhuur_disable_beacon_beams : public SpellScript
 {
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetHitUnit()->RemoveAurasDueToSpell(GetEffectValueAsInt());
+        GetHitUnit()->RemoveAurasDueToSpell(GetEffectValue());
     }
 
     void Notify(SpellEffIndex /*index*/)

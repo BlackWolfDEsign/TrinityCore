@@ -16,44 +16,40 @@
  */
 
 #include "TokenPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::Token
+void WorldPackets::Token::CommerceTokenGetLog::Read()
 {
-void CommerceTokenGetLog::Read()
-{
-    _worldPacket >> ClientToken;
+    _worldPacket >> UnkInt;
 }
 
-WorldPacket const* CommerceTokenGetLogResponse::Write()
+WorldPacket const* WorldPackets::Token::CommerceTokenGetLogResponse::Write()
 {
-    _worldPacket << ClientToken;
+    _worldPacket << UnkInt;
     _worldPacket << Result;
-    _worldPacket << Size<uint32>(AuctionableTokens);
-    for (AuctionableTokenInfo const& auctionableTokenAuctionable : AuctionableTokens)
+    _worldPacket << uint32(AuctionableTokenAuctionableList.size());
+    for (AuctionableTokenInfo const& auctionableTokenAuctionable : AuctionableTokenAuctionableList)
     {
-        _worldPacket << auctionableTokenAuctionable.Id;
-        _worldPacket << auctionableTokenAuctionable.LastUpdate;
-        _worldPacket << auctionableTokenAuctionable.Status;
-        _worldPacket << auctionableTokenAuctionable.Price;
+        _worldPacket << auctionableTokenAuctionable.UnkInt1;
+        _worldPacket << auctionableTokenAuctionable.UnkInt2;
+        _worldPacket << auctionableTokenAuctionable.BuyoutPrice;
+        _worldPacket << auctionableTokenAuctionable.Owner;
         _worldPacket << auctionableTokenAuctionable.DurationLeft;
     }
 
     return &_worldPacket;
 }
 
-void CommerceTokenGetMarketPrice::Read()
+void WorldPackets::Token::CommerceTokenGetMarketPrice::Read()
 {
-    _worldPacket >> ClientToken;
+    _worldPacket >> UnkInt;
 }
 
-WorldPacket const* CommerceTokenGetMarketPriceResponse::Write()
+WorldPacket const* WorldPackets::Token::CommerceTokenGetMarketPriceResponse::Write()
 {
-    _worldPacket << ClientToken;
+    _worldPacket << CurrentMarketPrice;
+    _worldPacket << UnkInt;
     _worldPacket << Result;
-    _worldPacket << Price;
-    _worldPacket << ExpectedSecondsUntilSold;
+    _worldPacket << AuctionDuration;
 
     return &_worldPacket;
-}
 }

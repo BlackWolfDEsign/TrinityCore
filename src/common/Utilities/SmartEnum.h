@@ -18,7 +18,6 @@
 #ifndef TRINITY_SMARTENUM_H
 #define TRINITY_SMARTENUM_H
 
-#include "Define.h"
 #include "IteratorPair.h"
 #include <iterator>
 

@@ -171,7 +171,7 @@ struct MailItemInfo
 };
 typedef std::vector<MailItemInfo> MailItemInfoVec;
 
-struct Mail
+struct TC_GAME_API Mail
 {
     uint64 messageID;
     uint8 messageType;

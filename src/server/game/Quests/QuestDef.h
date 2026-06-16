@@ -27,13 +27,12 @@
 #include "RaceMask.h"
 #include "SharedDefines.h"
 #include "UniqueTrackablePtr.h"
+#include "WorldPacket.h"
 #include <bitset>
-#include <unordered_set>
 #include <vector>
 
 class Player;
-class WorldPacket;
-enum Difficulty : int16;
+enum Difficulty : uint8;
 
 namespace WorldPackets
 {
@@ -43,7 +42,7 @@ namespace WorldPackets
     }
 }
 
-#define MAX_QUEST_LOG_SIZE 35
+#define MAX_QUEST_LOG_SIZE 25
 
 #define QUEST_ITEM_DROP_COUNT 4
 #define QUEST_REWARD_CHOICES_COUNT 6
@@ -78,49 +77,19 @@ enum class QuestPushReason : uint8
 {
     Success                         = 0,    // "Sharing quest with %s..."
     Invalid                         = 1,    // "%s is not eligible for that quest"
-    InvalidToRecipient              = 2,    // "%s's attempt to share quest "%s" failed. You are not eligible for that quest."
-    Accepted                        = 3,    // "%s has accepted your quest"
-    Declined                        = 4,    // "%s has declined your quest"
+    Accepted                        = 2,    // "%s's attempt to share quest "%s" failed. You are not eligible for that quest."
+    Declined                        = 3,    // "%s has declined your quest"
+    TooFar                          = 4,    // "%s is too far away to receive your quest"
     Busy                            = 5,    // "%s is busy"
     Dead                            = 6,    // "%s is dead."
-    DeadToRecipient                 = 7,    // "%s's attempt to share quest "%s" failed. You are dead."
-    LogFull                         = 8,    // "%s's quest log is full"
-    LogFullToRecipient              = 9,    // "%s's attempt to share quest "%s" failed. Your quest log is full."
-    OnQuest                         = 10,   // "%s is already on that quest"
-    OnQuestToRecipient              = 11,   // "%s's attempt to share quest "%s" failed. You are already on that quest."
-    AlreadyDone                     = 12,   // "%s has completed that quest"
-    AlreadyDoneToRecipient          = 13,   // "%s's attempt to share quest "%s" failed. You have completed that quest."
-    NotDaily                        = 14,   // "That quest cannot be shared today"
-    TimerExpired                    = 15,   // "Quest sharing timer has expired"
-    NotInParty                      = 16,   // "You are not in a party"
-    DifferentServerDaily            = 17,   // "%s is not eligible for that quest today"
-    DifferentServerDailyToRecipient = 18,   // "%s's attempt to share quest "%s" failed. You are not eligible for that quest today."
-    NotAllowed                      = 19,   // "That quest cannot be shared"
-    Prerequisite                    = 20,   // "%s hasn't completed all of the prerequisite quests required for that quest."
-    PrerequisiteToRecipient         = 21,   // "%s's attempt to share quest "%s" failed. You must complete all of the prerequisite quests first."
-    LowLevel                        = 22,   // "%s is too low level for that quest."
-    LowLevelToRecipient             = 23,   // "%s's attempt to share quest "%s" failed. You are too low level for that quest."
-    HighLevel                       = 24,   // "%s is too high level for that quest."
-    HighLevelToRecipient            = 25,   // "%s's attempt to share quest "%s" failed. You are too high level for that quest."
-    Class                           = 26,   // "%s is the wrong class for that quest."
-    ClassToRecipient                = 27,   // "%s's attempt to share quest "%s" failed. You are the wrong class for that quest."
-    Race                            = 28,   // "%s is the wrong race for that quest."
-    RaceToRecipient                 = 29,   // "%s's attempt to share quest "%s" failed. You are the wrong race for that quest."
-    LowFaction                      = 30,   // "%s's reputation is too low for that quest."
-    LowFactionToRecipient           = 31,   // "%s's attempt to share quest "%s" failed. Your reputation is too low for that quest."
-    HighFaction                     = 32,   // "%s's reputation is too high for that quest."
-    HighFactionToRecipient          = 33,   // "%s's attempt to share quest "%s" failed. Your reputation is too high for that quest."
-    Expansion                       = 34,   // "%s doesn't own the required expansion for that quest."
-    ExpansionToRecipient            = 35,   // "%s's attempt to share quest "%s" failed. You do not own the required expansion for that quest."
-    NotGarrisonOwner                = 36,   // "%s must own a garrison to accept that quest."
-    NotGarrisonOwnerToRecipient     = 37,   // "%s's attempt to share quest "%s" failed. You must own a garrison to accept that quest."
-    WrongCovenant                   = 38,   // "%s is in the wrong covenant for that quest."
-    WrongCovenantToRecipient        = 39,   // "%s's attempt to share quest "%s" failed. You are in the wrong covenant for that quest."
-    NewPlayerExperience             = 40,   // "%s must complete Exile's Reach to accept that quest."
-    NewPlayerExperienceToRecipient  = 41,   // "%s's attempt to share quest "%s" failed. You must complete Exile's Reach to accept that quest."
-    WrongFaction                    = 42,   // "%s is the wrong faction for that quest."
-    WrongFactionToRecipient         = 43,   // "%s's attempt to share quest "%s" failed. You are the wrong faction for that quest."
-    CrossFactionRestricted          = 44,   // "Quests can't be shared in cross-faction groups."
+    LogFull                         = 7,    // "%s's quest log is full"
+    OnQuest                         = 8,    // "%s is already on that quest"
+    AlreadyDone                     = 9,    // "%s has completed that quest"
+    NotDaily                        = 10,   // "That quest cannot be shared today."
+    TimerExpired                    = 11,   // "Quest sharing timer has expired"
+    NotInParty                      = 12,   // "You are not in a party"
+    DifferentServerDaily            = 13,   // "%s is not eligible for that quest today."
+    NotAllowed                      = 14    // "That quest cannot be shared."
 };
 
 enum QuestTradeSkill
@@ -377,7 +346,6 @@ enum QuestObjectiveType
     QUEST_OBJECTIVE_AREA_TRIGGER_ENTER      = 19,
     QUEST_OBJECTIVE_AREA_TRIGGER_EXIT       = 20,
     QUEST_OBJECTIVE_KILL_WITH_LABEL         = 21,
-    QUEST_OBJECTIVE_UNK_1127                = 22,
 
     MAX_QUEST_OBJECTIVE_TYPE
 };
@@ -403,17 +371,14 @@ enum QuestObjectiveFlags2
 
 enum class QuestCompleteSpellType : uint32
 {
-    LegacyBehavior      = 0,
-    Follower            = 1,
-    Tradeskill          = 2,
-    Ability             = 3,
-    Aura                = 4,
-    Spell               = 5,
-    Unlock              = 6,
-    Companion           = 7,
-    QuestlineUnlock     = 8,
-    QuestlineReward     = 9,
-    QuestlineUnlockPart = 10,
+    LegacyBehavior  = 0,
+    Follower        = 1,
+    Tradeskill      = 2,
+    Ability         = 3,
+    Aura            = 4,
+    Spell           = 5,
+    Unlock          = 6,
+    Companion       = 7,
     Max
 };
 
@@ -481,16 +446,13 @@ struct QuestObjective
 {
     uint32 ID           = 0;
     uint32 QuestID      = 0;
-    uint8  Type         = 0;
+    int32  Type         = 0;
     int8   StorageIndex = 0;
     int32  ObjectID     = 0;
     int32  Amount       = 0;
-    int32  ConditionalAmount = 0;
     uint32 Flags        = 0;
     uint32 Flags2       = 0;
     float  ProgressBarWeight = 0.0f;
-    int32  ParentObjectiveID = 0;
-    bool   Visible      = false;
     std::string Description;
     std::vector<int32> VisualEffects;
     QuestObjectiveAction* CompletionEffect = nullptr;
@@ -580,15 +542,9 @@ class TC_GAME_API Quest
     friend class ObjectMgr;
     friend class Player;
     friend class PlayerMenu;
-    struct QuestTemplateQueryResult;
     public:
         // Loading data. All queries are in ObjectMgr::LoadQuests()
-        explicit Quest(QueryResult const& questRecord);
-        explicit Quest(QuestTemplateQueryResult const& questRecord);
-        Quest(Quest const&) = delete;
-        Quest(Quest&&) = delete;
-        Quest& operator=(Quest const&) = delete;
-        Quest& operator=(Quest&&) = delete;
+        explicit Quest(Field* questRecord);
         ~Quest();
         void LoadRewardDisplaySpell(Field* fields);
         void LoadRewardChoiceItems(Field* fields);
@@ -604,17 +560,14 @@ class TC_GAME_API Quest
         void LoadConditionalConditionalOfferRewardText(Field* fields);
         void LoadConditionalConditionalQuestCompletionLog(Field* fields);
         void LoadTreasurePickers(Field* fields);
-        void LoadRewardHouseRoom(Field* fields);
-        void LoadRewardHouseDecor(Field* fields);
 
         uint32 XPValue(Player const* player) const;
-        static uint32 XPValue(Player const* player, uint32 contentTuningId, uint32 xpDifficulty, float xpMultiplier = 1.0f, int32 expansion = -1);
-        uint32 MoneyValue(Player const* player) const;
-        uint32 MaxMoneyValue() const;
-        uint32 GetMaxMoneyReward() const;
+        static uint32 XPValue(uint8 playerLevel, uint32 questLevel, int32 unscaledQuestLevel, uint32 xpDifficulty, float xpMultiplier = 1.0f);
+        uint32 GetMoneyReward(Player const* player) const;
         Optional<QuestTagType> GetQuestTag() const;
         bool IsImportant() const;
         bool IsMeta() const;
+        uint32 GetQuestLevelForPlayer(Player const* player) const;
 
         bool HasFlag(QuestFlags flag) const { return (_flags & uint32(flag)) != 0; }
         bool HasFlagEx(QuestFlagsEx flag) const { return (_flagsEx & uint32(flag)) != 0; }
@@ -636,13 +589,16 @@ class TC_GAME_API Quest
         // table data accessors:
         uint32 GetQuestId() const { return _id; }
         uint32 GetQuestType() const { return _type; }
+        int32 GetQuestLevel() const { return _level; }
+        int32 GetQuestScalingFactionGroup() const { return _scalingFactionGroup; }
+        int32 GetQuestMaxScalingLevel() const { return _maxScalingLevel; }
         uint32 GetQuestPackageID() const { return _packageID; }
-        uint32 GetContentTuningId() const { return _contentTuningID; }
+        int32 GetQuestMinLevel() const { return _minLevel; }
         int32  GetZoneOrSort() const { return _questSortID; }
         uint32 GetMaxLevel() const { return _maxLevel; }
         uint32 GetQuestInfoID() const { return _questInfoID; }
         uint32 GetAllowableClasses() const { return _allowableClasses; }
-        Trinity::RaceMask<std::array<int32, 2>> GetAllowableRaces() const { return _allowableRaces; }
+        Trinity::RaceMask<uint64> GetAllowableRaces() const { return _allowableRaces; }
         uint32 GetRequiredSkill() const { return _requiredSkillId; }
         uint32 GetRequiredSkillValue() const { return _requiredSkillPoints; }
         uint32 GetRequiredMinRepFaction() const { return _requiredMinRepFaction; }
@@ -682,11 +638,10 @@ class TC_GAME_API Quest
         uint32 GetRewMoneyDifficulty() const { return _rewardMoneyDifficulty; }
         uint32 GetRewHonor() const { return _rewardHonor; }
         uint32 GetRewKillHonor() const { return _rewardKillHonor; }
-        int32 GetRewardFavor() const { return _rewardFavor; }
         uint32 GetArtifactXPDifficulty() const { return _rewardArtifactXPDifficulty; }
         float GetArtifactXPMultiplier() const { return _rewardArtifactXPMultiplier; }
         uint32 GetArtifactCategoryId() const { return _rewardArtifactCategoryID; }
-        uint32 GetRewMoneyMaxLevel() const; // use in XP calculation at client
+        uint32 GetRewMoneyMaxLevel(Player const* player = nullptr) const;
         uint32 GetRewSpell() const { return _rewardSpell; }
         uint32 GetRewMailTemplateId() const { return _rewardMailTemplateId; }
         uint32 GetRewMailDelaySecs() const { return _rewardMailDelay; }
@@ -708,7 +663,6 @@ class TC_GAME_API Quest
         uint32 GetFlags() const { return _flags; }
         uint32 GetFlagsEx() const { return _flagsEx; }
         uint32 GetFlagsEx2() const { return _flagsEx2; }
-        uint32 GetFlagsEx3() const { return _flagsEx3; }
         uint32 GetSpecialFlags() const { return _specialFlags; }
         uint32 GetScriptId() const { return _scriptId; }
         uint32 GetAreaGroupID() const { return _areaGroupID; }
@@ -717,14 +671,10 @@ class TC_GAME_API Quest
         uint32 GetRewardReputationMask() const { return _rewardReputationMask; }
         std::vector<int32> const& GetTreasurePickerId() const { return _treasurePickerID; }
         int32 GetExpansion() const { return _expansion; }
-        int32 GetManagedWorldStateId() const { return _managedWorldStateID; }
-        int32 GetQuestSessionBonus() const { return _questSessionBonus; }
         uint32 GetQuestGiverPortrait() const { return _questGiverPortrait; }
         int32 GetQuestGiverPortraitMount() const { return _questGiverPortraitMount; }
         int32 GetQuestGiverPortraitModelSceneId() const { return _questGiverPortraitModelSceneId; }
         uint32 GetQuestTurnInPortrait() const { return _questTurnInPortrait; }
-        std::vector<int32> const& GetRewardHouseRoomIds() const { return _rewardHouseRoomIDs; }
-        std::vector<int32> const& GetRewardRewardHouseDecorIds() const { return _rewardHouseDecorIDs; }
         bool IsDaily() const { return (_flags & QUEST_FLAGS_DAILY) != 0; }
         bool IsWeekly() const { return (_flags & QUEST_FLAGS_WEEKLY) != 0; }
         bool IsMonthly() const { return (_specialFlags & QUEST_SPECIAL_FLAGS_MONTHLY) != 0; }
@@ -736,10 +686,9 @@ class TC_GAME_API Quest
         bool IsPushedToPartyOnAccept() const { return HasSpecialFlag(QUEST_SPECIAL_FLAGS_AUTO_PUSH_TO_PARTY); }
         uint32 CalculateHonorGain(uint8 level) const;
         bool CanIncreaseRewardedQuestCounters() const;
-        bool IsResetByScheduler() const { return _resetByScheduler; }
 
         // multiple values
-        std::vector<QuestRewardDisplaySpell> RewardDisplaySpell;
+        std::array<QuestRewardDisplaySpell, QUEST_REWARD_DISPLAY_SPELL_COUNT> RewardDisplaySpell = { };
         std::array<uint32, QUEST_REWARD_ITEM_COUNT> RewardItemId = { };
         std::array<uint32, QUEST_REWARD_ITEM_COUNT> RewardItemCount = { };
         std::array<uint32, QUEST_ITEM_DROP_COUNT> ItemDrop = { };
@@ -762,6 +711,7 @@ class TC_GAME_API Quest
 
         uint32 GetRewChoiceItemsCount() const { return _rewChoiceItemsCount; }
         uint32 GetRewItemsCount() const { return _rewItemsCount; }
+        uint32 GetRewCurrencyCount() const { return _rewCurrencyCount; }
 
         void SetEventIdForQuest(uint16 eventId) { _eventIdForQuest = eventId; }
         uint16 GetEventIdForQuest() const { return _eventIdForQuest; }
@@ -778,18 +728,22 @@ class TC_GAME_API Quest
 
         std::vector<uint32> DependentPreviousQuests;
         std::vector<uint32> DependentBreadcrumbQuests;
-        std::unique_ptr<WorldPacket[]> QueryData;
+        std::array<WorldPacket, TOTAL_LOCALES> QueryData;
 
     private:
-        uint32 _rewItemsCount = 0;
         uint32 _rewChoiceItemsCount = 0;
+        uint32 _rewItemsCount = 0;
         uint16 _eventIdForQuest = 0;
+        uint32 _rewCurrencyCount = 0;
 
         // wdb data (quest query response)
         uint32 _id = 0;
         uint32 _type = 0;
+        int32 _level = 0;
+        int32 _scalingFactionGroup = 0;
+        int32 _maxScalingLevel = 0;
         uint32 _packageID = 0;
-        uint32 _contentTuningID = 0;
+        int32 _minLevel = 0;
         int32 _questSortID = 0;
         uint32 _questInfoID = 0;
         uint32 _suggestedPlayers = 0;
@@ -802,7 +756,6 @@ class TC_GAME_API Quest
         uint32 _rewardSpell = 0;
         uint32 _rewardHonor = 0;
         uint32 _rewardKillHonor = 0;
-        int32 _rewardFavor = 0;
         uint32 _rewardArtifactXPDifficulty = 0;
         float _rewardArtifactXPMultiplier = 0.f;
         uint32 _rewardArtifactCategoryID = 0;
@@ -810,7 +763,6 @@ class TC_GAME_API Quest
         uint32 _flags = 0;
         uint32 _flagsEx = 0;
         uint32 _flagsEx2 = 0;
-        uint32 _flagsEx3 = 0;
         uint32 _poiContinent = 0;
         float _poix = 0.f;
         float _poiy = 0.f;
@@ -823,18 +775,14 @@ class TC_GAME_API Quest
         int32 _questGiverPortraitMount = 0;
         int32 _questGiverPortraitModelSceneId = 0;
         uint32 _questTurnInPortrait = 0;
-        uint32 _rewardReputationMask = 0;
+        uint32 _rewardReputationMask;
         uint32 _soundAccept = 0;
         uint32 _soundTurnIn = 0;
         uint32 _areaGroupID = 0;
         int64 _limitTime = 0;
-        Trinity::RaceMask<std::array<int32, 2>> _allowableRaces;
+        Trinity::RaceMask<uint64> _allowableRaces;
         std::vector<int32> _treasurePickerID;
         int32 _expansion = 0;
-        int32 _managedWorldStateID = 0;
-        int32 _questSessionBonus = 0;
-        std::vector<int32> _rewardHouseRoomIDs;
-        std::vector<int32> _rewardHouseDecorIDs;
         std::string _logTitle;
         std::string _logDescription;
         std::string _questDescription;
@@ -844,7 +792,6 @@ class TC_GAME_API Quest
         std::string _portraitTurnInText;
         std::string _portraitTurnInName;
         std::string _questCompletionLog;
-        bool _resetByScheduler;
 
         // quest_description_conditional
         std::vector<QuestConditionalText> _conditionalQuestDescription;
@@ -900,7 +847,6 @@ struct QuestStatusData
     time_t AcceptTime = time_t(0);
     uint32 Timer = 0;
     bool Explored = false;
-    std::unordered_set<std::pair<int8, uint32>> SpawnTrackingList;
 };
 
 #endif

@@ -32,7 +32,7 @@ class ModuleReference;
 class TC_GAME_API BattlegroundScript : public ZoneScript
 {
 public:
-    explicit BattlegroundScript(BattlegroundMap* map) noexcept;
+    explicit BattlegroundScript(BattlegroundMap* map);
     ~BattlegroundScript() override = default;
 
     virtual void OnInit() { }

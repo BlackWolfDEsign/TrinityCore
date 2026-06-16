@@ -227,7 +227,7 @@ void ComplaintTicket::LoadFromDB(Field* fields)
 
 void ComplaintTicket::LoadChatLineFromDB(Field* fields)
 {
-    _chatLog.Lines.emplace_back(fields[0].GetInt64(), fields[1].GetStringView());
+    _chatLog.Lines.emplace_back(fields[0].GetInt64(), fields[1].GetString());
 }
 
 void ComplaintTicket::SaveToDB() const

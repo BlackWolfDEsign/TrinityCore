@@ -16,11 +16,8 @@
  */
 
 #include "ClientConfigPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::ClientConfig
-{
-WorldPacket const* AccountDataTimes::Write()
+WorldPacket const* WorldPackets::ClientConfig::AccountDataTimes::Write()
 {
     _worldPacket << PlayerGuid;
     _worldPacket << ServerTime;
@@ -30,52 +27,50 @@ WorldPacket const* AccountDataTimes::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* ClientCacheVersion::Write()
+WorldPacket const* WorldPackets::ClientConfig::ClientCacheVersion::Write()
 {
     _worldPacket << uint32(CacheVersion);
 
     return &_worldPacket;
 }
 
-void RequestAccountData::Read()
+void WorldPackets::ClientConfig::RequestAccountData::Read()
 {
     _worldPacket >> PlayerGuid;
     _worldPacket >> DataType;
 }
 
-WorldPacket const* UpdateAccountData::Write()
+WorldPacket const* WorldPackets::ClientConfig::UpdateAccountData::Write()
 {
     _worldPacket << Time;
     _worldPacket << uint32(Size);
     _worldPacket << Player;
     _worldPacket << int32(DataType);
-    _worldPacket << Bytes::Size<uint32>(CompressedData);
-    _worldPacket << Bytes::Data(CompressedData);
+    _worldPacket << uint32(CompressedData.size());
+    _worldPacket.append(CompressedData);
 
     return &_worldPacket;
 }
 
-void UserClientUpdateAccountData::Read()
+void WorldPackets::ClientConfig::UserClientUpdateAccountData::Read()
 {
     _worldPacket >> Time;
     _worldPacket >> Size;
     _worldPacket >> PlayerGuid;
     _worldPacket >> DataType;
-    _worldPacket >> Bytes::Size<uint32>(CompressedData);
-    _worldPacket >> Bytes::Data(CompressedData);
+
+    uint32 compressedSize = _worldPacket.read<uint32>();
+    if (compressedSize > _worldPacket.size() - _worldPacket.rpos())
+        throw ByteBufferPositionException(_worldPacket.rpos(), _worldPacket.size(), compressedSize);
+
+    if (compressedSize)
+    {
+        CompressedData.resize(compressedSize);
+        _worldPacket.read(CompressedData.contents(), compressedSize);
+    }
 }
 
-WorldPacket const* UpdateAccountDataComplete::Write()
+void WorldPackets::ClientConfig::SetAdvancedCombatLogging::Read()
 {
-    _worldPacket << Player;
-    _worldPacket << int32(DataType);
-    _worldPacket << int32(Result);
-
-    return &_worldPacket;
-}
-
-void SetAdvancedCombatLogging::Read()
-{
-    _worldPacket >> Bits<1>(Enable);
-}
+    Enable = _worldPacket.ReadBit();
 }

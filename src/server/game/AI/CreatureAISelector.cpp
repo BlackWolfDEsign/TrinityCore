@@ -131,7 +131,12 @@ namespace FactorySelector
 
     MovementGenerator* SelectMovementGenerator(Unit* unit)
     {
-        MovementGeneratorCreator const* mv_factory = sMovementGeneratorRegistry->GetRegistryItem(unit->GetDefaultMovementType());
+        MovementGeneratorType type = unit->GetDefaultMovementType();
+        if (Creature* creature = unit->ToCreature())
+            if (!creature->GetPlayerMovingMe())
+                type = creature->GetDefaultMovementType();
+
+        MovementGeneratorCreator const* mv_factory = sMovementGeneratorRegistry->GetRegistryItem(type);
         return ASSERT_NOTNULL(mv_factory)->Create(unit);
     }
 

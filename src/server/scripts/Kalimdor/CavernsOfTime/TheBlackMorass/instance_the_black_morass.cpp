@@ -125,7 +125,7 @@ public:
         //what other conditions to check?
         bool CanProgressEvent()
         {
-            if (instance->GetPlayers().empty())
+            if (instance->GetPlayers().isEmpty())
                 return false;
 
             return true;
@@ -188,7 +188,7 @@ public:
                         TC_LOG_DEBUG("scripts", "Instance The Black Morass: Event completed.");
                         Map::PlayerList const& players = instance->GetPlayers();
 
-                        if (!players.empty())
+                        if (!players.isEmpty())
                         {
                             for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
                             {

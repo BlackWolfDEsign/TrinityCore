@@ -57,7 +57,7 @@ bool Group::CountdownInfo::IsRunning() const
 
 Group::Group() : m_leaderGuid(), m_leaderFactionGroup(0), m_leaderName(""), m_groupFlags(GROUP_FLAG_NONE), m_groupCategory(GROUP_CATEGORY_HOME),
 m_dungeonDifficulty(DIFFICULTY_NORMAL), m_raidDifficulty(DIFFICULTY_NORMAL_RAID), m_legacyRaidDifficulty(DIFFICULTY_10_N),
-m_bgGroup(nullptr), m_bfGroup(nullptr), m_lootMethod(PERSONAL_LOOT), m_lootThreshold(ITEM_QUALITY_UNCOMMON), m_looterGuid(),
+m_bgGroup(nullptr), m_bfGroup(nullptr), m_lootMethod(FREE_FOR_ALL), m_lootThreshold(ITEM_QUALITY_UNCOMMON), m_looterGuid(),
 m_masterLooterGuid(), m_subGroupsCounts(nullptr), m_guid(), m_dbStoreId(0), m_isLeaderOffline(false),
 m_readyCheckStarted(false), m_readyCheckTimer(Milliseconds::zero()), m_activeMarkers(0), m_scriptRef(this, NoopGroupDeleter())
 {
@@ -157,6 +157,9 @@ bool Group::Create(Player* leader)
     if (m_groupFlags & GROUP_FLAG_RAID)
         _initRaidSubGroupsCounter();
 
+    if (!isLFGGroup())
+        m_lootMethod = GROUP_LOOT;
+
     m_lootThreshold = ITEM_QUALITY_UNCOMMON;
     m_looterGuid = leaderGuid;
     m_masterLooterGuid.Clear();
@@ -192,7 +195,6 @@ bool Group::Create(Player* leader)
         stmt->setUInt32(index++, uint8(m_raidDifficulty));
         stmt->setUInt32(index++, uint8(m_legacyRaidDifficulty));
         stmt->setUInt64(index++, m_masterLooterGuid.GetCounter());
-        stmt->setInt8(index++, int8(m_pingRestriction));
 
         CharacterDatabase.Execute(stmt);
 
@@ -237,9 +239,10 @@ void Group::LoadGroupFromDB(Field* fields)
     m_raidDifficulty = Player::CheckLoadedRaidDifficultyID(Difficulty(fields[14].GetUInt8()));
     m_legacyRaidDifficulty = Player::CheckLoadedLegacyRaidDifficultyID(Difficulty(fields[15].GetUInt8()));
 
-    m_masterLooterGuid = fields[16].GetUInt64() ? ObjectGuid::Create<HighGuid::Player>(fields[16].GetUInt64()) : ObjectGuid::Empty;
+    m_masterLooterGuid = ObjectGuid::Create<HighGuid::Player>(fields[16].GetUInt64());
 
-    m_pingRestriction = RestrictPingsTo(fields[18].GetInt8());
+    // m_pingRestriction = RestrictPingsTo(fields[18].GetInt8());
+    m_pingRestriction = RestrictPingsTo::None;
 
     if (m_groupFlags & GROUP_FLAG_LFG)
         sLFGMgr->_LoadFromDB(fields, GetGUID());
@@ -282,7 +285,7 @@ void Group::ConvertToLFG()
 {
     m_groupFlags = GroupFlags(m_groupFlags | GROUP_FLAG_LFG | GROUP_FLAG_LFG_RESTRICTED);
     m_groupCategory = GROUP_CATEGORY_INSTANCE;
-    m_lootMethod = PERSONAL_LOOT;
+    m_lootMethod = NEED_BEFORE_GREED;
     if (!isBGGroup() && !isBFGroup())
     {
         CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_GROUP_TYPE);
@@ -531,24 +534,26 @@ bool Group::AddMember(Player* player)
         WorldPacket groupDataPacket;
 
         // Broadcast group members' fields to player
-        for (GroupReference const& itr : GetMembers())
+        for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* existingMember = itr.GetSource();
-            if (existingMember == player)
+            if (itr->GetSource() == player)
                 continue;
 
-            if (player->HaveAtClient(existingMember))
-                existingMember->BuildValuesUpdateBlockForPlayerWithFlag(&groupData, UF::UpdateFieldFlag::PartyMember, player);
-
-            if (existingMember->HaveAtClient(player))
+            if (Player* existingMember = itr->GetSource())
             {
-                UpdateData newData(player->GetMapId());
-                WorldPacket newDataPacket;
-                player->BuildValuesUpdateBlockForPlayerWithFlag(&newData, UF::UpdateFieldFlag::PartyMember, existingMember);
-                if (newData.HasData())
+                if (player->HaveAtClient(existingMember))
+                    existingMember->BuildValuesUpdateBlockForPlayerWithFlag(&groupData, UF::UpdateFieldFlag::PartyMember, player);
+
+                if (existingMember->HaveAtClient(player))
                 {
-                    newData.BuildPacket(&newDataPacket);
-                    existingMember->SendDirectMessage(&newDataPacket);
+                    UpdateData newData(player->GetMapId());
+                    WorldPacket newDataPacket;
+                    player->BuildValuesUpdateBlockForPlayerWithFlag(&newData, UF::UpdateFieldFlag::PartyMember, existingMember);
+                    if (newData.HasData())
+                    {
+                        newData.BuildPacket(&newDataPacket);
+                        existingMember->SendDirectMessage(&newDataPacket);
+                    }
                 }
             }
         }
@@ -572,14 +577,16 @@ bool Group::RemoveMember(ObjectGuid guid, RemoveMethod method /*= GROUP_REMOVEME
     Player* player = ObjectAccessor::FindConnectedPlayer(guid);
     if (player)
     {
-        for (GroupReference const& itr : GetMembers())
+        for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* groupMember = itr.GetSource();
-            if (groupMember->GetGUID() == guid)
-                continue;
+            if (Player* groupMember = itr->GetSource())
+            {
+                if (groupMember->GetGUID() == guid)
+                    continue;
 
-            groupMember->RemoveAllGroupBuffsFromCaster(guid);
-            player->RemoveAllGroupBuffsFromCaster(groupMember->GetGUID());
+                groupMember->RemoveAllGroupBuffsFromCaster(guid);
+                player->RemoveAllGroupBuffsFromCaster(groupMember->GetGUID());
+            }
         }
     }
 
@@ -661,7 +668,7 @@ bool Group::RemoveMember(ObjectGuid guid, RemoveMethod method /*= GROUP_REMOVEME
             }
         }
 
-        if (m_memberMgr.size() < ((isLFGGroup() || isBGGroup()) ? 1u : 2u))
+        if (m_memberMgr.getSize() < ((isLFGGroup() || isBGGroup()) ? 1u : 2u))
             Disband();
         else if (player)
         {
@@ -820,7 +827,7 @@ void Group::SendTargetIconList(WorldSession* session) const
     WorldPackets::Party::SendRaidTargetUpdateAll updateAll;
     updateAll.PartyIndex = GetGroupCategory();
     for (uint8 i = 0; i < TARGET_ICONS_COUNT; i++)
-        updateAll.TargetIcons.emplace_back(i, m_targetIcons[i]);
+        updateAll.TargetIcons.try_emplace(i, m_targetIcons[i]);
 
     session->SendPacket(updateAll.Write());
 }
@@ -828,29 +835,25 @@ void Group::SendTargetIconList(WorldSession* session) const
 void Group::SendUpdate() const
 {
     for (MemberSlot const& memberSlot : m_memberSlots)
-    {
-        Player* player = ObjectAccessor::FindConnectedPlayer(memberSlot.guid);
-        if (!player)
-            continue;
-
-        SendUpdateToPlayer(player, &memberSlot);
-    }
+        SendUpdateToPlayer(memberSlot.guid, &memberSlot);
 }
 
-void Group::SendUpdateToPlayer(Player* player, MemberSlot const* slot /*= nullptr*/) const
+void Group::SendUpdateToPlayer(ObjectGuid playerGUID, MemberSlot const* slot) const
 {
-    if (player->GetGroup() != this)
+    Player* player = ObjectAccessor::FindConnectedPlayer(playerGUID);
+
+    if (!player || !player->GetSession() || player->GetGroup() != this)
         return;
 
     // if MemberSlot wasn't provided
     if (!slot)
     {
-        member_citerator citr = _getMemberCSlot(player->GetGUID());
+        member_citerator witr = _getMemberCSlot(playerGUID);
 
-        if (citr == m_memberSlots.end()) // if there is no MemberSlot for such a player
+        if (witr == m_memberSlots.end()) // if there is no MemberSlot for such a player
             return;
 
-        slot = &(*citr);
+        slot = &(*witr);
     }
 
     WorldPackets::Party::PartyUpdate partyUpdate;
@@ -953,36 +956,36 @@ void Group::UpdatePlayerOutOfRange(Player const* player) const
     packet.Initialize(player);
     packet.Write();
 
-    for (GroupReference const& itr : GetMembers())
+    for (GroupReference const* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player const* member = itr.GetSource();
-        if (member != player && (!member->IsInMap(player) || !member->IsWithinDist(player, member->GetSightRange(), false)))
+        Player const* member = itr->GetSource();
+        if (member && member != player && (!member->IsInMap(player) || !member->IsWithinDist(player, member->GetSightRange(), false)))
             member->SendDirectMessage(packet.GetRawPacket());
     }
 }
 
 void Group::BroadcastAddonMessagePacket(WorldPacket const* packet, const std::string& prefix, bool ignorePlayersInBGRaid, int group /*= -1*/, ObjectGuid ignore /*= ObjectGuid::Empty*/) const
 {
-    for (GroupReference const& itr : GetMembers())
+    for (GroupReference const* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player* player = itr.GetSource();
-        if ((!ignore.IsEmpty() && player->GetGUID() == ignore) || (ignorePlayersInBGRaid && player->GetGroup() != this))
+        Player* player = itr->GetSource();
+        if (!player || (!ignore.IsEmpty() && player->GetGUID() == ignore) || (ignorePlayersInBGRaid && player->GetGroup() != this))
             continue;
 
-        if (player->GetSession()->IsAddonRegistered(prefix) && (group == -1 || itr.getSubGroup() == group))
+        if (player->GetSession()->IsAddonRegistered(prefix) && (group == -1 || itr->getSubGroup() == group))
             player->SendDirectMessage(packet);
     }
 }
 
 void Group::BroadcastPacket(WorldPacket const* packet, bool ignorePlayersInBGRaid, int group, ObjectGuid ignoredPlayer) const
 {
-    for (GroupReference const& itr : GetMembers())
+    for (GroupReference const* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player const* player = itr.GetSource();
-        if ((!ignoredPlayer.IsEmpty() && player->GetGUID() == ignoredPlayer) || (ignorePlayersInBGRaid && player->GetGroup() != this))
+        Player const* player = itr->GetSource();
+        if (!player || (!ignoredPlayer.IsEmpty() && player->GetGUID() == ignoredPlayer) || (ignorePlayersInBGRaid && player->GetGroup() != this))
             continue;
 
-        if (group == -1 || itr.getSubGroup() == group)
+        if (group == -1 || itr->getSubGroup() == group)
             player->SendDirectMessage(packet);
     }
 }
@@ -1211,13 +1214,11 @@ GroupJoinBattlegroundResult Group::CanJoinBattlegroundQueue(BattlegroundTemplate
         return ERR_BATTLEGROUND_NONE;                        // ERR_GROUP_JOIN_BATTLEGROUND_TOO_MANY handled on client side
 
     // get a player as reference, to compare other players' stats to (arena team id, queue id based on level, etc.)
-    auto membersIterator = GetMembers().begin();
-    auto membersEnd = GetMembers().end();
+    Player* reference = ASSERT_NOTNULL(GetFirstMember())->GetSource();
     // no reference found, can't join this way
-    if (membersIterator == membersEnd)
+    if (!reference)
         return ERR_BATTLEGROUND_JOIN_FAILED;
 
-    Player* reference = membersIterator->GetSource();
     PVPDifficultyEntry const* bracketEntry = DB2Manager::GetBattlegroundBracketByLevel(bgOrTemplate->MapIDs.front(), reference->GetLevel());
     if (!bracketEntry)
         return ERR_BATTLEGROUND_JOIN_FAILED;
@@ -1228,9 +1229,9 @@ GroupJoinBattlegroundResult Group::CanJoinBattlegroundQueue(BattlegroundTemplate
 
     // check every member of the group to be able to join
     memberscount = 0;
-    for (; membersIterator != membersEnd; ++membersIterator)
+    for (GroupReference const* itr = GetFirstMember(); itr != nullptr; itr = itr->next(), ++memberscount)
     {
-        Player* member = membersIterator->GetSource();
+        Player* member = itr->GetSource();
         // offline member? don't let join
         if (!member)
             return ERR_BATTLEGROUND_JOIN_FAILED;
@@ -1252,8 +1253,7 @@ GroupJoinBattlegroundResult Group::CanJoinBattlegroundQueue(BattlegroundTemplate
         if (member->InBattlegroundQueueForBattlegroundQueueType(bgQueueTypeId))
             return ERR_BATTLEGROUND_JOIN_FAILED;            // not blizz-like
         // don't let join if someone from the group is in bg queue random
-        bool isInRandomBgQueue = member->InBattlegroundQueueForBattlegroundQueueType(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RB, BattlegroundQueueIdType::Battleground, false, 0))
-            || member->InBattlegroundQueueForBattlegroundQueueType(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RANDOM_EPIC, BattlegroundQueueIdType::Battleground, false, 0));
+        bool isInRandomBgQueue = member->InBattlegroundQueueForBattlegroundQueueType(BattlegroundMgr::BGQueueTypeId(BATTLEGROUND_RB, BattlegroundQueueIdType::Battleground, false, 0));
         if (bgOrTemplate->Id != BATTLEGROUND_AA && isInRandomBgQueue)
             return ERR_IN_RANDOM_BG;
         // don't let join to bg queue random if someone from the group is already in bg queue
@@ -1273,8 +1273,6 @@ GroupJoinBattlegroundResult Group::CanJoinBattlegroundQueue(BattlegroundTemplate
             return ERR_BATTLEGROUND_JOIN_FAILED;
         if (isMercenary != (member->HasAura(SPELL_MERCENARY_CONTRACT_HORDE) || member->HasAura(SPELL_MERCENARY_CONTRACT_ALLIANCE)))
             return ERR_BATTLEGROUND_JOIN_MERCENARY;
-
-        memberscount++;
     }
 
     errorGuid = ObjectGuid::Empty;
@@ -1299,9 +1297,12 @@ void Group::SetDungeonDifficultyID(Difficulty difficulty)
         CharacterDatabase.Execute(stmt);
     }
 
-    for (GroupReference const& itr : GetMembers())
+    for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player* player = itr.GetSource();
+        Player* player = itr->GetSource();
+        if (!player->GetSession())
+            continue;
+
         player->SetDungeonDifficultyID(difficulty);
         player->SendDungeonDifficulty();
     }
@@ -1320,9 +1321,12 @@ void Group::SetRaidDifficultyID(Difficulty difficulty)
         CharacterDatabase.Execute(stmt);
     }
 
-    for (GroupReference const& itr : GetMembers())
+    for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player* player = itr.GetSource();
+        Player* player = itr->GetSource();
+        if (!player->GetSession())
+            continue;
+
         player->SetRaidDifficultyID(difficulty);
         player->SendRaidDifficulty(false);
     }
@@ -1341,9 +1345,12 @@ void Group::SetLegacyRaidDifficultyID(Difficulty difficulty)
         CharacterDatabase.Execute(stmt);
     }
 
-    for (GroupReference const& itr : GetMembers())
+    for (GroupReference* itr = GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player* player = itr.GetSource();
+        Player* player = itr->GetSource();
+        if (!player->GetSession())
+            continue;
+
         player->SetLegacyRaidDifficultyID(difficulty);
         player->SendRaidDifficulty(true);
     }
@@ -1393,7 +1400,7 @@ void Group::ResetInstances(InstanceResetMethod method, Player* notifyPlayer)
 
 void Group::LinkOwnedInstance(GroupInstanceReference* ref)
 {
-    m_ownedInstancesMgr.push_back(ref);
+    m_ownedInstancesMgr.insertLast(ref);
 }
 
 void Group::_homebindIfInstance(Player* player)
@@ -1795,14 +1802,22 @@ void Group::SetGroupMemberFlag(ObjectGuid guid, bool apply, GroupMemberFlags fla
 
 void Group::LinkMember(GroupReference* pRef)
 {
-    m_memberMgr.push_front(pRef);
+    m_memberMgr.insertFirst(pRef);
 }
 
 void Group::DelinkMember(ObjectGuid guid)
 {
-    auto itr = std::ranges::find(m_memberMgr, guid, [](GroupReference const& ref) { return ref.GetSource()->GetGUID(); });
-    if (itr != m_memberMgr.end())
-        itr->unlink();
+    GroupReference* ref = m_memberMgr.getFirst();
+    while (ref)
+    {
+        GroupReference* nextRef = ref->next();
+        if (ref->GetSource()->GetGUID() == guid)
+        {
+            ref->unlink();
+            break;
+        }
+        ref = nextRef;
+    }
 }
 
 void Group::_initRaidSubGroupsCounter()
@@ -1897,6 +1912,8 @@ void Group::SetRestrictPingsTo(RestrictPingsTo restrictTo)
 {
     m_pingRestriction = restrictTo;
 
+    // Classic only - Disabled
+    /*
     if (!isBGGroup() && !isBFGroup())
     {
         CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_GROUP_PING_RESTRICTION);
@@ -1908,4 +1925,5 @@ void Group::SetRestrictPingsTo(RestrictPingsTo restrictTo)
     }
 
     SendUpdate();
+    */
 }

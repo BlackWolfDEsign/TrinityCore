@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_TAXI_PACKETS_H
-#define TRINITYCORE_TAXI_PACKETS_H
+#ifndef TaxiPackets_h__
+#define TaxiPackets_h__
 
 #include "Packet.h"
 #include "ObjectGuid.h"
@@ -30,7 +30,7 @@ namespace WorldPackets
         class TaxiNodeStatusQuery final : public ClientPacket
         {
         public:
-            explicit TaxiNodeStatusQuery(WorldPacket&& packet) : ClientPacket(CMSG_TAXI_NODE_STATUS_QUERY, std::move(packet)) { }
+            TaxiNodeStatusQuery(WorldPacket&& packet) : ClientPacket(CMSG_TAXI_NODE_STATUS_QUERY, std::move(packet)) { }
 
             void Read() override;
 
@@ -40,7 +40,7 @@ namespace WorldPackets
         class TaxiNodeStatus final : public ServerPacket
         {
         public:
-            explicit TaxiNodeStatus() : ServerPacket(SMSG_TAXI_NODE_STATUS, 16 + 1) { }
+            TaxiNodeStatus() : ServerPacket(SMSG_TAXI_NODE_STATUS, 16 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -57,7 +57,7 @@ namespace WorldPackets
         class ShowTaxiNodes final : public ServerPacket
         {
         public:
-            explicit ShowTaxiNodes() : ServerPacket(SMSG_SHOW_TAXI_NODES) { }
+            ShowTaxiNodes() : ServerPacket(SMSG_SHOW_TAXI_NODES) { }
 
             WorldPacket const* Write() override;
 
@@ -69,7 +69,7 @@ namespace WorldPackets
         class EnableTaxiNode final : public ClientPacket
         {
         public:
-            explicit EnableTaxiNode(WorldPacket&& packet) : ClientPacket(CMSG_ENABLE_TAXI_NODE, std::move(packet)) { }
+            EnableTaxiNode(WorldPacket&& packet) : ClientPacket(CMSG_ENABLE_TAXI_NODE, std::move(packet)) { }
 
             void Read() override;
 
@@ -79,7 +79,7 @@ namespace WorldPackets
         class TaxiQueryAvailableNodes final : public ClientPacket
         {
         public:
-            explicit TaxiQueryAvailableNodes(WorldPacket&& packet) : ClientPacket(CMSG_TAXI_QUERY_AVAILABLE_NODES, std::move(packet)) { }
+            TaxiQueryAvailableNodes(WorldPacket&& packet) : ClientPacket(CMSG_TAXI_QUERY_AVAILABLE_NODES, std::move(packet)) { }
 
             void Read() override;
 
@@ -89,7 +89,7 @@ namespace WorldPackets
         class ActivateTaxi final : public ClientPacket
         {
         public:
-            explicit ActivateTaxi(WorldPacket&& packet) : ClientPacket(CMSG_ACTIVATE_TAXI, std::move(packet)) { }
+            ActivateTaxi(WorldPacket&& packet) : ClientPacket(CMSG_ACTIVATE_TAXI, std::move(packet)) { }
 
             void Read() override;
 
@@ -112,7 +112,7 @@ namespace WorldPackets
         class ActivateTaxiReply final : public ServerPacket
         {
         public:
-            explicit ActivateTaxiReply() : ServerPacket(SMSG_ACTIVATE_TAXI_REPLY, 1) { }
+            ActivateTaxiReply() : ServerPacket(SMSG_ACTIVATE_TAXI_REPLY, 1) { }
 
             WorldPacket const* Write() override;
 
@@ -122,11 +122,11 @@ namespace WorldPackets
         class TaxiRequestEarlyLanding final : public ClientPacket
         {
         public:
-            explicit TaxiRequestEarlyLanding(WorldPacket&& packet) : ClientPacket(CMSG_TAXI_REQUEST_EARLY_LANDING, std::move(packet)) { }
+            TaxiRequestEarlyLanding(WorldPacket&& packet) : ClientPacket(CMSG_TAXI_REQUEST_EARLY_LANDING, std::move(packet)) { }
 
             void Read() override { }
         };
     }
 }
 
-#endif // TRINITYCORE_TAXI_PACKETS_H
+#endif // TaxiPackets_h__

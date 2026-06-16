@@ -42,16 +42,16 @@
 namespace lfg
 {
 
-LFGDungeonData::LFGDungeonData() : id(0), name(), map(0), type(0), expansion(0), group(0), contentTuningId(0),
+LFGDungeonData::LFGDungeonData() : id(0), name(), map(0), type(0), expansion(0), group(0), minLevel(0), maxLevel(0),
     difficulty(DIFFICULTY_NONE), seasonal(false), x(0.0f), y(0.0f), z(0.0f), o(0.0f), requiredItemLevel(0), finalDungeonEncounterId(0)
 {
 }
 
 LFGDungeonData::LFGDungeonData(LFGDungeonsEntry const* dbc) : id(dbc->ID), name(dbc->Name[sWorld->GetDefaultDbcLocale()]), map(dbc->MapID),
     type(uint8(dbc->TypeID)), expansion(uint8(dbc->ExpansionLevel)), group(uint8(dbc->GroupID)),
-    contentTuningId(uint32(dbc->ContentTuningID)), difficulty(Difficulty(dbc->DifficultyID)),
+    minLevel(dbc->MinLevel), maxLevel(dbc->MaxLevel), difficulty(Difficulty(dbc->DifficultyID)),
     seasonal((dbc->Flags[0] & LFG_FLAG_SEASONAL) != 0), x(0.0f), y(0.0f), z(0.0f), o(0.0f),
-    requiredItemLevel(0), finalDungeonEncounterId(0)
+    requiredItemLevel(dbc->MinGear), finalDungeonEncounterId(0)
 {
     if (JournalEncounterEntry const* journalEncounter = sJournalEncounterStore.LookupEntry(dbc->FinalEncounterID))
         finalDungeonEncounterId = journalEncounter->DungeonEncounterID;
@@ -78,8 +78,8 @@ void LFGMgr::_LoadFromDB(Field* fields, ObjectGuid guid)
 
     SetLeader(guid, ObjectGuid::Create<HighGuid::Player>(fields[0].GetUInt64()));
 
-    uint32 dungeon = fields[19].GetUInt32();
-    uint8 state = fields[20].GetUInt8();
+    uint32 dungeon = fields[18].GetUInt32();
+    uint8 state = fields[19].GetUInt8();
 
     if (!dungeon || !state)
         return;
@@ -187,7 +187,7 @@ LFGDungeonData const* LFGMgr::GetLFGDungeon(uint32 id)
     return nullptr;
 }
 
-void LFGMgr::LoadLFGDungeons()
+void LFGMgr::LoadLFGDungeons(bool reload /* = false */)
 {
     uint32 oldMSTime = getMSTime();
 
@@ -200,7 +200,7 @@ void LFGMgr::LoadLFGDungeons()
         if (!dungeon)
             continue;
 
-        if (!sDB2Manager.GetMapDifficultyData(dungeon->MapID, Difficulty(dungeon->DifficultyID)))
+        if (dungeon->MapID != -1 && !sDB2Manager.GetMapDifficultyData(dungeon->MapID, Difficulty(dungeon->DifficultyID)))
             continue;
 
         switch (dungeon->TypeID)
@@ -231,7 +231,7 @@ void LFGMgr::LoadLFGDungeons()
         LFGDungeonContainer::iterator dungeonItr = LfgDungeonStore.find(dungeonId);
         if (dungeonItr == LfgDungeonStore.end())
         {
-            TC_LOG_ERROR("sql.sql", "table `lfg_dungeon_template` contains coordinates for wrong dungeon {}", dungeonId);
+            TC_LOG_ERROR("sql.sql", "table `lfg_entrances` contains coordinates for wrong dungeon {}", dungeonId);
             continue;
         }
 
@@ -248,8 +248,6 @@ void LFGMgr::LoadLFGDungeons()
 
     TC_LOG_INFO("server.loading", ">> Loaded {} lfg dungeon templates in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
 
-    CachedDungeonMapStore.clear();
-
     // Fill all other teleport coords from areatriggers
     for (LFGDungeonContainer::iterator itr = LfgDungeonStore.begin(); itr != LfgDungeonStore.end(); ++itr)
     {
@@ -258,24 +256,27 @@ void LFGMgr::LoadLFGDungeons()
         // No teleport coords in database, load from areatriggers
         if (dungeon.type != LFG_TYPE_RANDOM && dungeon.x == 0.0f && dungeon.y == 0.0f && dungeon.z == 0.0f)
         {
-            AreaTriggerTeleport const* at = sObjectMgr->GetMapEntranceTrigger(dungeon.map);
+            AreaTriggerStruct const* at = sObjectMgr->GetMapEntranceTrigger(dungeon.map);
             if (!at)
             {
                 TC_LOG_ERROR("sql.sql", "Failed to load dungeon {} (Id: {}), cant find areatrigger for map {}", dungeon.name, dungeon.id, dungeon.map);
                 continue;
             }
 
-            dungeon.map = at->Loc.GetMapId();
-            dungeon.x = at->Loc.GetPositionX();
-            dungeon.y = at->Loc.GetPositionY();
-            dungeon.z = at->Loc.GetPositionZ();
-            dungeon.o = at->Loc.GetOrientation();
+            dungeon.map = at->target_mapId;
+            dungeon.x = at->target_X;
+            dungeon.y = at->target_Y;
+            dungeon.z = at->target_Z;
+            dungeon.o = at->target_Orientation;
         }
 
         if (dungeon.type != LFG_TYPE_RANDOM)
             CachedDungeonMapStore[dungeon.group].insert(dungeon.id);
         CachedDungeonMapStore[0].insert(dungeon.id);
     }
+
+    if (reload)
+        CachedDungeonMapStore.clear();
 }
 
 LFGMgr* LFGMgr::instance()
@@ -286,7 +287,7 @@ LFGMgr* LFGMgr::instance()
 
 void LFGMgr::Update(uint32 diff)
 {
-    if (!isOptionEnabled(LFG_OPTION_ENABLE_DUNGEON_FINDER | LFG_OPTION_ENABLE_RAID_BROWSER))
+    if (!isOptionEnabled(LFG_OPTION_ENABLE_DUNGEON_FINDER | LFG_OPTION_ENABLE_RAID_FINDER))
         return;
 
     time_t currTime = GameTime::GetGameTime();
@@ -451,27 +452,26 @@ void LFGMgr::JoinLfg(Player* player, uint8 roles, LfgDungeonSet& dungeons)
         else
         {
             uint8 memberCount = 0;
-            for (GroupReference const& itr : grp->GetMembers())
+            for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr && joinData.result == LFG_JOIN_OK; itr = itr->next())
             {
-                Player* plrg = itr.GetSource();
-                if (!plrg->GetSession()->HasPermission(rbac::RBAC_PERM_JOIN_DUNGEON_FINDER))
-                    joinData.result = LFG_JOIN_NO_LFG_OBJECT;
-                if (plrg->HasAura(LFG_SPELL_DUNGEON_DESERTER))
-                    joinData.result = LFG_JOIN_DESERTER_PARTY;
-                else if (!isContinue && plrg->HasAura(LFG_SPELL_DUNGEON_COOLDOWN))
-                    joinData.result = LFG_JOIN_RANDOM_COOLDOWN_PARTY;
-                else if (plrg->InBattleground() || plrg->InArena() || plrg->InBattlegroundQueue())
-                    joinData.result = LFG_JOIN_CANT_USE_DUNGEONS;
-                else if (plrg->HasAura(9454)) // check Freeze debuff
+                if (Player* plrg = itr->GetSource())
                 {
-                    joinData.result = LFG_JOIN_NO_SLOTS;
-                    joinData.playersMissingRequirement.push_back(plrg->GetName());
+                    if (!plrg->GetSession()->HasPermission(rbac::RBAC_PERM_JOIN_DUNGEON_FINDER))
+                        joinData.result = LFG_JOIN_NO_LFG_OBJECT;
+                    if (plrg->HasAura(LFG_SPELL_DUNGEON_DESERTER))
+                        joinData.result = LFG_JOIN_DESERTER_PARTY;
+                    else if (!isContinue && plrg->HasAura(LFG_SPELL_DUNGEON_COOLDOWN))
+                        joinData.result = LFG_JOIN_RANDOM_COOLDOWN_PARTY;
+                    else if (plrg->InBattleground() || plrg->InArena() || plrg->InBattlegroundQueue())
+                        joinData.result = LFG_JOIN_CANT_USE_DUNGEONS;
+                    else if (plrg->HasAura(9454)) // check Freeze debuff
+                    {
+                        joinData.result = LFG_JOIN_NO_SLOTS;
+                        joinData.playersMissingRequirement.push_back(&plrg->GetName());
+                    }
+                    ++memberCount;
+                    players.insert(plrg->GetGUID());
                 }
-                ++memberCount;
-                players.insert(plrg->GetGUID());
-
-                if (joinData.result != LFG_JOIN_OK)
-                    break;
             }
 
             if (joinData.result == LFG_JOIN_OK && memberCount != grp->GetMembersCount())
@@ -571,19 +571,21 @@ void LFGMgr::JoinLfg(Player* player, uint8 roles, LfgDungeonSet& dungeons)
         SetState(gguid, LFG_STATE_ROLECHECK);
         // Send update to player
         LfgUpdateData updateData = LfgUpdateData(LFG_UPDATETYPE_JOIN_QUEUE, dungeons);
-        for (GroupReference const& itr : grp->GetMembers())
+        for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* plrg = itr.GetSource();
-            ObjectGuid pguid = plrg->GetGUID();
-            plrg->GetSession()->SendLfgUpdateStatus(updateData, true);
-            SetState(pguid, LFG_STATE_ROLECHECK);
-            SetTicket(pguid, ticket);
-            if (!isContinue)
-                SetSelectedDungeons(pguid, dungeons);
-            roleCheck.roles[pguid] = 0;
-            if (!debugNames.empty())
-                debugNames.append(", ");
-            debugNames.append(plrg->GetName());
+            if (Player* plrg = itr->GetSource())
+            {
+                ObjectGuid pguid = plrg->GetGUID();
+                plrg->GetSession()->SendLfgUpdateStatus(updateData, true);
+                SetState(pguid, LFG_STATE_ROLECHECK);
+                SetTicket(pguid, ticket);
+                if (!isContinue)
+                    SetSelectedDungeons(pguid, dungeons);
+                roleCheck.roles[pguid] = 0;
+                if (!debugNames.empty())
+                    debugNames.append(", ");
+                debugNames.append(plrg->GetName());
+            }
         }
         // Update leader role
         UpdateRoleCheck(gguid, guid, roles);
@@ -815,7 +817,7 @@ void LFGMgr::UpdateRoleCheck(ObjectGuid gguid, ObjectGuid guid /* = ObjectGuid::
    @param[in]     players Set of players to check their dungeon restrictions
    @param[out]    lockMap Map of players Lock status info of given dungeons (Empty if dungeons is not empty)
 */
-void LFGMgr::GetCompatibleDungeons(LfgDungeonSet* dungeons, GuidSet const& players, LfgLockPartyMap* lockMap, std::vector<std::string_view>* playersMissingRequirement, bool isContinue)
+void LFGMgr::GetCompatibleDungeons(LfgDungeonSet* dungeons, GuidSet const& players, LfgLockPartyMap* lockMap, std::vector<std::string const*>* playersMissingRequirement, bool isContinue)
 {
     lockMap->clear();
 
@@ -840,8 +842,11 @@ void LFGMgr::GetCompatibleDungeons(LfgDungeonSet* dungeons, GuidSet const& playe
                 {
                     LFGDungeonData const* dungeon = GetLFGDungeon(dungeonId);
                     ASSERT(dungeon);
+                    if (dungeon->map == -1)
+                        continue;
+
                     ASSERT(player);
-                    MapDb2Entries entries{ dungeon->map, Difficulty(dungeon->difficulty) };
+                    MapDb2Entries entries{ static_cast<uint32>(dungeon->map), Difficulty(dungeon->difficulty) };
                     if (InstanceLock* playerBind = sInstanceLockMgr.FindActiveInstanceLock(guid, entries))
                     {
                         uint32 dungeonInstanceId = playerBind->GetInstanceId();
@@ -857,7 +862,7 @@ void LFGMgr::GetCompatibleDungeons(LfgDungeonSet* dungeons, GuidSet const& playe
                     dungeonsToRemove.insert(dungeonId);
 
                 (*lockMap)[guid][dungeonId] = it2->second;
-                playersMissingRequirement->push_back(player->GetName());
+                playersMissingRequirement->push_back(&player->GetName());
             }
         }
     }
@@ -1405,10 +1410,10 @@ void LFGMgr::TeleportPlayer(Player* player, bool out, bool fromOpcode /*= false*
         if (!fromOpcode)
         {
             // Select a player inside to be teleported to
-            for (GroupReference const& itr : group->GetMembers())
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
-                Player* plrg = itr.GetSource();
-                if (plrg != player && plrg->GetMapId() == uint32(dungeon->map))
+                Player* plrg = itr->GetSource();
+                if (plrg && plrg != player && plrg->GetMapId() == uint32(dungeon->map))
                 {
                     mapid = plrg->GetMapId();
                     x = plrg->GetPositionX();
@@ -1443,10 +1448,10 @@ void LFGMgr::TeleportPlayer(Player* player, bool out, bool fromOpcode /*= false*
    Check if dungeon can be rewarded, if any.
 
    @param[in]     gguid Group guid
-   @param[in]     dungeonEncounters DungeonEncounter that was just completed
+   @param[in]     dungeonEncounterIds DungeonEncounter that was just completed
    @param[in]     currMap Map of the instance where encounter was completed
 */
-void LFGMgr::OnDungeonEncounterDone(ObjectGuid gguid, std::span<uint32 const> dungeonEncounters, Map const* currMap)
+void LFGMgr::OnDungeonEncounterDone(ObjectGuid gguid, std::array<uint32, 4> const& dungeonEncounterIds, Map const* currMap)
 {
     if (GetState(gguid) == LFG_STATE_FINISHED_DUNGEON) // Shouldn't happen. Do not reward multiple times
     {
@@ -1457,7 +1462,7 @@ void LFGMgr::OnDungeonEncounterDone(ObjectGuid gguid, std::span<uint32 const> du
     uint32 gDungeonId = GetDungeon(gguid);
     LFGDungeonData const* dungeonDone = GetLFGDungeon(gDungeonId);
     // LFGDungeons can point to a DungeonEncounter from any difficulty so we need this kind of lenient check
-    if (!advstd::ranges::contains(dungeonEncounters, dungeonDone->finalDungeonEncounterId))
+    if (std::find(dungeonEncounterIds.begin(), dungeonEncounterIds.end(), dungeonDone->finalDungeonEncounterId) == dungeonEncounterIds.end())
         return;
 
     FinishDungeon(gguid, gDungeonId, currMap);
@@ -1753,39 +1758,42 @@ LfgLockMap LFGMgr::GetLockedDungeons(ObjectGuid guid)
                 return LFG_LOCKSTATUS_RAID_LOCKED;
             if (dungeon->expansion > expansion)
                 return LFG_LOCKSTATUS_INSUFFICIENT_EXPANSION;
-            if (DisableMgr::IsDisabledFor(DISABLE_TYPE_MAP, dungeon->map, player))
-                return LFG_LOCKSTATUS_NOT_IN_SEASON;
-            if (DisableMgr::IsDisabledFor(DISABLE_TYPE_LFG_MAP, dungeon->map, player))
-                return LFG_LOCKSTATUS_RAID_LOCKED;
-            if (sInstanceLockMgr.FindActiveInstanceLock(guid, { dungeon->map, Difficulty(dungeon->difficulty) }))
-                return LFG_LOCKSTATUS_RAID_LOCKED;
-            if (Optional<ContentTuningLevels> levels = sDB2Manager.GetContentTuningData(dungeon->contentTuningId, player->m_playerData->CtrOptions->ConditionalFlags))
+            if (dungeon->map != -1)
             {
-                if (levels->MinLevel > level)
-                    return LFG_LOCKSTATUS_TOO_LOW_LEVEL;
-                if (levels->MaxLevel < level)
-                    return LFG_LOCKSTATUS_TOO_HIGH_LEVEL;
+                if (DisableMgr::IsDisabledFor(DISABLE_TYPE_MAP, dungeon->map, player))
+                    return LFG_LOCKSTATUS_NOT_IN_SEASON;
+                if (DisableMgr::IsDisabledFor(DISABLE_TYPE_LFG_MAP, dungeon->map, player))
+                    return LFG_LOCKSTATUS_RAID_LOCKED;
+                if (sInstanceLockMgr.FindActiveInstanceLock(guid, { static_cast<uint32>(dungeon->map), Difficulty(dungeon->difficulty) }))
+                    return LFG_LOCKSTATUS_RAID_LOCKED;
             }
+            if (dungeon->minLevel > level)
+                return LFG_LOCKSTATUS_TOO_LOW_LEVEL;
+            if (dungeon->maxLevel < level)
+                return LFG_LOCKSTATUS_TOO_HIGH_LEVEL;
             if (dungeon->seasonal && !IsSeasonActive(dungeon->id))
                 return LFG_LOCKSTATUS_NOT_IN_SEASON;
             if (dungeon->requiredItemLevel > player->GetAverageItemLevel())
                 return LFG_LOCKSTATUS_TOO_LOW_GEAR_SCORE;
-            if (AccessRequirement const* ar = sObjectMgr->GetAccessRequirement(dungeon->map, Difficulty(dungeon->difficulty)))
+            if (dungeon->map != -1)
             {
-                if (ar->achievement && !player->HasAchieved(ar->achievement))
-                    return LFG_LOCKSTATUS_MISSING_ACHIEVEMENT;
-                if (player->GetTeam() == ALLIANCE && ar->quest_A && !player->GetQuestRewardStatus(ar->quest_A))
-                    return LFG_LOCKSTATUS_QUEST_NOT_COMPLETED;
-                if (player->GetTeam() == HORDE && ar->quest_H && !player->GetQuestRewardStatus(ar->quest_H))
-                    return LFG_LOCKSTATUS_QUEST_NOT_COMPLETED;
-
-                if (ar->item)
+                if (AccessRequirement const* ar = sObjectMgr->GetAccessRequirement(dungeon->map, Difficulty(dungeon->difficulty)))
                 {
-                    if (!player->HasItemCount(ar->item) && (!ar->item2 || !player->HasItemCount(ar->item2)))
+                    if (ar->achievement && !player->HasAchieved(ar->achievement))
+                        return LFG_LOCKSTATUS_MISSING_ACHIEVEMENT;
+                    if (player->GetTeam() == ALLIANCE && ar->quest_A && !player->GetQuestRewardStatus(ar->quest_A))
+                        return LFG_LOCKSTATUS_QUEST_NOT_COMPLETED;
+                    if (player->GetTeam() == HORDE && ar->quest_H && !player->GetQuestRewardStatus(ar->quest_H))
+                        return LFG_LOCKSTATUS_QUEST_NOT_COMPLETED;
+
+                    if (ar->item)
+                    {
+                        if (!player->HasItemCount(ar->item) && (!ar->item2 || !player->HasItemCount(ar->item2)))
+                            return LFG_LOCKSTATUS_MISSING_ITEM;
+                    }
+                    else if (ar->item2 && !player->HasItemCount(ar->item2))
                         return LFG_LOCKSTATUS_MISSING_ITEM;
                 }
-                else if (ar->item2 && !player->HasItemCount(ar->item2))
-                    return LFG_LOCKSTATUS_MISSING_ITEM;
             }
 
             /* @todo VoA closed if WG is not under team control (LFG_LOCKSTATUS_RAID_LOCKED)
@@ -1796,8 +1804,26 @@ LfgLockMap LFGMgr::GetLockedDungeons(ObjectGuid guid)
             return 0;
         }();
 
+        LfgSoftLock softLock = [lockStatus]()
+        {
+            switch (lockStatus)
+            {
+                // Dungeons which are out of our level range, active season or expansion are hidden from the list
+                case LFG_LOCKSTATUS_TOO_LOW_LEVEL:
+                case LFG_LOCKSTATUS_TOO_HIGH_LEVEL:
+                case LFG_LOCKSTATUS_NOT_IN_SEASON:
+                case LFG_LOCKSTATUS_INSUFFICIENT_EXPANSION:
+                    return LfgSoftLock::Unk2; // only value seen in sniffs
+                default:
+                    return LfgSoftLock::None;
+
+            }
+
+            return LfgSoftLock::None;
+        }();
+
         if (lockStatus)
-            lock[dungeon->Entry()] = LfgLockInfoData(lockStatus, dungeon->requiredItemLevel, player->GetAverageItemLevel());
+            lock[dungeon->Entry()] = LfgLockInfoData(lockStatus, dungeon->requiredItemLevel, player->GetAverageItemLevel(), softLock);
     }
 
     return lock;
@@ -1933,10 +1959,12 @@ uint8 LFGMgr::GetTeam(ObjectGuid guid)
 
 uint8 LFGMgr::FilterClassRoles(Player* player, uint8 roles)
 {
-    uint8 allowedRoles = PLAYER_ROLE_LEADER;
-    for (uint32 i = 0; i < MAX_SPECIALIZATIONS; ++i)
-        if (ChrSpecializationEntry const* specialization = sDB2Manager.GetChrSpecializationByIndex(player->GetClass(), i))
-            allowedRoles |= 1 << (specialization->Role + 1);
+    uint8 allowedRoles = PLAYER_ROLE_LEADER | PLAYER_ROLE_DAMAGE;
+    if (player->GetClass() == CLASS_DEATH_KNIGHT || player->GetClass() == CLASS_DRUID || player->GetClass() == CLASS_PALADIN || player->GetClass() == CLASS_WARRIOR)
+        allowedRoles |= PLAYER_ROLE_TANK;
+
+    if (player->GetClass() == CLASS_PALADIN || player->GetClass() == CLASS_PRIEST || player->GetClass() == CLASS_DRUID || player->GetClass() == CLASS_SHAMAN)
+        allowedRoles |= PLAYER_ROLE_HEALER;
 
     return roles & allowedRoles;
 }
@@ -2200,7 +2228,7 @@ uint32 LFGMgr::GetLFGDungeonEntry(uint32 id)
     return 0;
 }
 
-LfgDungeonSet LFGMgr::GetRandomAndSeasonalDungeons(uint8 level, uint8 expansion, std::span<uint32 const> contentTuningReplacementConditionMask)
+LfgDungeonSet LFGMgr::GetRandomAndSeasonalDungeons(uint8 level, uint8 expansion)
 {
     LfgDungeonSet randomDungeons;
     for (lfg::LFGDungeonContainer::const_iterator itr = LfgDungeonStore.begin(); itr != LfgDungeonStore.end(); ++itr)
@@ -2212,9 +2240,8 @@ LfgDungeonSet LFGMgr::GetRandomAndSeasonalDungeons(uint8 level, uint8 expansion,
         if (dungeon.expansion > expansion)
             continue;
 
-        if (Optional<ContentTuningLevels> levels = sDB2Manager.GetContentTuningData(dungeon.contentTuningId, contentTuningReplacementConditionMask))
-            if (levels->MinLevel > level || level > levels->MaxLevel)
-                continue;
+        if (dungeon.minLevel > level || level > dungeon.maxLevel)
+            continue;
 
         randomDungeons.insert(dungeon.Entry());
     }

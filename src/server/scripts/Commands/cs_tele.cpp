@@ -44,7 +44,7 @@ class tele_commandscript : public CommandScript
 public:
     tele_commandscript() : CommandScript("tele_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable teleNameNpcCommandTable =
         {
@@ -249,9 +249,12 @@ public:
             return false;
         }
 
-        for (GroupReference const& itr : grp->GetMembers())
+        for (GroupReference* itr = grp->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* player = itr.GetSource();
+            Player* player = itr->GetSource();
+
+            if (!player || !player->GetSession())
+                continue;
 
             // check online security
             if (handler->HasLowerSecurity(player, ObjectGuid::Empty))

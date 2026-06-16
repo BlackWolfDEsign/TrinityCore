@@ -18,8 +18,6 @@
 #ifndef CHARACTERDATABASECLEANER_H
 #define CHARACTERDATABASECLEANER_H
 
-#include "Define.h"
-
 namespace CharacterDatabaseCleaner
 {
     enum CleaningFlags

@@ -28,10 +28,6 @@
 
 AreaTableEntry const* ChannelMgr::SpecialLinkedArea;
 
-ChannelMgr::ChannelMgr(Team team) : _team(team), _guidGenerator(HighGuid::ChatChannel)
-{
-}
-
 ChannelMgr::~ChannelMgr()
 {
     for (auto itr = _channels.begin(); itr != _channels.end(); ++itr)

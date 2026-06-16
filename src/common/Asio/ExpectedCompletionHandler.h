@@ -20,10 +20,9 @@
 
 #include <boost/asio/associated_executor.hpp>
 #include <boost/asio/async_result.hpp>
-#include <boost/asio/handler_continuation_hook.hpp>
+#include <boost/asio/detail/handler_cont_helpers.hpp>
 #include <boost/outcome/result.hpp>
 #include <boost/preprocessor/empty.hpp>
-#include <boost/preprocessor/comma.hpp>
 #include <type_traits>
 
 namespace Trinity::Asio
@@ -165,8 +164,7 @@ public:
 template <typename Handler>
 inline bool asio_handler_is_continuation(AsExpectedHandler<Handler>* this_handler)
 {
-    using boost::asio::asio_handler_is_continuation;
-    return asio_handler_is_continuation(std::addressof(this_handler->handler_));
+    return boost_asio_handler_cont_helpers::is_continuation(this_handler->handler_);
 }
 
 template <typename Signature>
@@ -195,8 +193,6 @@ STAMP_AS_EXPECTED_SIGNATURE(&&);
 STAMP_AS_EXPECTED_SIGNATURE(noexcept);
 STAMP_AS_EXPECTED_SIGNATURE(& noexcept);
 STAMP_AS_EXPECTED_SIGNATURE(&& noexcept);
-
-#undef STAMP_AS_EXPECTED_SIGNATURE
 
 } // namespace Impl
 }
@@ -233,7 +229,7 @@ public:
     static inline auto initiate(Initiation&& initiation, RawCompletionToken&& token, Args&&... args)
     {
         return async_initiate<
-            std::conditional_t<
+            conditional_t<
             is_const<remove_reference_t<RawCompletionToken>>::value,
             CompletionToken const, CompletionToken>,
             typename Trinity::Asio::Impl::AsExpectedSignature<Signatures>::type...>(
@@ -243,17 +239,11 @@ public:
     }
 };
 
-#if BOOST_VERSION >= 108600
-#define TRINITY_BOOST_ASIO_ASSOCIATOR_SFINAE_PARAM(param) param
-#else
-#define TRINITY_BOOST_ASIO_ASSOCIATOR_SFINAE_PARAM(param)
-#endif
-
-template <template <typename, typename> class Associator, typename Handler, typename DefaultCandidate TRINITY_BOOST_ASIO_ASSOCIATOR_SFINAE_PARAM(BOOST_PP_COMMA() typename _)>
+template <template <typename, typename> class Associator, typename Handler, typename DefaultCandidate, typename _>
 struct associator;
 
 template <template <typename, typename> class Associator, typename Handler, typename DefaultCandidate>
-struct associator<Associator, Trinity::Asio::Impl::AsExpectedHandler<Handler>, DefaultCandidate TRINITY_BOOST_ASIO_ASSOCIATOR_SFINAE_PARAM(BOOST_PP_COMMA() void)> : Associator<Handler, DefaultCandidate>
+struct associator<Associator, Trinity::Asio::Impl::AsExpectedHandler<Handler>, DefaultCandidate, void> : Associator<Handler, DefaultCandidate>
 {
     static inline auto get(Trinity::Asio::Impl::AsExpectedHandler<Handler> const& h) noexcept
     {
@@ -265,8 +255,6 @@ struct associator<Associator, Trinity::Asio::Impl::AsExpectedHandler<Handler>, D
         return Associator<Handler, DefaultCandidate>::get(h.handler_, c);
     }
 };
-
-#undef TRINITY_BOOST_ASIO_ASSOCIATOR_SFINAE_PARAM
 
 template <typename... Signatures>
 class async_result<Trinity::Asio::AsExpectedFn, Signatures...>
@@ -312,7 +300,7 @@ public:
     static inline auto initiate(Initiation&& initiation, RawCompletionToken&& token, Args&&... args)
     {
         return async_initiate<
-            std::conditional_t<
+            conditional_t<
             is_const<remove_reference_t<RawCompletionToken>>::value,
             CompletionToken const, CompletionToken>,
             typename Trinity::Asio::Impl::AsExpectedSignature<Signature>::type>(

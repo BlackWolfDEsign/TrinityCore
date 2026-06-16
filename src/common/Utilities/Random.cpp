@@ -21,15 +21,15 @@
 #include <memory>
 #include <random>
 
-namespace
-{
-constexpr RandomEngine engine;
+static thread_local std::unique_ptr<SFMTRand> sfmtRand;
+static RandomEngine engine;
 
-SFMTRand* GetRng() noexcept
+static SFMTRand* GetRng()
 {
-    thread_local std::unique_ptr<SFMTRand> sfmtRand = std::make_unique<SFMTRand>();
+    if (!sfmtRand)
+        sfmtRand = std::make_unique<SFMTRand>();
+
     return sfmtRand.get();
-}
 }
 
 int32 irand(int32 min, int32 max)
@@ -88,4 +88,9 @@ uint32 urandweighted(size_t count, double const* chances)
 {
     std::discrete_distribution<uint32> dd(chances, chances + count);
     return dd(engine);
+}
+
+RandomEngine& RandomEngine::Instance()
+{
+    return engine;
 }

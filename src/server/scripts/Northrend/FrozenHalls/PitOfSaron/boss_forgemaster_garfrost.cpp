@@ -221,9 +221,9 @@ struct boss_garfrost : public BossAI
                 case EVENT_FORGE_JUMP:
                     me->AttackStop();
                     if (events.IsInPhase(PHASE_TWO))
-                        me->GetMotionMaster()->MoveJump(POINT_FORGE, northForgePos, 40.0f);
+                        me->GetMotionMaster()->MoveJump(northForgePos, 25.0f, 15.0f, POINT_FORGE);
                     else if (events.IsInPhase(PHASE_THREE))
-                        me->GetMotionMaster()->MoveJump(POINT_FORGE, southForgePos, 40.0f);
+                        me->GetMotionMaster()->MoveJump(southForgePos, 25.0f, 15.0f, POINT_FORGE);
                     break;
                 case EVENT_RESUME_ATTACK:
                     if (events.IsInPhase(PHASE_TWO))

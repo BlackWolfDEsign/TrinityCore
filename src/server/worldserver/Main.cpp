@@ -49,6 +49,7 @@
 #include "TerrainMgr.h"
 #include "ThreadPool.h"
 #include "World.h"
+#include "WorldSocket.h"
 #include "WorldSocketMgr.h"
 #include "Util.h"
 #include <openssl/opensslv.h>
@@ -268,7 +269,7 @@ int main(int argc, char** argv)
     }
 
     // Set signal handlers (this must be done before starting IoContext threads, because otherwise they would unblock and exit)
-    boost::asio::basic_signal_set<Trinity::Asio::IoContext::Executor> signals(*ioContext, SIGINT, SIGTERM);
+    boost::asio::signal_set signals(*ioContext, SIGINT, SIGTERM);
 #if TRINITY_PLATFORM == TRINITY_PLATFORM_WINDOWS
     signals.add(SIGBREAK);
 #endif
@@ -284,7 +285,7 @@ int main(int argc, char** argv)
     for (int i = 0; i < numThreads; ++i)
         threadPool->PostWork([ioContext]() { ioContext->run(); });
 
-    auto signalsCancelHandle = Trinity::make_unique_ptr_with_deleter<[](auto* s) { boost::system::error_code ec; s->cancel(ec); }>(&signals);
+    auto ioContextStopHandle = Trinity::make_unique_ptr_with_deleter<&Trinity::Asio::IoContext::stop>(ioContext.get());
 
     // Set process priority according to configuration settings
     SetProcessPriority("server.worldserver", sConfigMgr->GetIntDefault(CONFIG_PROCESSOR_AFFINITY, 0), sConfigMgr->GetBoolDefault(CONFIG_HIGH_PRIORITY, false));
@@ -444,6 +445,10 @@ int main(int argc, char** argv)
     // Shutdown starts here
     WorldPackets::Auth::ConnectTo::ShutdownEncryption();
     WorldPackets::Auth::EnterEncryptedMode::ShutdownEncryption();
+
+    ioContextStopHandle.reset();
+
+    threadPool.reset();
 
     sLog->SetSynchronous();
 
@@ -632,14 +637,14 @@ std::unique_ptr<Trinity::Net::AsyncAcceptor> StartRaSocketAcceptor(Trinity::Asio
     if (!acceptor->Bind())
     {
         TC_LOG_ERROR("server.worldserver", "Failed to bind RA socket acceptor");
-        acceptor = nullptr;
-        return acceptor;
+        return nullptr;
     }
 
-    acceptor->AsyncAccept(
-        [&] { return &ioContext; },
-        [](Trinity::Net::IoContextTcpSocket&& sock) { std::make_shared<RASession>(std::move(sock))->Start(); });
+    acceptor->AsyncAccept([](Trinity::Net::IoContextTcpSocket&& sock, uint32 /*threadIndex*/)
+    {
+        std::make_shared<RASession>(std::move(sock))->Start();
 
+    });
     return acceptor;
 }
 
@@ -734,7 +739,7 @@ variables_map GetConsoleArguments(int argc, char** argv, fs::path& configFile, f
     return vm;
 }
 
-#if TRINITY_COMPILER_IS_MICROSOFT
+#if TRINITY_PLATFORM == TRINITY_PLATFORM_WINDOWS
 #include "WheatyExceptionReport.h"
 // must be at end of file because of init_seg pragma
 INIT_CRASH_HANDLER();

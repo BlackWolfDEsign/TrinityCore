@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_WORLD_STATE_PACKETS_H
-#define TRINITYCORE_WORLD_STATE_PACKETS_H
+#ifndef WorldStatePackets_h__
+#define WorldStatePackets_h__
 
 #include "Packet.h"
 
@@ -36,7 +36,7 @@ namespace WorldPackets
                 int32 Value;
             };
 
-            explicit InitWorldStates() : ServerPacket(SMSG_INIT_WORLD_STATES, 16) { }
+            InitWorldStates();
 
             WorldPacket const* Write() override;
 
@@ -50,7 +50,7 @@ namespace WorldPackets
         class UpdateWorldState final : public ServerPacket
         {
         public:
-            explicit UpdateWorldState() : ServerPacket(SMSG_UPDATE_WORLD_STATE, 4 + 1 + 4) { }
+            UpdateWorldState();
 
             WorldPacket const* Write() override;
 
@@ -61,4 +61,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_WORLD_STATE_PACKETS_H
+#endif // WorldStatePackets_h__

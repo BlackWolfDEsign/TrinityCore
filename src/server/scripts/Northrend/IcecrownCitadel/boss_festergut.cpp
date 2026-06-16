@@ -353,7 +353,7 @@ class spell_festergut_pungent_blight : public SpellScript
 
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->RemoveAurasDueToSpell(uint32(GetEffectValueAsInt()));
+        GetCaster()->RemoveAurasDueToSpell(uint32(GetEffectValue()));
         GetCaster()->ToCreature()->AI()->Talk(EMOTE_PUNGENT_BLIGHT);
     }
 

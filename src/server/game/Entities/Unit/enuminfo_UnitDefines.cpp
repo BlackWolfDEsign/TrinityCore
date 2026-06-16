@@ -44,7 +44,7 @@ TC_API_EXPORT EnumText EnumUtils<UnitFlags>::ToString(UnitFlags value)
         case UNIT_FLAG_LOOTING: return { "UNIT_FLAG_LOOTING", "UNIT_FLAG_LOOTING", "loot animation" };
         case UNIT_FLAG_PET_IN_COMBAT: return { "UNIT_FLAG_PET_IN_COMBAT", "UNIT_FLAG_PET_IN_COMBAT", "on player pets: whether the pet is chasing a target to attack || on other units: whether any of the unit's minions is in combat" };
         case UNIT_FLAG_PVP_ENABLING: return { "UNIT_FLAG_PVP_ENABLING", "UNIT_FLAG_PVP_ENABLING", "changed in 3.0.3, now UNIT_BYTES_2_OFFSET_PVP_FLAG from UNIT_FIELD_BYTES_2" };
-        case UNIT_FLAG_FORCE_NAMEPLATE: return { "UNIT_FLAG_FORCE_NAMEPLATE", "UNIT_FLAG_FORCE_NAMEPLATE", "Force show nameplate, 9.0" };
+        case UNIT_FLAG_SILENCED: return { "UNIT_FLAG_SILENCED", "UNIT_FLAG_SILENCED", "Silenced" };
         case UNIT_FLAG_CANT_SWIM: return { "UNIT_FLAG_CANT_SWIM", "Can't Swim", "" };
         case UNIT_FLAG_CAN_SWIM: return { "UNIT_FLAG_CAN_SWIM", "Can Swim", "shows swim animation in water" };
         case UNIT_FLAG_NON_ATTACKABLE_2: return { "UNIT_FLAG_NON_ATTACKABLE_2", "UNIT_FLAG_NON_ATTACKABLE_2", "removes attackable icon, if on yourself, cannot assist self but can cast TARGET_SELF spells - added by SPELL_AURA_MOD_UNATTACKABLE" };
@@ -88,7 +88,7 @@ TC_API_EXPORT UnitFlags EnumUtils<UnitFlags>::FromIndex(size_t index)
         case 10: return UNIT_FLAG_LOOTING;
         case 11: return UNIT_FLAG_PET_IN_COMBAT;
         case 12: return UNIT_FLAG_PVP_ENABLING;
-        case 13: return UNIT_FLAG_FORCE_NAMEPLATE;
+        case 13: return UNIT_FLAG_SILENCED;
         case 14: return UNIT_FLAG_CANT_SWIM;
         case 15: return UNIT_FLAG_CAN_SWIM;
         case 16: return UNIT_FLAG_NON_ATTACKABLE_2;
@@ -129,7 +129,7 @@ TC_API_EXPORT size_t EnumUtils<UnitFlags>::ToIndex(UnitFlags value)
         case UNIT_FLAG_LOOTING: return 10;
         case UNIT_FLAG_PET_IN_COMBAT: return 11;
         case UNIT_FLAG_PVP_ENABLING: return 12;
-        case UNIT_FLAG_FORCE_NAMEPLATE: return 13;
+        case UNIT_FLAG_SILENCED: return 13;
         case UNIT_FLAG_CANT_SWIM: return 14;
         case UNIT_FLAG_CAN_SWIM: return 15;
         case UNIT_FLAG_NON_ATTACKABLE_2: return 16;
@@ -565,14 +565,14 @@ TC_API_EXPORT EnumText EnumUtils<NPCFlags2>::ToString(NPCFlags2 value)
         case UNIT_NPC_FLAG_2_AZERITE_RESPEC: return { "UNIT_NPC_FLAG_2_AZERITE_RESPEC", "is azerite respec", "" };
         case UNIT_NPC_FLAG_2_ISLANDS_QUEUE: return { "UNIT_NPC_FLAG_2_ISLANDS_QUEUE", "is islands queue", "" };
         case UNIT_NPC_FLAG_2_SUPPRESS_NPC_SOUNDS_EXCEPT_END_OF_INTERACTION: return { "UNIT_NPC_FLAG_2_SUPPRESS_NPC_SOUNDS_EXCEPT_END_OF_INTERACTION", "UNIT_NPC_FLAG_2_SUPPRESS_NPC_SOUNDS_EXCEPT_END_OF_INTERACTION", "" };
-        case UNIT_NPC_FLAG_2_PERKS_VENDOR: return { "UNIT_NPC_FLAG_2_PERKS_VENDOR", "is trading post vendor", "" };
         case UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER: return { "UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER", "is personal tabard designer", "" };
+        case UNIT_NPC_FLAG_2_REFORGER: return { "UNIT_NPC_FLAG_2_REFORGER", "is reforger", "" };
         default: throw std::out_of_range("value");
     }
 }
 
 template <>
-TC_API_EXPORT size_t EnumUtils<NPCFlags2>::Count() { return 17; }
+TC_API_EXPORT size_t EnumUtils<NPCFlags2>::Count() { return 16; }
 
 template <>
 TC_API_EXPORT NPCFlags2 EnumUtils<NPCFlags2>::FromIndex(size_t index)
@@ -594,8 +594,8 @@ TC_API_EXPORT NPCFlags2 EnumUtils<NPCFlags2>::FromIndex(size_t index)
         case 12: return UNIT_NPC_FLAG_2_AZERITE_RESPEC;
         case 13: return UNIT_NPC_FLAG_2_ISLANDS_QUEUE;
         case 14: return UNIT_NPC_FLAG_2_SUPPRESS_NPC_SOUNDS_EXCEPT_END_OF_INTERACTION;
-        case 15: return UNIT_NPC_FLAG_2_PERKS_VENDOR;
-        case 16: return UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER;
+        case 15: return UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER;
+        case 16: return UNIT_NPC_FLAG_2_REFORGER;
         default: throw std::out_of_range("index");
     }
 }
@@ -620,8 +620,8 @@ TC_API_EXPORT size_t EnumUtils<NPCFlags2>::ToIndex(NPCFlags2 value)
         case UNIT_NPC_FLAG_2_AZERITE_RESPEC: return 12;
         case UNIT_NPC_FLAG_2_ISLANDS_QUEUE: return 13;
         case UNIT_NPC_FLAG_2_SUPPRESS_NPC_SOUNDS_EXCEPT_END_OF_INTERACTION: return 14;
-        case UNIT_NPC_FLAG_2_PERKS_VENDOR: return 15;
-        case UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER: return 16;
+        case UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER: return 15;
+        case UNIT_NPC_FLAG_2_REFORGER: return 16;
         default: throw std::out_of_range("value");
     }
 }
@@ -854,16 +854,12 @@ TC_API_EXPORT EnumText EnumUtils<MovementFlags3>::ToString(MovementFlags3 value)
         case MOVEMENTFLAG3_DISABLE_INERTIA: return { "MOVEMENTFLAG3_DISABLE_INERTIA", "MOVEMENTFLAG3_DISABLE_INERTIA", "" };
         case MOVEMENTFLAG3_CAN_ADV_FLY: return { "MOVEMENTFLAG3_CAN_ADV_FLY", "MOVEMENTFLAG3_CAN_ADV_FLY", "" };
         case MOVEMENTFLAG3_ADV_FLYING: return { "MOVEMENTFLAG3_ADV_FLYING", "MOVEMENTFLAG3_ADV_FLYING", "" };
-        case MOVEMENTFLAG3_CANNOT_SWIM: return { "MOVEMENTFLAG3_CANNOT_SWIM", "MOVEMENTFLAG3_CANNOT_SWIM", "" };
-        case MOVEMENTFLAG3_CAN_DRIVE: return { "MOVEMENTFLAG3_CAN_DRIVE", "MOVEMENTFLAG3_CAN_DRIVE", "" };
-        case MOVEMENTFLAG3_DRIVING_FORWARD: return { "MOVEMENTFLAG3_DRIVING_FORWARD", "MOVEMENTFLAG3_DRIVING_FORWARD", "" };
-        case MOVEMENTFLAG3_DRIVING_BACKWARD: return { "MOVEMENTFLAG3_DRIVING_BACKWARD", "MOVEMENTFLAG3_DRIVING_BACKWARD", "" };
         default: throw std::out_of_range("value");
     }
 }
 
 template <>
-TC_API_EXPORT size_t EnumUtils<MovementFlags3>::Count() { return 8; }
+TC_API_EXPORT size_t EnumUtils<MovementFlags3>::Count() { return 4; }
 
 template <>
 TC_API_EXPORT MovementFlags3 EnumUtils<MovementFlags3>::FromIndex(size_t index)
@@ -874,10 +870,6 @@ TC_API_EXPORT MovementFlags3 EnumUtils<MovementFlags3>::FromIndex(size_t index)
         case 1: return MOVEMENTFLAG3_DISABLE_INERTIA;
         case 2: return MOVEMENTFLAG3_CAN_ADV_FLY;
         case 3: return MOVEMENTFLAG3_ADV_FLYING;
-        case 4: return MOVEMENTFLAG3_CANNOT_SWIM;
-        case 5: return MOVEMENTFLAG3_CAN_DRIVE;
-        case 6: return MOVEMENTFLAG3_DRIVING_FORWARD;
-        case 7: return MOVEMENTFLAG3_DRIVING_BACKWARD;
         default: throw std::out_of_range("index");
     }
 }
@@ -891,10 +883,6 @@ TC_API_EXPORT size_t EnumUtils<MovementFlags3>::ToIndex(MovementFlags3 value)
         case MOVEMENTFLAG3_DISABLE_INERTIA: return 1;
         case MOVEMENTFLAG3_CAN_ADV_FLY: return 2;
         case MOVEMENTFLAG3_ADV_FLYING: return 3;
-        case MOVEMENTFLAG3_CANNOT_SWIM: return 4;
-        case MOVEMENTFLAG3_CAN_DRIVE: return 5;
-        case MOVEMENTFLAG3_DRIVING_FORWARD: return 6;
-        case MOVEMENTFLAG3_DRIVING_BACKWARD: return 7;
         default: throw std::out_of_range("value");
     }
 }

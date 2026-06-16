@@ -44,7 +44,7 @@ enum Yells
     YELL_ARCHIMONDE_INTRO = 8
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { RAGE_WINTERCHILL,   DATA_RAGEWINTERCHILL    },
     { ANETHERON,          DATA_ANETHERON          },
@@ -55,9 +55,10 @@ static constexpr ObjectData creatureData[] =
     { THRALL,             DATA_THRALL             },
     { TYRANDE,            DATA_TYRANDEWHISPERWIND },
     { NPC_CHANNEL_TARGET, DATA_CHANNEL_TARGET     },
+    { 0,                  0                       } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_RAGEWINTERCHILL, {{ 618 }} },
     { DATA_ANETHERON, {{ 619 }} },
@@ -82,7 +83,7 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDungeonEncounterData(encounters);
 
             RaidDamage = 0;

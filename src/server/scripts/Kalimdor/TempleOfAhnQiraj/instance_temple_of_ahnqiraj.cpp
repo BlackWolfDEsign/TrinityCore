@@ -26,7 +26,7 @@ EndScriptData */
 #include "InstanceScript.h"
 #include "temple_of_ahnqiraj.h"
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_VEM,       DATA_VEM       },
     { NPC_KRI,       DATA_KRI       },
@@ -34,17 +34,19 @@ static constexpr ObjectData creatureData[] =
     { NPC_VEKNILASH, DATA_VEKNILASH },
     { NPC_VISCIDUS,  DATA_VISCIDUS  },
     { NPC_SARTURA,   DATA_SARTURA   },
+    { 0,             0              } // END
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { AQ40_DOOR_1, DATA_SARTURA,       EncounterDoorBehavior::OpenWhenDone },
     { AQ40_DOOR_1, DATA_HUHURAN,       EncounterDoorBehavior::OpenWhenDone },
     { AQ40_DOOR_2, DATA_TWIN_EMPERORS, EncounterDoorBehavior::OpenWhenDone },
     { AQ40_DOOR_3, DATA_SKERAM,        EncounterDoorBehavior::OpenWhenDone },
+    { 0,           0,                  EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_SKERAM, {{ 709 }} },
     { DATA_SARTURA, {{ 711 }} },
@@ -72,7 +74,7 @@ class instance_temple_of_ahnqiraj : public InstanceMapScript
             instance_temple_of_ahnqiraj_InstanceMapScript(InstanceMap* map) : InstanceScript(map)
             {
                 SetHeaders(DataHeader);
-                LoadObjectData(creatureData, {});
+                LoadObjectData(creatureData, nullptr);
                 SetBossNumber(EncounterCount);
                 LoadDoorData(doorData);
                 LoadDungeonEncounterData(encounters);

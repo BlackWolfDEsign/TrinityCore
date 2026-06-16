@@ -17,14 +17,14 @@
 
 #include "ruby_sanctum.h"
 #include "AreaBoundary.h"
-#include "Creature.h"
 #include "CreatureAI.h"
 #include "GameObject.h"
 #include "InstanceScript.h"
 #include "Map.h"
 #include "ScriptMgr.h"
+#include "TemporarySummon.h"
 
-static constexpr Position HalionControllerSpawnPos = { 3156.037f, 533.2656f, 72.97205f, 0.0f };
+Position const HalionControllerSpawnPos = { 3156.037f, 533.2656f, 72.97205f, 0.0f };
 
 BossBoundaryData const boundaries =
 {
@@ -32,7 +32,7 @@ BossBoundaryData const boundaries =
     { DATA_HALION,             new CircleBoundary(Position(3156.037f, 533.2656f), 52.5f)         }
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_FIRE_FIELD,          DATA_BALTHARUS_THE_WARBORN, EncounterDoorBehavior::OpenWhenDone },
     { GO_FLAME_WALLS,         DATA_BALTHARUS_THE_WARBORN, EncounterDoorBehavior::OpenWhenDone },
@@ -40,9 +40,10 @@ static constexpr DoorData doorData[] =
     { GO_FLAME_WALLS,         DATA_GENERAL_ZARITHRIAN,    EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_FLAME_RING,          DATA_HALION,                EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_TWILIGHT_FLAME_RING, DATA_HALION,                EncounterDoorBehavior::OpenWhenNotInProgress },
+    { 0,                      0,                          EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_BALTHARUS_THE_WARBORN,             DATA_BALTHARUS_THE_WARBORN  },
     { NPC_BALTHARUS_THE_WARBORN_CLONE,       DATA_BALTHARUS_CLONE        },
@@ -55,9 +56,10 @@ static constexpr ObjectData creatureData[] =
     { NPC_ORB_CARRIER,                       DATA_ORB_CARRIER            },
     { NPC_ORB_ROTATION_FOCUS,                DATA_ORB_ROTATION_FOCUS     },
     { NPC_XERESTRASZA,                       DATA_XERESTRASZA            },
+    { 0,                                     0                           } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_FLAME_WALLS,           DATA_FLAME_WALLS            },
     { GO_BURNING_TREE_1,        DATA_BURNING_TREE_1         },
@@ -66,9 +68,10 @@ static constexpr ObjectData gameObjectData[] =
     { GO_BURNING_TREE_4,        DATA_BURNING_TREE_4         },
     { GO_FLAME_RING,            DATA_FLAME_RING             },
     { GO_TWILIGHT_FLAME_RING,   DATA_TWILIGHT_FLAME_RING    },
+    { 0,                        0                           } //END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_BALTHARUS_THE_WARBORN, {{ 1147 }} },
     { DATA_SAVIANA_RAGEFIRE, {{ 1149 }} },

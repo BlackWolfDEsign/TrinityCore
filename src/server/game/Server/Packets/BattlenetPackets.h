@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_BATTLENET_PACKETS_H
-#define TRINITYCORE_BATTLENET_PACKETS_H
+#ifndef BattlenetPackets_h__
+#define BattlenetPackets_h__
 
 #include "Packet.h"
 #include "BattlenetRpcErrorCodes.h"
@@ -40,7 +40,7 @@ namespace WorldPackets
         class Notification final : public ServerPacket
         {
         public:
-            explicit Notification() : ServerPacket(SMSG_BATTLENET_NOTIFICATION, 8 + 8 + 4 + 4) { }
+            Notification() : ServerPacket(SMSG_BATTLENET_NOTIFICATION, 8 + 8 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -51,7 +51,7 @@ namespace WorldPackets
         class Response final : public ServerPacket
         {
         public:
-            explicit Response() : ServerPacket(SMSG_BATTLENET_RESPONSE, 4 + 8 + 8 + 4 + 4) { }
+            Response() : ServerPacket(SMSG_BATTLENET_RESPONSE, 4 + 8 + 8 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -63,7 +63,7 @@ namespace WorldPackets
         class ConnectionStatus final : public ServerPacket
         {
         public:
-            explicit ConnectionStatus() : ServerPacket(SMSG_BATTLE_NET_CONNECTION_STATUS, 1) { }
+            ConnectionStatus() : ServerPacket(SMSG_BATTLE_NET_CONNECTION_STATUS, 1) { }
 
             WorldPacket const* Write() override;
 
@@ -74,7 +74,7 @@ namespace WorldPackets
         class ChangeRealmTicketResponse final : public ServerPacket
         {
         public:
-            explicit ChangeRealmTicketResponse() : ServerPacket(SMSG_CHANGE_REALM_TICKET_RESPONSE) { }
+            ChangeRealmTicketResponse() : ServerPacket(SMSG_CHANGE_REALM_TICKET_RESPONSE) { }
 
             WorldPacket const* Write() override;
 
@@ -86,7 +86,7 @@ namespace WorldPackets
         class Request final : public ClientPacket
         {
         public:
-            explicit Request(WorldPacket&& packet) : ClientPacket(CMSG_BATTLENET_REQUEST, std::move(packet)) { }
+            Request(WorldPacket&& packet) : ClientPacket(CMSG_BATTLENET_REQUEST, std::move(packet)) { }
 
             void Read() override;
 
@@ -97,7 +97,7 @@ namespace WorldPackets
         class ChangeRealmTicket final : public ClientPacket
         {
         public:
-            explicit ChangeRealmTicket(WorldPacket&& packet) : ClientPacket(CMSG_CHANGE_REALM_TICKET, std::move(packet)) { }
+            ChangeRealmTicket(WorldPacket&& packet) : ClientPacket(CMSG_CHANGE_REALM_TICKET, std::move(packet)) { }
 
             void Read() override;
 
@@ -107,4 +107,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_BATTLENET_PACKETS_H
+#endif // BattlenetPackets_h__

@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_WHO_PACKETS_H
-#define TRINITYCORE_WHO_PACKETS_H
+#ifndef WhoPackets_h__
+#define WhoPackets_h__
 
 #include "Packet.h"
 #include "ObjectGuid.h"
@@ -30,7 +30,7 @@ namespace WorldPackets
         class WhoIsRequest final : public ClientPacket
         {
         public:
-            explicit WhoIsRequest(WorldPacket&& packet) : ClientPacket(CMSG_WHO_IS, std::move(packet)) { }
+            WhoIsRequest(WorldPacket&& packet) : ClientPacket(CMSG_WHO_IS, std::move(packet)) { }
 
             void Read() override;
 
@@ -40,7 +40,7 @@ namespace WorldPackets
         class WhoIsResponse final : public ServerPacket
         {
         public:
-            explicit WhoIsResponse() : ServerPacket(SMSG_WHO_IS, 2) { }
+            WhoIsResponse() : ServerPacket(SMSG_WHO_IS, 2) { }
 
             WorldPacket const* Write() override;
 
@@ -54,7 +54,7 @@ namespace WorldPackets
 
         struct WhoRequestServerInfo
         {
-            uint8 FactionGroup = 0;
+            int32 FactionGroup = 0;
             int32 Locale = 0;
             uint32 RequesterVirtualRealmAddress = 0;
         };
@@ -67,7 +67,7 @@ namespace WorldPackets
             std::string VirtualRealmName;
             std::string Guild;
             std::string GuildVirtualRealmName;
-            Trinity::RaceMask<std::array<int32, 2>> RaceFilter = { 0, 0 };
+            Trinity::RaceMask<int64> RaceFilter = { SI64LIT(0) };
             int32 ClassFilter = -1;
             std::vector<WhoWord> Words;
             bool ShowEnemies = false;
@@ -79,14 +79,14 @@ namespace WorldPackets
         class WhoRequestPkt final : public ClientPacket
         {
         public:
-            explicit WhoRequestPkt(WorldPacket&& packet) : ClientPacket(CMSG_WHO, std::move(packet)) { }
+            WhoRequestPkt(WorldPacket&& packet) : ClientPacket(CMSG_WHO, std::move(packet)) { }
 
             void Read() override;
 
             WhoRequest Request;
-            uint32 Token = 0;
+            uint32 RequestID = 0;
             uint8 Origin = 0;   // 1 = Social, 2 = Chat, 3 = Item
-            bool IsAddon = false;
+            bool IsFromAddOn = false;
             Array<int32, 10> Areas;
         };
 
@@ -108,14 +108,14 @@ namespace WorldPackets
         class WhoResponsePkt final : public ServerPacket
         {
         public:
-            explicit WhoResponsePkt() : ServerPacket(SMSG_WHO, 1) { }
+            WhoResponsePkt() : ServerPacket(SMSG_WHO, 1) { }
 
             WorldPacket const* Write() override;
 
-            uint32 Token = 0;
+            uint32 RequestID = 0;
             WhoResponse Response;
         };
     }
 }
 
-#endif // TRINITYCORE_WHO_PACKETS_H
+#endif // WhoPackets_h__

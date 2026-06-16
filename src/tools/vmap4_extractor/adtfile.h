@@ -19,8 +19,8 @@
 #define ADT_H
 
 #include "cascfile.h"
-#include "vec3d.h"
-#include <vector>
+#include "wmo.h"
+#include "model.h"
 
 #pragma pack(push, 1)
 namespace ADT
@@ -72,7 +72,10 @@ public:
     bool initFromCache(uint32 map_num, uint32 originalMapId);
 };
 
-std::string_view GetPlainName(std::string_view fileName);
-void NormalizeFileName(std::string& fileName);
+char const* GetPlainName(char const* FileName);
+char* GetPlainName(char* FileName);
+char* GetExtension(char* FileName);
+void NormalizeFileName(char* name, size_t len);
+//void fixMapNamen(char *name, size_t len);
 
 #endif

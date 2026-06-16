@@ -16,7 +16,6 @@
  */
 
 #include "ChatCommand.h"
-#include "Containers.h"
 #include "CreatureAIImpl.h"
 #include "DatabaseEnv.h"
 #include "DB2Stores.h"
@@ -27,20 +26,13 @@
 #include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
+#include "Player.h"
 #include "ScriptMgr.h"
+#include "ScriptedCreature.h"
 #include "ScriptedEscortAI.h"
 #include "ScriptedGossip.h"
 #include "SpellAuraEffects.h"
 #include "SpellMgr.h"
 #include "SpellScript.h"
-#include "TemporarySummon.h"
-
-#include "Battleground.h"
-#include "Group.h"
-#include "MoveSplineInit.h"
-#include "CellImpl.h"
-#include "SpellHistory.h"
-#include "World.h"
-#include "AreaBoundary.h"
-#include "PathGenerator.h"
-#include "Vehicle.h"
+#include "StringFormat.h"
+#include <sstream>

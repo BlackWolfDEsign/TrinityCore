@@ -16,16 +16,14 @@
  */
 
 #include "CombatPackets.h"
-#include "PacketOperators.h"
+#include "Unit.h"
 
-namespace WorldPackets::Combat
-{
-void AttackSwing::Read()
+void WorldPackets::Combat::AttackSwing::Read()
 {
     _worldPacket >> Victim;
 }
 
-WorldPacket const* AttackStart::Write()
+WorldPacket const* WorldPackets::Combat::AttackStart::Write()
 {
     _worldPacket << Attacker;
     _worldPacket << Victim;
@@ -33,21 +31,31 @@ WorldPacket const* AttackStart::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SAttackStop::Write()
+WorldPackets::Combat::SAttackStop::SAttackStop(Unit const* attacker, Unit const* victim) : ServerPacket(SMSG_ATTACK_STOP, 16 + 16 + 1)
+{
+    Attacker = attacker->GetGUID();
+    if (victim)
+    {
+        Victim = victim->GetGUID();
+        NowDead = !victim->IsAlive(); // using isAlive instead of isDead to catch JUST_DIED death states as well
+    }
+}
+
+WorldPacket const* WorldPackets::Combat::SAttackStop::Write()
 {
     _worldPacket << Attacker;
     _worldPacket << Victim;
-    _worldPacket << Bits<1>(NowDead);
+    _worldPacket.WriteBit(NowDead);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* ThreatUpdate::Write()
+WorldPacket const* WorldPackets::Combat::ThreatUpdate::Write()
 {
     _worldPacket << UnitGUID;
-    _worldPacket << Size<uint32>(ThreatList);
-    for (ThreatInfo const& threatInfo : ThreatList)
+    _worldPacket << int32(ThreatList.size());
+    for (WorldPackets::Combat::ThreatInfo const& threatInfo : ThreatList)
     {
         _worldPacket << threatInfo.UnitGUID;
         _worldPacket << int64(threatInfo.Threat);
@@ -56,12 +64,12 @@ WorldPacket const* ThreatUpdate::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* HighestThreatUpdate::Write()
+WorldPacket const* WorldPackets::Combat::HighestThreatUpdate::Write()
 {
     _worldPacket << UnitGUID;
     _worldPacket << HighestThreatGUID;
-    _worldPacket << Size<uint32>(ThreatList);
-    for (ThreatInfo const& threatInfo : ThreatList)
+    _worldPacket << int32(ThreatList.size());
+    for (WorldPackets::Combat::ThreatInfo const& threatInfo : ThreatList)
     {
         _worldPacket << threatInfo.UnitGUID;
         _worldPacket << int64(threatInfo.Threat);
@@ -70,7 +78,7 @@ WorldPacket const* HighestThreatUpdate::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* ThreatRemove::Write()
+WorldPacket const* WorldPackets::Combat::ThreatRemove::Write()
 {
     _worldPacket << UnitGUID;
     _worldPacket << AboutGUID;
@@ -78,7 +86,7 @@ WorldPacket const* ThreatRemove::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* AIReaction::Write()
+WorldPacket const* WorldPackets::Combat::AIReaction::Write()
 {
     _worldPacket << UnitGUID;
     _worldPacket << Reaction;
@@ -86,18 +94,17 @@ WorldPacket const* AIReaction::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* AttackSwingError::Write()
+WorldPacket const* WorldPackets::Combat::AttackSwingError::Write()
 {
-    _worldPacket << Bits<3>(Reason);
+    _worldPacket.WriteBits(AsUnderlyingType(Reason), 3);
     _worldPacket.FlushBits();
-
     return &_worldPacket;
 }
 
-WorldPacket const* PowerUpdate::Write()
+WorldPacket const* WorldPackets::Combat::PowerUpdate::Write()
 {
     _worldPacket << Guid;
-    _worldPacket << Size<uint32>(Powers);
+    _worldPacket << uint32(Powers.size());
     for (PowerUpdatePower const& power : Powers)
     {
         _worldPacket << uint8(power.PowerType);
@@ -107,27 +114,27 @@ WorldPacket const* PowerUpdate::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* InterruptPowerRegen::Write()
+WorldPacket const* WorldPackets::Combat::InterruptPowerRegen::Write()
 {
     _worldPacket << int8(PowerType);
 
     return &_worldPacket;
 }
 
-void SetSheathed::Read()
+void WorldPackets::Combat::SetSheathed::Read()
 {
     _worldPacket >> CurrentSheathState;
-    _worldPacket >> Bits<1>(Animate);
+    Animate = _worldPacket.ReadBit();
 }
 
-WorldPacket const* CancelAutoRepeat::Write()
+WorldPacket const* WorldPackets::Combat::CancelAutoRepeat::Write()
 {
     _worldPacket << Guid;
 
     return &_worldPacket;
 }
 
-WorldPacket const* HealthUpdate::Write()
+WorldPacket const* WorldPackets::Combat::HealthUpdate::Write()
 {
     _worldPacket << Guid;
     _worldPacket << int64(Health);
@@ -135,27 +142,25 @@ WorldPacket const* HealthUpdate::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* ThreatClear::Write()
+WorldPacket const* WorldPackets::Combat::ThreatClear::Write()
 {
     _worldPacket << UnitGUID;
-
     return &_worldPacket;
 }
 
-WorldPacket const* PvPCredit::Write()
+WorldPacket const* WorldPackets::Combat::PvPCredit::Write()
 {
     _worldPacket << int32(OriginalHonor);
     _worldPacket << int32(Honor);
     _worldPacket << Target;
-    _worldPacket << int8(Rank);
+    _worldPacket << int32(Rank);
 
     return &_worldPacket;
 }
 
-WorldPacket const* BreakTarget::Write()
+WorldPacket const* WorldPackets::Combat::BreakTarget::Write()
 {
     _worldPacket << UnitGUID;
 
     return &_worldPacket;
-}
 }

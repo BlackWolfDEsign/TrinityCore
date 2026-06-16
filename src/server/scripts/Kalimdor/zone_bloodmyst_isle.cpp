@@ -429,8 +429,7 @@ public:
                             _phase = PHASE_PLANT_FIRST_WORK;
                             break;
                         case PHASE_PLANT_FIRST_WORK: // plant first explosives stage 2 work
-                            if (Player* player = GetPlayerForEscort())
-                                Talk(SAY_LEGOSO_4, player);
+                            Talk(SAY_LEGOSO_4);
                             _moveTimer = 17.5 * AsUnderlyingType(IN_MILLISECONDS);
                             _phase = PHASE_PLANT_FIRST_FINISH;
                             break;
@@ -495,8 +494,7 @@ public:
                             _phase = PHASE_FEEL_SIRONAS_2;
                             break;
                         case PHASE_FEEL_SIRONAS_2: // legoso exclamation before sironas 1.2
-                            if (Player* player = GetPlayerForEscort())
-                                Talk(SAY_LEGOSO_11, player);
+                            Talk(SAY_LEGOSO_11);
                             _moveTimer = 4 * IN_MILLISECONDS;
                             _phase = PHASE_CONTINUE;
                             break;
@@ -538,8 +536,7 @@ public:
                                 if (GameObject* explosive = me->SummonGameObject(GO_DRAENEI_EXPLOSIVES_2, ExplosivesPos[1][i], QuaternionData::fromEulerAnglesZYX(ExplosivesPos[1][i].GetOrientation(), 0.0f, 0.0f), 0s))
                                     _explosivesGuids.push_back(explosive->GetGUID());
                             }
-                            if (Player* player = GetPlayerForEscort())
-                                Talk(SAY_LEGOSO_15, player);
+                            Talk(SAY_LEGOSO_15);
                             _moveTimer = 1 * IN_MILLISECONDS;
                             _phase = PHASE_PLANT_SECOND_WAIT;
                             break;
@@ -652,7 +649,7 @@ public:
                 case WP_START:
                     SetEscortPaused(true);
                     me->SetFacingToObject(player);
-                    Talk(SAY_LEGOSO_1, player);
+                    Talk(SAY_LEGOSO_1);
                     _moveTimer = 2.5 * AsUnderlyingType(IN_MILLISECONDS);
                     _phase = PHASE_CONTINUE;
                     break;
@@ -805,7 +802,7 @@ class spell_free_webbed_on_quest : public SpellScript
         Unit* caster = GetCaster();
         Unit* target = GetHitUnit();
 
-        if (roll_chance(66))
+        if (roll_chance_i(66))
             caster->CastSpell(caster, Trinity::Containers::SelectRandomContainerElement(CocoonSummonSpells), true);
         else
             target->CastSpell(caster, SPELL_FREE_WEBBED_11, true);

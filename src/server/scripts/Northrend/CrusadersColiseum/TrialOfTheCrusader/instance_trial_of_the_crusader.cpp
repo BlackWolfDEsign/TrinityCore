@@ -23,11 +23,12 @@
 #include "Map.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
+#include "TemporarySummon.h"
 #include "trial_of_the_crusader.h"
 
  // ToDo: Remove magic numbers of events
 
-static BossBoundaryData const boundaries =
+BossBoundaryData const boundaries =
 {
     { DATA_NORTHREND_BEASTS,  new CircleBoundary(Position(563.26f, 139.6f), 75.0f)         },
     { DATA_JARAXXUS,          new CircleBoundary(Position(563.26f, 139.6f), 75.0f)         },
@@ -36,7 +37,7 @@ static BossBoundaryData const boundaries =
     { DATA_ANUBARAK,          new EllipseBoundary(Position(746.0f, 135.0f), 100.0f, 75.0f) }
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_GORMOK,                   DATA_GORMOK_THE_IMPALER    },
     { NPC_ACIDMAW,                  DATA_ACIDMAW               },
@@ -56,9 +57,10 @@ static constexpr ObjectData creatureData[] =
     { NPC_GARROSH,                  DATA_GARROSH               },
     { NPC_FIZZLEBANG,               DATA_FIZZLEBANG            },
     { NPC_LICH_KING_VOICE,          DATA_LICH_KING_VOICE       },
+    { 0,                            0                          } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_CRUSADERS_CACHE_10,    DATA_CRUSADERS_CHEST },
     { GO_CRUSADERS_CACHE_25,    DATA_CRUSADERS_CHEST },
@@ -76,9 +78,10 @@ static constexpr ObjectData gameObjectData[] =
     { GO_TRIBUTE_CHEST_25H_45,  DATA_TRIBUTE_CHEST   },
     { GO_TRIBUTE_CHEST_25H_50,  DATA_TRIBUTE_CHEST   },
     { GO_TRIBUTE_CHEST_25H_99,  DATA_TRIBUTE_CHEST   },
+    { 0,                        0                    } // END
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_EAST_PORTCULLIS, DATA_NORTHREND_BEASTS,  EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_EAST_PORTCULLIS, DATA_JARAXXUS,          EncounterDoorBehavior::OpenWhenNotInProgress },
@@ -86,9 +89,10 @@ static constexpr DoorData doorData[] =
     { GO_EAST_PORTCULLIS, DATA_TWIN_VALKIRIES,    EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_EAST_PORTCULLIS, DATA_LICH_KING,         EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_WEB_DOOR,        DATA_ANUBARAK,          EncounterDoorBehavior::OpenWhenNotInProgress },
+    { 0,                  0,                      EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_NORTHREND_BEASTS, {{ 1088 }} },
     { DATA_JARAXXUS, {{ 1087 }} },

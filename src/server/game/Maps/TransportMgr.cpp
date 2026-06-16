@@ -22,6 +22,8 @@
 #include "Log.h"
 #include "Map.h"
 #include "MapUtils.h"
+#include "MoveSplineInitArgs.h"
+#include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "PhasingHandler.h"
 #include "Spline.h"
@@ -172,12 +174,8 @@ double TransportTemplate::CalculateDistanceMoved(double timePassedInSegment, dou
     }
 }
 
-TransportAnimation::TransportAnimation() = default;
-TransportAnimation::~TransportAnimation() = default;
-TransportAnimation::TransportAnimation(TransportAnimation&&) noexcept = default;
-TransportAnimation& TransportAnimation::operator=(TransportAnimation&&) noexcept = default;
-
 TransportMgr::TransportMgr() = default;
+
 TransportMgr::~TransportMgr() = default;
 
 TransportMgr* TransportMgr::instance()
@@ -224,6 +222,29 @@ void TransportMgr::LoadTransportTemplates()
 
         if (!goInfo->moTransport.taxiPathID)
             continue;
+
+        if (!sTaxiPathStore.LookupEntry(goInfo->moTransport.taxiPathID))
+        {
+            TC_LOG_ERROR("sql.sql", "Transport {} (name: {}) has an invalid path specified in `gameobject_template`.`Data0` ({}) field, skipped.", entry, goInfo->name.c_str(), goInfo->moTransport.taxiPathID);
+            continue;
+        }
+
+        bool hasValidMaps = true;
+        for (uint32 mapId : _transportTemplates[entry].MapIds)
+        {
+            if (!sMapStore.LookupEntry(mapId))
+            {
+                hasValidMaps = false;
+                break;
+            }
+        }
+
+        if (!hasValidMaps)
+        {
+            TC_LOG_ERROR("sql.sql", "Transport {} (name: {}) is trying to spawn on a map which does not exist, skipped.", entry, goInfo->name.c_str());
+            _transportTemplates.erase(entry);
+            continue;
+        }
 
         // paths are generated per template, saves us from generating it again in case of instanced transports
         TransportTemplate& transport = _transportTemplates[entry];
@@ -329,27 +350,29 @@ void TransportMgr::LoadTransportSpawns()
 class SplineRawInitializer
 {
 public:
-    SplineRawInitializer(std::vector<TaxiPathNodeEntry const*> const& points) : _points(points) { }
+    SplineRawInitializer(Movement::PointsArray& points) : _points(points) { }
 
-    void operator()(uint8& mode, bool& cyclic, std::vector<Movement::Vector3>& points, int& lo, int& hi) const
+    void operator()(uint8& mode, bool& cyclic, Movement::PointsArray& points, int& lo, int& hi) const
     {
         mode = Movement::SplineBase::ModeCatmullrom;
         cyclic = false;
-        points.resize(_points.size());
-        std::ranges::transform(_points, points.begin(), [](TaxiPathNodeEntry const* node) { return Movement::Vector3(node->Loc.X, node->Loc.Y, node->Loc.Z); });
+        points.assign(_points.begin(), _points.end());
         lo = 1;
         hi = points.size() - 2;
     }
 
-    std::vector<TaxiPathNodeEntry const*> const& _points;
+    Movement::PointsArray& _points;
 };
 
 static void InitializeLeg(TransportPathLeg* leg, std::vector<TransportPathEvent>* outEvents, std::vector<TaxiPathNodeEntry const*> const& pathPoints, std::vector<TaxiPathNodeEntry const*> const& pauses,
     std::vector<TaxiPathNodeEntry const*> const& events, GameObjectTemplate const* goInfo, uint32& totalTime)
 {
+    Movement::PointsArray splinePath;
+    std::transform(pathPoints.begin(), pathPoints.end(), std::back_inserter(splinePath), [](TaxiPathNodeEntry const* node) { return Movement::Vector3(node->Loc.X, node->Loc.Y, node->Loc.Z); });
+    SplineRawInitializer initer(splinePath);
     leg->Spline = std::make_unique<TransportSpline>();
     leg->Spline->set_steps_per_segment(20);
-    leg->Spline->init_spline_custom(SplineRawInitializer(pathPoints));
+    leg->Spline->init_spline_custom(initer);
     leg->Spline->initLengths();
 
     leg->Segments.resize(pauses.size() + 1);
@@ -507,9 +530,6 @@ void TransportMgr::GeneratePath(GameObjectTemplate const* goInfo, TransportTempl
     {
         if (node->ContinentID != leg->MapId || prevNodeWasTeleport)
         {
-            if (prevNodeWasTeleport && !pathPoints.empty())
-                pathPoints.push_back(pathPoints.back());
-
             InitializeLeg(leg, &transport->Events, pathPoints, pauses, events, goInfo, totalTime);
 
             leg = &transport->PathLegs.emplace_back();
@@ -520,13 +540,13 @@ void TransportMgr::GeneratePath(GameObjectTemplate const* goInfo, TransportTempl
         }
 
         prevNodeWasTeleport = (node->Flags & TAXI_PATH_NODE_FLAG_TELEPORT) != 0;
-        if (!pathPoints.empty() && node->Flags & TAXI_PATH_NODE_FLAG_STOP)
+        pathPoints.push_back(node);
+        if (node->Flags & TAXI_PATH_NODE_FLAG_STOP)
             pauses.push_back(node);
 
         if (node->ArrivalEventID || node->DepartureEventID)
             events.push_back(node);
 
-        pathPoints.push_back(node);
         transport->MapIds.insert(node->ContinentID);
     }
 

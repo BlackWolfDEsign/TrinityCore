@@ -16,62 +16,30 @@
  */
 
 #include "BankPackets.h"
-#include "PacketOperators.h"
+#include "DBCEnums.h"
 
-namespace WorldPackets::Bank
+void WorldPackets::Bank::AutoBankItem::Read()
 {
-void AutoBankItem::Read()
-{
-    _worldPacket >> Inv;
-    _worldPacket >> As<uint8>(BankType);
-    _worldPacket >> Bag;
-    _worldPacket >> Slot;
+    _worldPacket >> Inv
+                 >> As<int8>(BankType)
+                 >> Bag
+                 >> Slot;
 }
 
-void AutoStoreBankItem::Read()
+void WorldPackets::Bank::AutoStoreBankItem::Read()
 {
-    _worldPacket >> Inv;
-    _worldPacket >> Bag;
-    _worldPacket >> Slot;
+    _worldPacket >> Inv
+                 >> Bag
+                 >> Slot;
 }
 
-void BuyBankTab::Read()
+void WorldPackets::Bank::BuyBankSlot::Read()
 {
-    _worldPacket >> Banker;
-    _worldPacket >> As<uint8>(BankType);
+    _worldPacket >> Guid;
 }
 
-void AutoDepositCharacterBank::Read()
-{
-    _worldPacket >> Banker;
-}
-
-void BankerActivate::Read()
+void WorldPackets::Bank::BankerActivate::Read()
 {
     _worldPacket >> Banker;
     _worldPacket >> As<int32>(InteractionType);
-}
-
-ByteBuffer& operator>>(ByteBuffer& data, BankTabSettings& settings)
-{
-    data.ResetBitPos();
-    data >> SizedString::BitsSize<7>(settings.Name);
-    data >> SizedString::BitsSize<9>(settings.Icon);
-    data >> SizedString::BitsSize<14>(settings.Description);
-    data >> As<int32>(settings.DepositFlags);
-
-    data >> SizedString::Data(settings.Name);
-    data >> SizedString::Data(settings.Icon);
-    data >> SizedString::Data(settings.Description);
-
-    return data;
-}
-
-void UpdateBankTabSettings::Read()
-{
-    _worldPacket >> Banker;
-    _worldPacket >> As<uint8>(BankType);
-    _worldPacket >> Tab;
-    _worldPacket >> Settings;
-}
 }

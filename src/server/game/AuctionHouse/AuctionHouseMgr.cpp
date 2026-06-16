@@ -56,12 +56,12 @@ AuctionsBucketKey::AuctionsBucketKey(WorldPackets::AuctionHouse::AuctionBucketKe
 
 std::size_t AuctionsBucketKey::Hash(AuctionsBucketKey const& key)
 {
-    Trinity::HashFnv1a<> hash;
-    hash.UpdateData(key.ItemId);
-    hash.UpdateData(key.ItemLevel);
-    hash.UpdateData(key.BattlePetSpeciesId);
-    hash.UpdateData(key.SuffixItemNameDescriptionId);
-    return hash.Value;
+    std::size_t hashVal = 0;
+    Trinity::hash_combine(hashVal, std::hash<uint32>()(key.ItemId));
+    Trinity::hash_combine(hashVal, std::hash<uint16>()(key.ItemLevel));
+    Trinity::hash_combine(hashVal, std::hash<uint16>()(key.BattlePetSpeciesId));
+    Trinity::hash_combine(hashVal, std::hash<uint16>()(key.SuffixItemNameDescriptionId));
+    return hashVal;
 }
 
 AuctionsBucketKey AuctionsBucketKey::ForItem(Item const* item)
@@ -72,7 +72,7 @@ AuctionsBucketKey AuctionsBucketKey::ForItem(Item const* item)
         return
         {
             item->GetEntry(),
-            uint16(Item::GetItemLevel(itemTemplate, *item->GetBonus(), 0, item->GetRequiredLevel(), 0, 0, 0, false, 0)),
+            uint16(Item::GetItemLevel(itemTemplate, *item->GetBonus(), 0, item->GetRequiredLevel(), 0, 0, 0, false)),
             uint16(item->GetModifier(ITEM_MODIFIER_BATTLE_PET_SPECIES_ID)),
             uint16(item->GetBonus()->Suffix)
         };
@@ -353,7 +353,7 @@ public:
 
     void AddItem(T const* item)
     {
-        auto where = std::ranges::lower_bound(_items, item, std::cref(_sorter));
+        auto where = std::lower_bound(_items.begin(), _items.end(), item, std::cref(_sorter));
 
         _items.insert(where, item);
         if (_items.size() > _maxResults + _offset)
@@ -363,9 +363,9 @@ public:
         }
     }
 
-    std::span<T const* const> GetResultRange() const
+    Trinity::IteratorPair<typename std::vector<T const*>::const_iterator> GetResultRange() const
     {
-        return std::span(_items.begin() + _offset, _items.end());
+        return Trinity::Containers::MakeIteratorPair(_items.begin() + _offset, _items.end());
     }
 
     bool HasMoreResults() const
@@ -441,13 +441,23 @@ Item* AuctionHouseMgr::GetAItem(ObjectGuid itemGuid)
 uint64 AuctionHouseMgr::GetCommodityAuctionDeposit(ItemTemplate const* item, Minutes time, uint32 quantity)
 {
     uint32 sellPrice = item->GetSellPrice();
-    return uint64(std::ceil(std::floor(fmax(0.15 * quantity * sellPrice, 100.0)) / int64(SILVER)) * int64(SILVER)) * (time.count() / (MIN_AUCTION_TIME / MINUTE));
+    uint64 deposit = uint64(sellPrice * 0.15); // rounding off the remainder
+    uint32 remainder = std::ceil(sellPrice * 0.15 - deposit); // and subtracting a ceiled remainder on top of it
+    if (deposit >= remainder)
+        deposit -= remainder;
+
+    return uint64(deposit * quantity) * (time.count() / (MIN_AUCTION_TIME / MINUTE));
 }
 
 uint64 AuctionHouseMgr::GetItemAuctionDeposit(Player const* player, Item const* item, Minutes time)
 {
     uint32 sellPrice = item->GetSellPrice(player);
-    return uint64(std::ceil(std::floor(fmax(sellPrice * 0.15, 100.0)) / int64(SILVER)) * int64(SILVER)) * (time.count() / (MIN_AUCTION_TIME / MINUTE));
+    uint64 deposit = uint64(sellPrice * 0.15); // rounding off the remainder
+    uint32 remainder = std::ceil(sellPrice * 0.15 - deposit); // and subtracting a ceiled remainder on top of it
+    if (deposit >= remainder)
+        deposit -= remainder;
+
+    return deposit * (time.count() / (MIN_AUCTION_TIME / MINUTE));
 }
 
 std::string AuctionHouseMgr::BuildItemAuctionMailSubject(AuctionMailType type, AuctionPosting const* auction)
@@ -518,12 +528,12 @@ void AuctionHouseMgr::LoadAuctions()
             }
 
             Item* item = NewItemOrBag(proto);
-            if (!item->LoadFromDB(itemGuid, ObjectGuid::Create<HighGuid::Player>(fields[52].GetUInt64()), fields, itemEntry))
+            if (!item->LoadFromDB(itemGuid, ObjectGuid::Create<HighGuid::Player>(fields[54].GetUInt64()), fields, itemEntry))
             {
                 delete item;
                 continue;
             }
-            uint32 auctionId = fields[53].GetUInt32();
+            uint32 auctionId = fields[55].GetUInt32();
             itemsByAuction[auctionId].push_back(item);
 
             ++count;
@@ -1146,8 +1156,9 @@ void AuctionHouseObject::BuildListBuckets(WorldPackets::AuctionHouse::AuctionLis
     if (filters.HasFlag(AuctionHouseFilterMask::UncollectedOnly))
     {
         knownAppearanceIds = player->GetSession()->GetCollectionMgr()->GetAppearanceIds();
-        knownPetSpecies.resize(std::max(knownPetSpecies.size() * 32, std::size_t(sBattlePetSpeciesStore.GetNumRows())));
-        boost::from_block_range(knownPetBits.begin(), knownPetBits.end(), knownPetSpecies);
+        knownPetSpecies.init_from_block_range(knownPetBits.begin(), knownPetBits.end());
+        if (knownPetSpecies.size() < sBattlePetSpeciesStore.GetNumRows())
+            knownPetSpecies.resize(sBattlePetSpeciesStore.GetNumRows());
     }
 
     AuctionsResultBuilder<AuctionsBucketData> builder(offset, player->GetSession()->GetSessionDbcLocale(), sorts, AuctionHouseResultLimits::Browse);
@@ -1364,9 +1375,9 @@ void AuctionHouseObject::BuildListAuctionItems(WorldPackets::AuctionHouse::Aucti
 {
     AuctionsResultBuilder<AuctionPosting> builder(offset, player->GetSession()->GetSessionDbcLocale(), sorts, AuctionHouseResultLimits::Items);
     auto itr = _buckets.lower_bound(AuctionsBucketKey(itemId, 0, 0, 0));
-    auto end = _buckets.end();
+    auto end = _buckets.lower_bound(AuctionsBucketKey(itemId + 1, 0, 0, 0));
     listItemsResult.TotalCount = 0;
-    while (itr != end && itr->first.ItemId == itemId)
+    while (itr != end)
     {
         for (AuctionPosting const* auction : itr->second.Auctions)
         {

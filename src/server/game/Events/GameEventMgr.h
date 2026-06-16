@@ -22,7 +22,6 @@
 #include "SharedDefines.h"
 #include "Define.h"
 #include "ObjectGuid.h"
-#include "Optional.h"
 #include <list>
 #include <map>
 #include <set>
@@ -69,7 +68,6 @@ struct GameEventData
     uint32 length;          // length of the event (minutes) after finishing all conditions
     HolidayIds holiday_id;
     uint8 holidayStage;
-    Optional<int32> WorldStateId;
     GameEventState state;   // state of the game event, these are saved into the game_event table on change!
     GameEventConditionMap conditions;  // conditions to finish
     std::set<uint16 /*gameevent id*/> prerequisite_events;  // events that must be completed before starting this event
@@ -99,11 +97,6 @@ class TC_GAME_API GameEventMgr
         ~GameEventMgr();
 
     public:
-        GameEventMgr(GameEventMgr const&) = delete;
-        GameEventMgr(GameEventMgr&&) = delete;
-        GameEventMgr& operator=(GameEventMgr const&) = delete;
-        GameEventMgr& operator=(GameEventMgr&&) = delete;
-
         static GameEventMgr* instance();
 
         typedef std::set<uint16> ActiveEvents;
@@ -114,7 +107,7 @@ class TC_GAME_API GameEventMgr
         uint32 NextCheck(uint16 entry) const;
         void LoadFromDB();
         uint32 Update();
-        bool IsActiveEvent(uint16 event_id) const { return (m_ActiveEvents.contains(event_id)); }
+        bool IsActiveEvent(uint16 event_id) { return (m_ActiveEvents.find(event_id) != m_ActiveEvents.end()); }
         uint32 StartSystem();
         void Initialize();
         void StartArenaSeason();
@@ -126,8 +119,8 @@ class TC_GAME_API GameEventMgr
 
     private:
         void SendWorldStateUpdate(Player* player, uint16 event_id);
-        void AddActiveEvent(uint16 event_id);
-        void RemoveActiveEvent(uint16 event_id);
+        void AddActiveEvent(uint16 event_id) { m_ActiveEvents.insert(event_id); }
+        void RemoveActiveEvent(uint16 event_id) { m_ActiveEvents.erase(event_id); }
         void ApplyNewEvent(uint16 event_id);
         void UnApplyEvent(uint16 event_id);
         void GameEventSpawn(int16 event_id);

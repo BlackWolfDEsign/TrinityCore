@@ -21,21 +21,23 @@
 #include "InstanceScript.h"
 #include "Map.h"
 
-static constexpr DoorData const doorData[] =
+DoorData const doorData[] =
 {
     { GO_ARGALOTH_DOOR,  BOSS_ARGALOTH, EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_OCCUTHAR_DOOR,  BOSS_OCCUTHAR, EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_ALIZABAL_DOOR,  BOSS_ALIZABAL, EncounterDoorBehavior::OpenWhenNotInProgress },
+    { 0,                 0,             EncounterDoorBehavior::OpenWhenNotInProgress }  // END
 };
 
-static constexpr ObjectData const creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_ARGALOTH, BOSS_ARGALOTH   },
     { NPC_OCCUTHAR, BOSS_OCCUTHAR   },
     { NPC_ALIZABAL, BOSS_ALIZABAL   },
+    { 0,            0               } // END
 };
 
-static constexpr DungeonEncounterData const encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_ARGALOTH, {{ 1033 }} },
     { BOSS_OCCUTHAR, {{ 1250 }} },
@@ -53,7 +55,7 @@ class instance_baradin_hold: public InstanceMapScript
             {
                 SetHeaders(DataHeader);
                 SetBossNumber(EncounterCount);
-                LoadObjectData(creatureData, {});
+                LoadObjectData(creatureData, nullptr);
                 LoadDoorData(doorData);
                 LoadDungeonEncounterData(encounters);
             }

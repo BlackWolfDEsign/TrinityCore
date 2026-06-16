@@ -16,11 +16,9 @@
  */
 
 #include "ObjectMgr.h"
+#include "ArenaTeamMgr.h"
 #include "AreaTriggerDataStore.h"
 #include "AreaTriggerTemplate.h"
-#include "ArenaTeamMgr.h"
-#include "AzeriteEmpoweredItem.h"
-#include "AzeriteItem.h"
 #include "Chat.h"
 #include "Containers.h"
 #include "CreatureAIFactory.h"
@@ -52,11 +50,8 @@
 #include "ObjectDefines.h"
 #include "PhasingHandler.h"
 #include "Player.h"
-#include "PlayerChoice.h"
 #include "QueryPackets.h"
-#include "QueryResultStructured.h"
 #include "QuestDef.h"
-#include "QuestMgr.h"
 #include "Random.h"
 #include "RealmList.h"
 #include "ReputationMgr.h"
@@ -70,10 +65,9 @@
 #include "TerrainMgr.h"
 #include "ThreadPool.h"
 #include "Timer.h"
-#include "TransmogMgr.h"
 #include "TransportMgr.h"
 #include "VMapFactory.h"
-#include "VMapManager.h"
+#include "VMapManager2.h"
 #include "Vehicle.h"
 #include "World.h"
 #include "advstd.h"
@@ -228,6 +222,7 @@ ObjectMgr::ObjectMgr():
     _hiPetNumber(1),
     _creatureSpawnId(1),
     _gameObjectSpawnId(1),
+    _voidItemId(1),
     DBCLocaleIndex(LOCALE_enUS)
 {
 }
@@ -359,15 +354,15 @@ void ObjectMgr::LoadCreatureTemplates()
     //                                       "faction, npcflag, speed_walk, speed_run, scale, `rank`, dmgschool, BaseAttackTime, RangeAttackTime, BaseVariance, RangeVariance, "
     //                                        21          22          23           24
     //                                       "unit_class, unit_flags, unit_flags2, unit_flags3, "
-    //                                        25      26             27    28         29      30
-    //                                       "family, trainer_class, type, VehicleId, AIName, MovementType, "
-    //                                        31                         32         33          34                        35
+    //                                        25      26             27    28              29         30      31
+    //                                       "family, trainer_class, type, PetSpellDataId, VehicleId, AIName, MovementType, "
+    //                                        32                         33         34          35                         36
     //                                       "ctm.HoverInitiallyEnabled, ctm.Chase, ctm.Random, ctm.InteractionPauseTimer, ExperienceModifier, "
-    //                                        36            37          38           39                        40
-    //                                       "RacialLeader, movementId, WidgetSetID, WidgetSetUnitConditionID, RegenHealth, "
-    //                                        41                    42
+    //                                        37        38            39          40           41                        42
+    //                                       "Civilian, RacialLeader, movementId, WidgetSetID, WidgetSetUnitConditionID, RegenHealth, "
+    //                                        43                    44
     //                                       "CreatureImmunitiesId, flags_extra, "
-    //                                        43          44
+    //                                        45          46
     //                                       "ScriptName, StringId FROM creature_template WHERE entry = ? OR 1 = ?");
 
     WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_CREATURE_TEMPLATE);
@@ -436,6 +431,7 @@ void ObjectMgr::LoadCreatureTemplate(Field* fields)
     creatureTemplate.family                 = CreatureFamily(fields[25].GetInt32());
     creatureTemplate.trainer_class          = uint32(fields[26].GetUInt8());
     creatureTemplate.type                   = uint32(fields[27].GetUInt8());
+    creatureTemplate.PetSpellDataID         = uint32(fields[28].GetUInt32());
 
     for (uint8 i = SPELL_SCHOOL_HOLY; i < MAX_SPELL_SCHOOL; ++i)
         creatureTemplate.resistance[i] = 0;
@@ -443,32 +439,33 @@ void ObjectMgr::LoadCreatureTemplate(Field* fields)
     for (uint8 i = 0; i < MAX_CREATURE_SPELLS; ++i)
         creatureTemplate.spells[i] = 0;
 
-    creatureTemplate.VehicleId              = fields[28].GetUInt32();
-    creatureTemplate.AIName                 = fields[29].GetString();
-    creatureTemplate.MovementType           = uint32(fields[30].GetUInt8());
+    creatureTemplate.VehicleId              = fields[29].GetUInt32();
+    creatureTemplate.AIName                 = fields[30].GetString();
+    creatureTemplate.MovementType           = uint32(fields[31].GetUInt8());
 
-    if (!fields[31].IsNull())
-        creatureTemplate.Movement.HoverInitiallyEnabled = fields[31].GetBool();
+    if (!fields[32].IsNull())
+        creatureTemplate.Movement.HoverInitiallyEnabled = fields[32].GetBool();
 
-    if (Optional<uint8> chaseMovementType = fields[32].GetUInt8OrNull())
-        creatureTemplate.Movement.Chase = static_cast<CreatureChaseMovementType>(*chaseMovementType);
+    if (!fields[33].IsNull())
+        creatureTemplate.Movement.Chase = static_cast<CreatureChaseMovementType>(fields[33].GetUInt8());
 
-    if (Optional<uint8> randomMovementType = fields[33].GetUInt8OrNull())
-        creatureTemplate.Movement.Random = static_cast<CreatureRandomMovementType>(*randomMovementType);
+    if (!fields[34].IsNull())
+        creatureTemplate.Movement.Random = static_cast<CreatureRandomMovementType>(fields[34].GetUInt8());
 
-    if (Optional<uint32> interactionPauseTimer = fields[34].GetUInt32OrNull())
-        creatureTemplate.Movement.InteractionPauseTimer = *interactionPauseTimer;
+    if (!fields[35].IsNull())
+        creatureTemplate.Movement.InteractionPauseTimer = fields[35].GetUInt32();
 
-    creatureTemplate.ModExperience          = fields[35].GetFloat();
-    creatureTemplate.RacialLeader           = fields[36].GetBool();
-    creatureTemplate.movementId             = fields[37].GetUInt32();
-    creatureTemplate.WidgetSetID            = fields[38].GetInt32();
-    creatureTemplate.WidgetSetUnitConditionID = fields[39].GetInt32();
-    creatureTemplate.RegenHealth            = fields[40].GetBool();
-    creatureTemplate.CreatureImmunitiesId   = fields[41].GetInt32();
-    creatureTemplate.flags_extra            = fields[42].GetUInt32();
-    creatureTemplate.ScriptID               = GetScriptId(fields[43].GetStringView());
-    creatureTemplate.StringId               = fields[44].GetString();
+    creatureTemplate.ModExperience          = fields[36].GetFloat();
+    creatureTemplate.Civilian               = fields[37].GetBool();
+    creatureTemplate.RacialLeader           = fields[38].GetBool();
+    creatureTemplate.movementId             = fields[39].GetUInt32();
+    creatureTemplate.WidgetSetID            = fields[40].GetInt32();
+    creatureTemplate.WidgetSetUnitConditionID = fields[41].GetInt32();
+    creatureTemplate.RegenHealth            = fields[42].GetBool();
+    creatureTemplate.CreatureImmunitiesId   = fields[43].GetInt32();
+    creatureTemplate.flags_extra            = fields[44].GetUInt32();
+    creatureTemplate.ScriptID               = GetScriptId(fields[45].GetString());
+    creatureTemplate.StringId               = fields[46].GetString();
 }
 
 void ObjectMgr::LoadCreatureTemplateGossip()
@@ -685,35 +682,44 @@ void ObjectMgr::LoadCreatureSummonedData()
         }
 
         CreatureSummonedData& summonedData = _creatureSummonedDataStore[creatureId];
-        summonedData.CreatureIDVisibleToSummoner = fields[1].GetUInt32OrNull();
-        summonedData.GroundMountDisplayID = fields[2].GetUInt32OrNull();
-        summonedData.FlyingMountDisplayID = fields[3].GetUInt32OrNull();
 
-        if (summonedData.CreatureIDVisibleToSummoner && !GetCreatureTemplate(*summonedData.CreatureIDVisibleToSummoner))
+        if (!fields[1].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `creature_summoned_data` references non-existing creature {} in CreatureIDVisibleToSummoner for creature {}, set to 0",
-                *summonedData.CreatureIDVisibleToSummoner, creatureId);
-            summonedData.CreatureIDVisibleToSummoner.reset();
+            summonedData.CreatureIDVisibleToSummoner = fields[1].GetUInt32();
+            if (!GetCreatureTemplate(*summonedData.CreatureIDVisibleToSummoner))
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature_summoned_data` references non-existing creature {} in CreatureIDVisibleToSummoner for creature {}, set to 0",
+                    *summonedData.CreatureIDVisibleToSummoner, creatureId);
+                summonedData.CreatureIDVisibleToSummoner.reset();
+            }
         }
 
-        if (summonedData.GroundMountDisplayID && !sCreatureDisplayInfoStore.LookupEntry(*summonedData.GroundMountDisplayID))
+        if (!fields[2].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `creature_summoned_data` references non-existing display id {} in GroundMountDisplayID for creature {}, set to 0",
-                *summonedData.GroundMountDisplayID, creatureId);
-            summonedData.CreatureIDVisibleToSummoner.reset();
+            summonedData.GroundMountDisplayID = fields[2].GetUInt32();
+            if (!sCreatureDisplayInfoStore.LookupEntry(*summonedData.GroundMountDisplayID))
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature_summoned_data` references non-existing display id {} in GroundMountDisplayID for creature {}, set to 0",
+                    *summonedData.GroundMountDisplayID, creatureId);
+                summonedData.CreatureIDVisibleToSummoner.reset();
+            }
         }
 
-        if (summonedData.FlyingMountDisplayID && !sCreatureDisplayInfoStore.LookupEntry(*summonedData.FlyingMountDisplayID))
+        if (!fields[3].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `creature_summoned_data` references non-existing display id {} in FlyingMountDisplayID for creature {}, set to 0",
-                *summonedData.FlyingMountDisplayID, creatureId);
-            summonedData.GroundMountDisplayID.reset();
+            summonedData.FlyingMountDisplayID = fields[3].GetUInt32();
+            if (!sCreatureDisplayInfoStore.LookupEntry(*summonedData.FlyingMountDisplayID))
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature_summoned_data` references non-existing display id {} in FlyingMountDisplayID for creature {}, set to 0",
+                    *summonedData.FlyingMountDisplayID, creatureId);
+                summonedData.GroundMountDisplayID.reset();
+            }
         }
 
-        if (Optional<std::string_view> despawnOnQuestsRemoved = fields[4].GetStringViewOrNull())
+        if (!fields[4].IsNull())
         {
-            summonedData.DespawnOnQuestsRemoved.emplace();
-            for (std::string_view questStr : Trinity::Tokenize(*despawnOnQuestsRemoved, ',', false))
+            std::vector<uint32> questList;
+            for (std::string_view questStr : Trinity::Tokenize(fields[4].GetStringView(), ',', false))
             {
                 Optional<uint32> questId = Trinity::StringTo<uint32>(questStr);
                 if (!questId)
@@ -727,11 +733,11 @@ void ObjectMgr::LoadCreatureSummonedData()
                     continue;
                 }
 
-                summonedData.DespawnOnQuestsRemoved->push_back(*questId);
+                questList.push_back(*questId);
             }
 
-            if (summonedData.DespawnOnQuestsRemoved->empty())
-                summonedData.DespawnOnQuestsRemoved.reset();
+            if (!questList.empty())
+                summonedData.DespawnOnQuestsRemoved = std::move(questList);
         }
 
     } while (result->NextRow());
@@ -922,13 +928,13 @@ void ObjectMgr::LoadCreatureTemplateDifficulty()
 {
     uint32 oldMSTime = getMSTime();
 
-    //                                               0      1             2                     3                     4                5
-    QueryResult result = WorldDatabase.Query("SELECT Entry, DifficultyID, LevelScalingDeltaMin, LevelScalingDeltaMax, ContentTuningID, HealthScalingExpansion, "
-    //   6               7             8              9               10                    11         12          13
-        "HealthModifier, ManaModifier, ArmorModifier, DamageModifier, CreatureDifficultyID, TypeFlags, TypeFlags2, TypeFlags3, "
-    //   14      15                16          17       18
+    //                                               0      1             2         3         4
+    QueryResult result = WorldDatabase.Query("SELECT Entry, DifficultyID, MinLevel, MaxLevel, HealthScalingExpansion, "
+    //   5               6             7              8               9                     10         11
+        "HealthModifier, ManaModifier, ArmorModifier, DamageModifier, CreatureDifficultyID, TypeFlags, TypeFlags2, "
+    //   12      13                14          15       16
         "LootID, PickPocketLootID, SkinLootID, GoldMin, GoldMax,"
-    //   19            20            21            22            23            24            25            26
+    //   17            18            19            20            21            22            23            24
         "StaticFlags1, StaticFlags2, StaticFlags3, StaticFlags4, StaticFlags5, StaticFlags6, StaticFlags7, StaticFlags8 "
         "FROM creature_template_difficulty ORDER BY Entry");
 
@@ -944,7 +950,7 @@ void ObjectMgr::LoadCreatureTemplateDifficulty()
         Field* fields = result->Fetch();
 
         uint32 entry = fields[0].GetUInt32();
-        Difficulty difficulty = Difficulty(fields[1].GetInt32());
+        Difficulty difficulty = Difficulty(fields[1].GetUInt8());
 
         auto itr = _creatureTemplateStore.find(entry);
         if (itr == _creatureTemplateStore.end())
@@ -953,32 +959,52 @@ void ObjectMgr::LoadCreatureTemplateDifficulty()
             continue;
         }
 
-        CreatureDifficulty& creatureDifficulty    = itr->second.difficultyStore.try_emplace(difficulty).first->second;
-        creatureDifficulty.DeltaLevelMin          = fields[2].GetInt16();
-        creatureDifficulty.DeltaLevelMax          = fields[3].GetInt16();
-        creatureDifficulty.ContentTuningID        = fields[4].GetInt32();
-        creatureDifficulty.HealthScalingExpansion = fields[5].GetInt32();
-        creatureDifficulty.HealthModifier         = fields[6].GetFloat();
-        creatureDifficulty.ManaModifier           = fields[7].GetFloat();
-        creatureDifficulty.ArmorModifier          = fields[8].GetFloat();
-        creatureDifficulty.DamageModifier         = fields[9].GetFloat();
-        creatureDifficulty.CreatureDifficultyID   = fields[10].GetInt32();
-        creatureDifficulty.TypeFlags              = fields[11].GetUInt32();
-        creatureDifficulty.TypeFlags2             = fields[12].GetUInt32();
-        creatureDifficulty.TypeFlags3             = fields[13].GetUInt32();
-        creatureDifficulty.LootID                 = fields[14].GetUInt32();
-        creatureDifficulty.PickPocketLootID       = fields[15].GetUInt32();
-        creatureDifficulty.SkinLootID             = fields[16].GetUInt32();
-        creatureDifficulty.GoldMin                = fields[17].GetUInt32();
-        creatureDifficulty.GoldMax                = fields[18].GetUInt32();
-        creatureDifficulty.StaticFlags            = CreatureStaticFlagsHolder(CreatureStaticFlags(fields[19].GetUInt32()), CreatureStaticFlags2(fields[20].GetUInt32()),
-            CreatureStaticFlags3(fields[21].GetUInt32()), CreatureStaticFlags4(fields[22].GetUInt32()), CreatureStaticFlags5(fields[23].GetUInt32()),
-            CreatureStaticFlags6(fields[24].GetUInt32()), CreatureStaticFlags7(fields[25].GetUInt32()),  CreatureStaticFlags8(fields[26].GetUInt32()));
+        CreatureDifficulty creatureDifficulty;
+        creatureDifficulty.MinLevel               = fields[2].GetUInt8();
+        creatureDifficulty.MaxLevel               = fields[3].GetUInt8();
+        creatureDifficulty.HealthScalingExpansion = fields[4].GetInt32();
+        creatureDifficulty.HealthModifier         = fields[5].GetFloat();
+        creatureDifficulty.ManaModifier           = fields[6].GetFloat();
+        creatureDifficulty.ArmorModifier          = fields[7].GetFloat();
+        creatureDifficulty.DamageModifier         = fields[8].GetFloat();
+        creatureDifficulty.CreatureDifficultyID   = fields[9].GetInt32();
+        creatureDifficulty.TypeFlags              = fields[10].GetUInt32();
+        creatureDifficulty.TypeFlags2             = fields[11].GetUInt32();
+        creatureDifficulty.LootID                 = fields[12].GetUInt32();
+        creatureDifficulty.PickPocketLootID       = fields[13].GetUInt32();
+        creatureDifficulty.SkinLootID             = fields[14].GetUInt32();
+        creatureDifficulty.GoldMin                = fields[15].GetUInt32();
+        creatureDifficulty.GoldMax                = fields[16].GetUInt32();
+        creatureDifficulty.StaticFlags            = CreatureStaticFlagsHolder(CreatureStaticFlags(fields[17].GetUInt32()), CreatureStaticFlags2(fields[18].GetUInt32()),
+            CreatureStaticFlags3(fields[19].GetUInt32()), CreatureStaticFlags4(fields[20].GetUInt32()), CreatureStaticFlags5(fields[21].GetUInt32()),
+            CreatureStaticFlags6(fields[22].GetUInt32()), CreatureStaticFlags7(fields[23].GetUInt32()),  CreatureStaticFlags8(fields[24].GetUInt32()));
 
         // TODO: Check if this still applies
         creatureDifficulty.DamageModifier *= Creature::GetDamageMod(itr->second.Classification);
 
-        if (creatureDifficulty.HealthScalingExpansion < EXPANSION_LEVEL_CURRENT || creatureDifficulty.HealthScalingExpansion >= MAX_EXPANSIONS)
+        if (creatureDifficulty.MinLevel == 0 || creatureDifficulty.MaxLevel == 0)
+        {
+            if (creatureDifficulty.MinLevel == 0)
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature_template_difficulty` lists creature (ID: {}) has MinLevel set to 0 but the allowed minimum is 1. Ignored and set to 1.", entry);
+                creatureDifficulty.MinLevel = 1;
+            }
+
+            if (creatureDifficulty.MaxLevel == 0)
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature_template_difficulty` lists creature (ID: {}) has MaxLevel set to 0 but the allowed minimum is 1. Ignored and set to 1.", entry);
+                creatureDifficulty.MaxLevel = 1;
+            }
+        }
+
+        if (creatureDifficulty.MinLevel > creatureDifficulty.MaxLevel)
+        {
+            TC_LOG_ERROR("sql.sql", "Table `creature_template_difficulty` lists creature (ID: {}) with a higher MinLevel ({}) than MaxLevel ({}). MaxLevel will be set to MinLevel value.",
+                entry, creatureDifficulty.MinLevel, creatureDifficulty.MaxLevel);
+            creatureDifficulty.MinLevel = creatureDifficulty.MaxLevel;
+        }
+
+        if (creatureDifficulty.HealthScalingExpansion < EXPANSION_LEVEL_CURRENT || creatureDifficulty.HealthScalingExpansion > CURRENT_EXPANSION)
         {
             TC_LOG_ERROR("sql.sql", "Table `creature_template_difficulty` lists creature (ID: {}) with invalid `HealthScalingExpansion` {}. Ignored and set to 0.",
                 entry, creatureDifficulty.HealthScalingExpansion);
@@ -991,6 +1017,8 @@ void ObjectMgr::LoadCreatureTemplateDifficulty()
                 entry, creatureDifficulty.GoldMin, creatureDifficulty.GoldMax, creatureDifficulty.GoldMin);
             creatureDifficulty.GoldMax = creatureDifficulty.GoldMin;
         }
+
+        itr->second.difficultyStore[difficulty] = creatureDifficulty;
 
         ++count;
     } while (result->NextRow());
@@ -1510,12 +1538,12 @@ void ObjectMgr::LoadEquipmentTemplates()
             }
 
             // AppearanceModId 0 is always valid
-            if (equipmentInfo.Items[i].AppearanceModId && !TransmogMgr::GetItemModifiedAppearance(equipmentInfo.Items[i].ItemId, equipmentInfo.Items[i].AppearanceModId))
+            if (equipmentInfo.Items[i].AppearanceModId && !sDB2Manager.GetItemModifiedAppearance(equipmentInfo.Items[i].ItemId, equipmentInfo.Items[i].AppearanceModId))
             {
                 TC_LOG_ERROR("sql.sql", "Unknown item appearance for (ID={}, AppearanceModID={}) pair in creature_equip_template.ItemID{} creature_equip_template.AppearanceModID{} "
                     "for CreatureID = {} and ID={}, forced to default.",
                     equipmentInfo.Items[i].ItemId, equipmentInfo.Items[i].AppearanceModId, i + 1, i + 1, entry, id);
-                if (ItemModifiedAppearanceEntry const* defaultAppearance = TransmogMgr::GetDefaultItemModifiedAppearance(equipmentInfo.Items[i].ItemId))
+                if (ItemModifiedAppearanceEntry const* defaultAppearance = sDB2Manager.GetDefaultItemModifiedAppearance(equipmentInfo.Items[i].ItemId))
                     equipmentInfo.Items[i].AppearanceModId = defaultAppearance->ItemAppearanceModifierID;
                 else
                     equipmentInfo.Items[i].AppearanceModId = 0;
@@ -1573,12 +1601,12 @@ void ObjectMgr::LoadCreatureMovementOverrides()
         CreatureMovementData& movement = _creatureMovementOverrides[spawnId];
         if (!fields[1].IsNull())
             movement.HoverInitiallyEnabled = fields[1].GetBool();
-        if (Optional<uint8> chaseMovementType = fields[2].GetUInt8OrNull())
-            movement.Chase = static_cast<CreatureChaseMovementType>(*chaseMovementType);
-        if (Optional<uint8> randomMovementType = fields[3].GetUInt8OrNull())
-            movement.Random = static_cast<CreatureRandomMovementType>(*randomMovementType);
-        if (Optional<uint32> interactionPauseTimer = fields[4].GetUInt32OrNull())
-            movement.InteractionPauseTimer = *interactionPauseTimer;
+        if (!fields[2].IsNull())
+            movement.Chase = static_cast<CreatureChaseMovementType>(fields[2].GetUInt8());
+        if (!fields[3].IsNull())
+            movement.Random = static_cast<CreatureRandomMovementType>(fields[3].GetUInt8());
+        if (!fields[4].IsNull())
+            movement.InteractionPauseTimer = fields[4].GetUInt32();
 
         CheckCreatureMovement("creature_movement_override", spawnId, movement);
     }
@@ -1628,7 +1656,7 @@ void ObjectMgr::ChooseCreatureFlags(CreatureTemplate const* cInfo, uint64* npcFl
         if (staticFlags.HasFlag(CREATURE_STATIC_FLAG_CAN_SWIM))
             *unitFlags |= UNIT_FLAG_CAN_SWIM;
 
-        if (staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CANT_SWIM))
+        if (staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CANNOT_SWIM))
             *unitFlags |= UNIT_FLAG_CANT_SWIM;
     }
 
@@ -1637,9 +1665,6 @@ void ObjectMgr::ChooseCreatureFlags(CreatureTemplate const* cInfo, uint64* npcFl
         *unitFlags2 = ChooseCreatureFlagSource(unit_flags2);
         if (staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CANNOT_TURN))
             *unitFlags2 |= UNIT_FLAG2_CANNOT_TURN;
-
-        if (staticFlags.HasFlag(CREATURE_STATIC_FLAG_4_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS))
-            *unitFlags2 |= UNIT_FLAG2_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS;
 
         if (staticFlags.HasFlag(CREATURE_STATIC_FLAG_5_INTERACT_WHILE_HOSTILE))
             *unitFlags2 |= UNIT_FLAG2_INTERACT_WHILE_HOSTILE;
@@ -2179,15 +2204,19 @@ void ObjectMgr::LoadCreatures()
         data.spawnDifficulties = ParseSpawnDifficulties(fields[14].GetStringView(), "creature", guid, data.mapId, spawnMasks[data.mapId]);
         int16 gameEvent     = fields[15].GetInt8();
         data.poolId         = fields[16].GetUInt32();
-        data.npcflag        = fields[17].GetUInt64OrNull();
-        data.unit_flags     = fields[18].GetUInt32OrNull();
-        data.unit_flags2    = fields[19].GetUInt32OrNull();
-        data.unit_flags3    = fields[20].GetUInt32OrNull();
+        if (!fields[17].IsNull())
+            data.npcflag = fields[17].GetUInt64();
+        if (!fields[18].IsNull())
+            data.unit_flags = fields[18].GetUInt32();
+        if (!fields[19].IsNull())
+            data.unit_flags2 = fields[19].GetUInt32();
+        if (!fields[20].IsNull())
+            data.unit_flags3 = fields[20].GetUInt32();
         data.phaseUseFlags  = fields[21].GetUInt8();
         data.phaseId        = fields[22].GetUInt32();
         data.phaseGroup     = fields[23].GetUInt32();
         data.terrainSwapMap = fields[24].GetInt32();
-        data.scriptId       = GetScriptId(fields[25].GetStringView());
+        data.scriptId       = GetScriptId(fields[25].GetString());
         data.StringId       = fields[26].GetString();
         data.spawnGroupData = IsTransportMap(data.mapId) ? GetLegacySpawnGroup() : GetDefaultSpawnGroup(); // transport spawns default to compatibility group
 
@@ -2200,7 +2229,7 @@ void ObjectMgr::LoadCreatures()
 
         if (sWorld->getBoolConfig(CONFIG_CREATURE_CHECK_INVALID_POSITION))
         {
-            if (VMAP::VMapManager* vmgr = VMAP::VMapFactory::createOrGetVMapManager())
+            if (VMAP::IVMapManager* vmgr = VMAP::VMapFactory::createOrGetVMapManager())
             {
                 if (vmgr->isMapLoadingEnabled() && !IsTransportMap(data.mapId))
                 {
@@ -2208,10 +2237,10 @@ void ObjectMgr::LoadCreatures()
                     int gx = (MAX_NUMBER_OF_GRIDS - 1) - gridCoord.x_coord;
                     int gy = (MAX_NUMBER_OF_GRIDS - 1) - gridCoord.y_coord;
 
-                    VMAP::LoadResult result = vmgr->existsMap(sWorld->GetDataPath() + "vmaps", data.mapId, gx, gy);
+                    VMAP::LoadResult result = vmgr->existsMap((sWorld->GetDataPath() + "vmaps").c_str(), data.mapId, gx, gy);
                     if (result != VMAP::LoadResult::Success)
                         TC_LOG_ERROR("sql.sql", "Table `creature` has creature (GUID: {} Entry: {} MapID: {}) spawned on a possible invalid position ({})",
-                            guid, data.id, data.mapId, data.spawnPoint);
+                            guid, data.id, data.mapId, data.spawnPoint.ToString());
                 }
             }
         }
@@ -2349,7 +2378,7 @@ void ObjectMgr::LoadCreatures()
                 *data.unit_flags2 &= UNIT_FLAG2_ALLOWED;
             }
 
-            if (*data.unit_flags2 & UNIT_FLAG2_FEIGN_DEATH && (!data.unit_flags.has_value() || !(*data.unit_flags & (UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC))) && !(cInfo->unit_flags & (UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC)))
+            if (*data.unit_flags2 & UNIT_FLAG2_FEIGN_DEATH && (!data.unit_flags.has_value() || !(*data.unit_flags & (UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC))))
             {
                 TC_LOG_ERROR("sql.sql", "Table `creature` has creature (GUID: {} Entry: {}) has UNIT_FLAG2_FEIGN_DEATH set without IMMUNE_TO_PC | IMMUNE_TO_NPC, removing incorrect flag.", guid, data.id);
                 *data.unit_flags2 &= ~UNIT_FLAG2_FEIGN_DEATH;
@@ -2364,7 +2393,7 @@ void ObjectMgr::LoadCreatures()
                 *data.unit_flags3 &= UNIT_FLAG3_ALLOWED;
             }
 
-            if (*data.unit_flags3 & UNIT_FLAG3_FAKE_DEAD && (!data.unit_flags.has_value() || !(*data.unit_flags & (UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC))) && !(cInfo->unit_flags & (UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC)))
+            if (*data.unit_flags3 & UNIT_FLAG3_FAKE_DEAD && (!data.unit_flags.has_value() || !(*data.unit_flags & (UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC))))
             {
                 TC_LOG_ERROR("sql.sql", "Table `creature` has creature (GUID: {} Entry: {}) has UNIT_FLAG3_FAKE_DEAD set without IMMUNE_TO_PC | IMMUNE_TO_NPC, removing incorrect flag.", guid, data.id);
                 *data.unit_flags3 &= ~UNIT_FLAG3_FAKE_DEAD;
@@ -2556,7 +2585,7 @@ void ObjectMgr::LoadGameObjects()
 
         if (sWorld->getBoolConfig(CONFIG_GAME_OBJECT_CHECK_INVALID_POSITION))
         {
-            if (VMAP::VMapManager* vmgr = VMAP::VMapFactory::createOrGetVMapManager())
+            if (VMAP::IVMapManager* vmgr = VMAP::VMapFactory::createOrGetVMapManager())
             {
                 if (vmgr->isMapLoadingEnabled() && !IsTransportMap(data.mapId))
                 {
@@ -2564,10 +2593,10 @@ void ObjectMgr::LoadGameObjects()
                     int gx = (MAX_NUMBER_OF_GRIDS - 1) - gridCoord.x_coord;
                     int gy = (MAX_NUMBER_OF_GRIDS - 1) - gridCoord.y_coord;
 
-                    VMAP::LoadResult result = vmgr->existsMap(sWorld->GetDataPath() + "vmaps", data.mapId, gx, gy);
+                    VMAP::LoadResult result = vmgr->existsMap((sWorld->GetDataPath() + "vmaps").c_str(), data.mapId, gx, gy);
                     if (result != VMAP::LoadResult::Success)
                         TC_LOG_ERROR("sql.sql", "Table `gameobject` has gameobject (GUID: {} Entry: {} MapID: {}) spawned on a possible invalid position ({})",
-                            guid, data.id, data.mapId, data.spawnPoint);
+                            guid, data.id, data.mapId, data.spawnPoint.ToString());
                 }
             }
         }
@@ -2657,7 +2686,7 @@ void ObjectMgr::LoadGameObjects()
             }
         }
 
-        data.scriptId = GetScriptId(fields[21].GetStringView());
+        data.scriptId = GetScriptId(fields[21].GetString());
         data.StringId = fields[22].GetString();
 
         if (data.rotation.x < -1.0f || data.rotation.x > 1.0f)
@@ -2933,25 +2962,6 @@ SpawnData const* ObjectMgr::GetSpawnData(SpawnObjectType type, ObjectGuid::LowTy
 
 void ObjectMgr::OnDeleteSpawnData(SpawnData const* data)
 {
-    if (data->spawnTrackingData)
-    {
-        SpawnTrackingTemplateData const* spawnTrackingData = GetSpawnTrackingData(data->spawnTrackingData->SpawnTrackingId);
-        ASSERT(spawnTrackingData, "Creature data for (%u," UI64FMTD ") is being deleted and has invalid spawn tracking id %u!", uint32(data->type), data->spawnId, data->spawnTrackingData->SpawnTrackingId);
-
-        auto pair = _spawnTrackingMapStore.equal_range(data->spawnTrackingData->SpawnTrackingId);
-        bool erased = false;
-        for (auto it = pair.first; it != pair.second; ++it)
-        {
-            if (it->second != data)
-                continue;
-            _spawnTrackingMapStore.erase(it);
-            erased = true;
-        }
-
-        if (!erased)
-            ABORT_MSG("Spawn data (%u," UI64FMTD ") being removed is member of spawn tracking %u, but not actually listed in the lookup table for that spawn tracking!", uint32(data->type), data->spawnId, data->spawnTrackingData->SpawnTrackingId);
-    }
-
     auto templateIt = _spawnGroupDataStore.find(data->spawnGroupData->groupId);
     ASSERT(templateIt != _spawnGroupDataStore.end(), "Creature data for (%u," UI64FMTD ") is being deleted and has invalid spawn group index %u!", uint32(data->type), data->spawnId, data->spawnGroupData->groupId);
     if (templateIt->second.flags & SPAWNGROUP_FLAG_SYSTEM) // system groups don't store their members in the map
@@ -3065,216 +3075,6 @@ uint32 FillMaxDurability(uint32 itemClass, uint32 itemSubClass, uint32 inventory
     }
 
     return 5 * uint32(round(18.0f * qualityMultipliers[quality] * weaponMultipliers[itemSubClass] * levelPenalty));
-}
-
-struct ItemSpecStats
-{
-    uint32 ItemType;
-    uint32 ItemSpecStatTypes[MAX_ITEM_PROTO_STATS];
-    uint32 ItemSpecStatCount;
-
-    ItemSpecStats(ItemEntry const* item, ItemSparseEntry const* sparse) : ItemType(0), ItemSpecStatCount(0)
-    {
-        memset(ItemSpecStatTypes, -1, sizeof(ItemSpecStatTypes));
-
-        if (item->ClassID == ITEM_CLASS_WEAPON)
-        {
-            ItemType = 5;
-            switch (item->SubclassID)
-            {
-                case ITEM_SUBCLASS_WEAPON_AXE:
-                    AddStat(ITEM_SPEC_STAT_ONE_HANDED_AXE);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_AXE2:
-                    AddStat(ITEM_SPEC_STAT_TWO_HANDED_AXE);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_BOW:
-                    AddStat(ITEM_SPEC_STAT_BOW);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_GUN:
-                    AddStat(ITEM_SPEC_STAT_GUN);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_MACE:
-                    AddStat(ITEM_SPEC_STAT_ONE_HANDED_MACE);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_MACE2:
-                    AddStat(ITEM_SPEC_STAT_TWO_HANDED_MACE);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_POLEARM:
-                    AddStat(ITEM_SPEC_STAT_POLEARM);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_SWORD:
-                    AddStat(ITEM_SPEC_STAT_ONE_HANDED_SWORD);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_SWORD2:
-                    AddStat(ITEM_SPEC_STAT_TWO_HANDED_SWORD);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_WARGLAIVES:
-                    AddStat(ITEM_SPEC_STAT_WARGLAIVES);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_STAFF:
-                    AddStat(ITEM_SPEC_STAT_STAFF);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_FIST_WEAPON:
-                    AddStat(ITEM_SPEC_STAT_FIST_WEAPON);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_DAGGER:
-                    AddStat(ITEM_SPEC_STAT_DAGGER);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_THROWN:
-                    AddStat(ITEM_SPEC_STAT_THROWN);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_CROSSBOW:
-                    AddStat(ITEM_SPEC_STAT_CROSSBOW);
-                    break;
-                case ITEM_SUBCLASS_WEAPON_WAND:
-                    AddStat(ITEM_SPEC_STAT_WAND);
-                    break;
-                default:
-                    break;
-            }
-        }
-        else if (item->ClassID == ITEM_CLASS_ARMOR)
-        {
-            switch (item->SubclassID)
-            {
-                case ITEM_SUBCLASS_ARMOR_CLOTH:
-                    if (sparse->InventoryType != INVTYPE_CLOAK)
-                    {
-                        ItemType = 1;
-                        break;
-                    }
-
-                    ItemType = 0;
-                    AddStat(ITEM_SPEC_STAT_CLOAK);
-                    break;
-                case ITEM_SUBCLASS_ARMOR_LEATHER:
-                    ItemType = 2;
-                    break;
-                case ITEM_SUBCLASS_ARMOR_MAIL:
-                    ItemType = 3;
-                    break;
-                case ITEM_SUBCLASS_ARMOR_PLATE:
-                    ItemType = 4;
-                    break;
-                default:
-                    if (item->SubclassID == ITEM_SUBCLASS_ARMOR_SHIELD)
-                    {
-                        ItemType = 6;
-                        AddStat(ITEM_SPEC_STAT_SHIELD);
-                    }
-                    else if (item->SubclassID > ITEM_SUBCLASS_ARMOR_SHIELD && item->SubclassID <= ITEM_SUBCLASS_ARMOR_RELIC)
-                    {
-                        ItemType = 6;
-                        AddStat(ITEM_SPEC_STAT_RELIC);
-                    }
-                    else
-                        ItemType = 0;
-                    break;
-            }
-        }
-        else if (item->ClassID == ITEM_CLASS_GEM)
-        {
-            ItemType = 7;
-            if (GemPropertiesEntry const* gem = sGemPropertiesStore.LookupEntry(sparse->GemProperties))
-            {
-                if (gem->Type & SOCKET_COLOR_RELIC_IRON)
-                    AddStat(ITEM_SPEC_STAT_RELIC_IRON);
-                if (gem->Type & SOCKET_COLOR_RELIC_BLOOD)
-                    AddStat(ITEM_SPEC_STAT_RELIC_BLOOD);
-                if (gem->Type & SOCKET_COLOR_RELIC_SHADOW)
-                    AddStat(ITEM_SPEC_STAT_RELIC_SHADOW);
-                if (gem->Type & SOCKET_COLOR_RELIC_FEL)
-                    AddStat(ITEM_SPEC_STAT_RELIC_FEL);
-                if (gem->Type & SOCKET_COLOR_RELIC_ARCANE)
-                    AddStat(ITEM_SPEC_STAT_RELIC_ARCANE);
-                if (gem->Type & SOCKET_COLOR_RELIC_FROST)
-                    AddStat(ITEM_SPEC_STAT_RELIC_FROST);
-                if (gem->Type & SOCKET_COLOR_RELIC_FIRE)
-                    AddStat(ITEM_SPEC_STAT_RELIC_FIRE);
-                if (gem->Type & SOCKET_COLOR_RELIC_WATER)
-                    AddStat(ITEM_SPEC_STAT_RELIC_WATER);
-                if (gem->Type & SOCKET_COLOR_RELIC_LIFE)
-                    AddStat(ITEM_SPEC_STAT_RELIC_LIFE);
-                if (gem->Type & SOCKET_COLOR_RELIC_WIND)
-                    AddStat(ITEM_SPEC_STAT_RELIC_WIND);
-                if (gem->Type & SOCKET_COLOR_RELIC_HOLY)
-                    AddStat(ITEM_SPEC_STAT_RELIC_HOLY);
-            }
-        }
-        else
-            ItemType = 0;
-
-        for (uint32 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
-            if (sparse->StatModifierBonusStat[i] != -1)
-                AddModStat(sparse->StatModifierBonusStat[i]);
-    }
-
-    void AddStat(ItemSpecStat statType)
-    {
-        if (ItemSpecStatCount >= MAX_ITEM_PROTO_STATS)
-            return;
-
-        for (uint32 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
-            if (ItemSpecStatTypes[i] == uint32(statType))
-                return;
-
-        ItemSpecStatTypes[ItemSpecStatCount++] = statType;
-    }
-
-    void AddModStat(int32 itemStatType)
-    {
-        switch (itemStatType)
-        {
-            case ITEM_MOD_AGILITY:
-                AddStat(ITEM_SPEC_STAT_AGILITY);
-                break;
-            case ITEM_MOD_STRENGTH:
-                AddStat(ITEM_SPEC_STAT_STRENGTH);
-                break;
-            case ITEM_MOD_INTELLECT:
-                AddStat(ITEM_SPEC_STAT_INTELLECT);
-                break;
-            case ITEM_MOD_DODGE_RATING:
-                AddStat(ITEM_SPEC_STAT_DODGE);
-                break;
-            case ITEM_MOD_PARRY_RATING:
-                AddStat(ITEM_SPEC_STAT_PARRY);
-                break;
-            case ITEM_MOD_CRIT_MELEE_RATING:
-            case ITEM_MOD_CRIT_RANGED_RATING:
-            case ITEM_MOD_CRIT_SPELL_RATING:
-            case ITEM_MOD_CRIT_RATING:
-                AddStat(ITEM_SPEC_STAT_CRIT);
-                break;
-            case ITEM_MOD_HASTE_RATING:
-                AddStat(ITEM_SPEC_STAT_HASTE);
-                break;
-            case ITEM_MOD_HIT_RATING:
-                AddStat(ITEM_SPEC_STAT_HIT);
-                break;
-            case ITEM_MOD_EXTRA_ARMOR:
-                AddStat(ITEM_SPEC_STAT_BONUS_ARMOR);
-                break;
-            case ITEM_MOD_AGI_STR_INT:
-                AddStat(ITEM_SPEC_STAT_AGILITY);
-                AddStat(ITEM_SPEC_STAT_STRENGTH);
-                AddStat(ITEM_SPEC_STAT_INTELLECT);
-                break;
-            case ITEM_MOD_AGI_STR:
-                AddStat(ITEM_SPEC_STAT_AGILITY);
-                AddStat(ITEM_SPEC_STAT_STRENGTH);
-                break;
-            case ITEM_MOD_AGI_INT:
-                AddStat(ITEM_SPEC_STAT_AGILITY);
-                AddStat(ITEM_SPEC_STAT_INTELLECT);
-                break;
-            case ITEM_MOD_STR_INT:
-                AddStat(ITEM_SPEC_STAT_STRENGTH);
-                AddStat(ITEM_SPEC_STAT_INTELLECT);
-                break;
-        }
-    }
 };
 
 void ObjectMgr::LoadItemTemplates()
@@ -3303,72 +3103,18 @@ void ObjectMgr::LoadItemTemplates()
         itemTemplate.ItemSpecClassMask = 0;
         itemTemplate.QuestLogItemId = 0;
 
-        if (std::vector<ItemSpecOverrideEntry const*> const* itemSpecOverrides = sDB2Manager.GetItemSpecOverrides(sparse->ID))
-        {
-            for (ItemSpecOverrideEntry const* itemSpecOverride : *itemSpecOverrides)
-            {
-                if (ChrSpecializationEntry const* specialization = sChrSpecializationStore.LookupEntry(itemSpecOverride->SpecID))
-                {
-                    itemTemplate.ItemSpecClassMask |= 1 << (specialization->ClassID - 1);
-                    itemTemplate.Specializations[0].set(ItemTemplate::CalculateItemSpecBit(specialization));
-                    itemTemplate.Specializations[1] |= itemTemplate.Specializations[0];
-                    itemTemplate.Specializations[2] |= itemTemplate.Specializations[0];
-                }
-            }
-        }
-        else
-        {
-            ItemSpecStats itemSpecStats(db2Data, sparse);
-
-            for (ItemSpecEntry const* itemSpec : sItemSpecStore)
-            {
-                if (itemSpecStats.ItemType != itemSpec->ItemType)
-                    continue;
-
-                bool hasPrimary = itemSpec->PrimaryStat == ITEM_SPEC_STAT_NONE;
-                bool hasSecondary = itemSpec->SecondaryStat == ITEM_SPEC_STAT_NONE;
-                for (uint32 i = 0; i < itemSpecStats.ItemSpecStatCount; ++i)
-                {
-                    if (itemSpecStats.ItemSpecStatTypes[i] == itemSpec->PrimaryStat)
-                        hasPrimary = true;
-                    if (itemSpecStats.ItemSpecStatTypes[i] == itemSpec->SecondaryStat)
-                        hasSecondary = true;
-                }
-
-                if (!hasPrimary || !hasSecondary)
-                    continue;
-
-                if (ChrSpecializationEntry const* specialization = sChrSpecializationStore.LookupEntry(itemSpec->SpecializationID))
-                {
-                    if ((1 << (specialization->ClassID - 1)) & sparse->AllowableClass)
-                    {
-                        itemTemplate.ItemSpecClassMask |= 1 << (specialization->ClassID - 1);
-                        std::size_t specBit = ItemTemplate::CalculateItemSpecBit(specialization);
-                        itemTemplate.Specializations[0].set(specBit);
-                        if (itemSpec->MaxLevel > 40)
-                            itemTemplate.Specializations[1].set(specBit);
-                        if (itemSpec->MaxLevel >= 110)
-                            itemTemplate.Specializations[2].set(specBit);
-                    }
-                }
-            }
-        }
-
         // Items that have no specializations set can be used by everyone
         for (auto& specs : itemTemplate.Specializations)
             if (specs.count() == 0)
                 specs.set();
-    }
 
-    // Load item effects (spells)
-    for (ItemXItemEffectEntry const* effectEntry : sItemXItemEffectStore)
-    {
-        if (ItemTemplate* item = Trinity::Containers::MapGetValuePtr(_itemTemplateStore, effectEntry->ItemID))
+        // Load item effects (spells)
+        if (std::vector<ItemEffectEntry const*> const* itemEffects = sDB2Manager.GetItemEffectsForItemId(sparse->ID))
         {
-            if (ItemEffectEntry const* effect = sItemEffectStore.LookupEntry(effectEntry->ItemEffectID))
+            for (ItemEffectEntry const* itemEffect : *itemEffects)
             {
-                auto itr = std::ranges::lower_bound(item->Effects, effect->LegacySlotIndex, {}, &ItemEffectEntry::LegacySlotIndex);
-                item->Effects.insert(itr, effect);
+                auto itr = std::ranges::lower_bound(itemTemplate.Effects, itemEffect->LegacySlotIndex, {}, &ItemEffectEntry::LegacySlotIndex);
+                itemTemplate.Effects.insert(itr, itemEffect);
             }
         }
     }
@@ -3434,7 +3180,7 @@ void ObjectMgr::LoadItemScriptNames()
                 continue;
             }
 
-            itemTemplate->ScriptId = GetScriptId(fields[1].GetStringView());
+            itemTemplate->ScriptId = GetScriptId(fields[1].GetString());
             ++count;
         } while (result->NextRow());
     }
@@ -3474,12 +3220,17 @@ void ObjectMgr::LoadVehicleTemplateAccessories()
         bool   isMinion     = fields[3].GetBool();
         uint8  summonType   = fields[4].GetUInt8();
         uint32 summonTimer  = fields[5].GetUInt32();
-        Optional<uint32> rideSpellId = fields[6].GetUInt32OrNull();
 
-        if (rideSpellId && !sSpellMgr->GetSpellInfo(*rideSpellId, DIFFICULTY_NONE))
+        Optional<uint32> rideSpellId;
+        if (!fields[6].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `vehicle_template_accessory`: rideSpellId {} does not exist for entry {}.", *rideSpellId, entry);
-            continue;
+            rideSpellId = fields[6].GetUInt32();
+
+            if (!sSpellMgr->GetSpellInfo(*rideSpellId, DIFFICULTY_NONE))
+            {
+                TC_LOG_ERROR("sql.sql", "Table `vehicle_template_accessory`: rideSpellId {} does not exist for entry {}.", *rideSpellId, entry);
+                continue;
+            }
         }
 
         if (!GetCreatureTemplate(entry))
@@ -3515,8 +3266,8 @@ void ObjectMgr::LoadVehicleTemplate()
 
     _vehicleTemplateStore.clear();
 
-    //                                               0           1               2      3
-    QueryResult result = WorldDatabase.Query("SELECT creatureId, despawnDelayMs, Pitch, CustomFlags FROM vehicle_template");
+    //                                               0           1
+    QueryResult result = WorldDatabase.Query("SELECT creatureId, despawnDelayMs FROM vehicle_template");
 
     if (!result)
     {
@@ -3530,46 +3281,15 @@ void ObjectMgr::LoadVehicleTemplate()
 
         uint32 creatureId = fields[0].GetUInt32();
 
-        CreatureTemplate const* creatureInfo = GetCreatureTemplate(creatureId);
-        if (!creatureInfo)
+        if (!GetCreatureTemplate(creatureId))
         {
-            TC_LOG_ERROR("sql.sql", "Table `vehicle_template`: Creature (Entry: {}) does not exist.", creatureId);
-            continue;
-        }
-
-        if (!creatureInfo->VehicleId)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `vehicle_template`: Creature (Entry: {}) is not a vehicle.", creatureId);
+            TC_LOG_ERROR("sql.sql", "Table `vehicle_template`: Vehicle {} does not exist.", creatureId);
             continue;
         }
 
         VehicleTemplate& vehicleTemplate = _vehicleTemplateStore[creatureId];
         vehicleTemplate.DespawnDelay = Milliseconds(fields[1].GetInt32());
-        vehicleTemplate.Pitch = fields[2].GetFloatOrNull();
-        vehicleTemplate.CustomFlags = VehicleCustomFlags(fields[3].GetInt32());
 
-        if (vehicleTemplate.DespawnDelay < 0ms)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `vehicle_template`: Creature (Entry: {}) has negative despawnDelayMs ({}).`. Ignoring",
-                creatureId, vehicleTemplate.DespawnDelay.count());
-            vehicleTemplate.DespawnDelay = 1ms;
-        }
-        else if (vehicleTemplate.DespawnDelay == 0ms)
-            vehicleTemplate.DespawnDelay = 1ms;
-
-        if (vehicleTemplate.Pitch)
-        {
-            if (VehicleEntry const* vehicle = sVehicleStore.LookupEntry(creatureInfo->VehicleId))
-            {
-                if (*vehicleTemplate.Pitch < vehicle->PitchMin || *vehicleTemplate.Pitch > vehicle->PitchMax)
-                {
-                    TC_LOG_ERROR("sql.sql", "Table `vehicle_template`: Creature (Entry: {}) has invalid Pitch ({}).`. Ignoring",
-                        creatureId, *vehicleTemplate.Pitch);
-                    vehicleTemplate.Pitch.reset();
-                }
-            }
-
-        }
     } while (result->NextRow());
 
     TC_LOG_INFO("server.loading", ">> Loaded {} Vehicle Template entries in {} ms", _vehicleTemplateStore.size(), GetMSTimeDiffToNow(oldMSTime));
@@ -3588,7 +3308,7 @@ void ObjectMgr::LoadVehicleAccessories()
 
     if (!result)
     {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 vehicle accessories. DB table `vehicle_accessory` is empty.");
+        TC_LOG_INFO("server.loading", ">> Loaded 0 Vehicle Accessories in {} ms", GetMSTimeDiffToNow(oldMSTime));
         return;
     }
 
@@ -3602,12 +3322,17 @@ void ObjectMgr::LoadVehicleAccessories()
         bool   bMinion      = fields[3].GetBool();
         uint8  uiSummonType = fields[4].GetUInt8();
         uint32 uiSummonTimer= fields[5].GetUInt32();
-        Optional<uint32> rideSpellId = fields[6].GetUInt32OrNull();
 
-        if (rideSpellId && !sSpellMgr->GetSpellInfo(*rideSpellId, DIFFICULTY_NONE))
+        Optional<uint32> rideSpellId;
+        if (!fields[6].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `vehicle_accessory`: rideSpellId {} does not exist for guid {}.", *rideSpellId, uiGUID);
-            continue;
+            rideSpellId = fields[6].GetUInt32();
+
+            if (!sSpellMgr->GetSpellInfo(*rideSpellId, DIFFICULTY_NONE))
+            {
+                TC_LOG_ERROR("sql.sql", "Table `vehicle_accessory`: rideSpellId {} does not exist for guid {}.", *rideSpellId, uiGUID);
+                continue;
+            }
         }
 
         if (!GetCreatureTemplate(uiAccessory))
@@ -3881,7 +3606,8 @@ void ObjectMgr::LoadPlayerInfo()
                     info->createPositionNPE.emplace();
 
                     info->createPositionNPE->Loc.WorldRelocate(fields[7].GetUInt32(), fields[8].GetFloat(), fields[9].GetFloat(), fields[10].GetFloat(), fields[11].GetFloat());
-                    info->createPositionNPE->TransportGuid = fields[12].GetUInt64OrNull();
+                    if (!fields[12].IsNull())
+                        info->createPositionNPE->TransportGuid = fields[12].GetUInt64();
 
                     if (!sMapStore.LookupEntry(info->createPositionNPE->Loc.GetMapId()))
                     {
@@ -3898,28 +3624,34 @@ void ObjectMgr::LoadPlayerInfo()
                     }
                 }
 
-                info->introMovieId = fields[13].GetUInt32OrNull();
-                if (info->introMovieId && !sMovieStore.LookupEntry(*info->introMovieId))
+                if (!fields[13].IsNull())
                 {
-                    TC_LOG_ERROR("sql.sql", "Invalid intro movie id {} for class {} race {} pair in `playercreateinfo` table, ignoring.",
-                        *info->introMovieId, current_class, current_race);
-                    info->introMovieId.reset();
+                    uint32 introMovieId = fields[13].GetUInt32();
+                    if (sMovieStore.LookupEntry(introMovieId))
+                        info->introMovieId = introMovieId;
+                    else
+                        TC_LOG_ERROR("sql.sql", "Invalid intro movie id {} for class {} race {} pair in `playercreateinfo` table, ignoring.",
+                            introMovieId, current_class, current_race);
                 }
 
-                info->introSceneId = fields[14].GetUInt32OrNull();
-                if (info->introSceneId && !GetSceneTemplate(*info->introSceneId))
+                if (!fields[14].IsNull())
                 {
-                    TC_LOG_ERROR("sql.sql", "Invalid intro scene id {} for class {} race {} pair in `playercreateinfo` table, ignoring.",
-                        *info->introSceneId, current_class, current_race);
-                    info->introSceneId.reset();
+                    uint32 introSceneId = fields[14].GetUInt32();
+                    if (GetSceneTemplate(introSceneId))
+                        info->introSceneId = introSceneId;
+                    else
+                        TC_LOG_ERROR("sql.sql", "Invalid intro scene id {} for class {} race {} pair in `playercreateinfo` table, ignoring.",
+                            introSceneId, current_class, current_race);
                 }
 
-                info->introSceneIdNPE = fields[15].GetUInt32OrNull();
-                if (info->introSceneIdNPE && !GetSceneTemplate(*info->introSceneIdNPE))
+                if (!fields[15].IsNull())
                 {
-                    TC_LOG_ERROR("sql.sql", "Invalid NPE intro scene id {} for class {} race {} pair in `playercreateinfo` table, ignoring.",
-                        *info->introSceneIdNPE, current_class, current_race);
-                    info->introSceneIdNPE.reset();
+                    uint32 introSceneId = fields[15].GetUInt32();
+                    if (GetSceneTemplate(introSceneId))
+                        info->introSceneIdNPE = introSceneId;
+                    else
+                        TC_LOG_ERROR("sql.sql", "Invalid NPE intro scene id {} for class {} race {} pair in `playercreateinfo` table, ignoring.",
+                            introSceneId, current_class, current_race);
                 }
 
                 _playerInfo[{ Races(current_race), Classes(current_class) }] = std::move(info);
@@ -3949,12 +3681,12 @@ void ObjectMgr::LoadPlayerInfo()
             if (!items)
                 continue;
 
-            for (ChrRacesEntry const* race : sChrRacesStore)
+            for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
             {
-                if (!characterLoadout->RaceMask.HasRace(race->ID))
+                if (!characterLoadout->RaceMask.HasRace(raceIndex))
                     continue;
 
-                if (auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race->ID), Classes(characterLoadout->ChrClassID) }))
+                if (auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(raceIndex), Classes(characterLoadout->ChrClassID) }))
                 {
                     playerInfo->itemContext = ItemContext(characterLoadout->ItemContext);
 
@@ -4008,14 +3740,14 @@ void ObjectMgr::LoadPlayerInfo()
                 Field* fields = result->Fetch();
 
                 uint32 current_race = fields[0].GetUInt8();
-                if (current_race && !sChrRacesStore.HasRecord(current_race))
+                if (current_race >= MAX_RACES)
                 {
                     TC_LOG_ERROR("sql.sql", "Wrong race {} in `playercreateinfo_item` table, ignoring.", current_race);
                     continue;
                 }
 
                 uint32 current_class = fields[1].GetUInt8();
-                if (current_class && !sChrClassesStore.HasRecord(current_class))
+                if (current_class >= MAX_CLASSES)
                 {
                     TC_LOG_ERROR("sql.sql", "Wrong class {} in `playercreateinfo_item` table, ignoring.", current_class);
                     continue;
@@ -4040,9 +3772,9 @@ void ObjectMgr::LoadPlayerInfo()
                 if (!current_race || !current_class)
                 {
                     uint32 min_race = current_race ? current_race : 1;
-                    uint32 max_race = current_race ? current_race + 1 : sChrRacesStore.GetNumRows();
+                    uint32 max_race = current_race ? current_race + 1 : MAX_RACES;
                     uint32 min_class = current_class ? current_class : 1;
-                    uint32 max_class = current_class ? current_class + 1 : sChrClassesStore.GetNumRows();
+                    uint32 max_class = current_class ? current_class + 1 : MAX_CLASSES;
                     for (uint32 r = min_race; r < max_race; ++r)
                         for (uint32 c = min_class; c < max_class; ++c)
                             PlayerCreateInfoAddItemHelper(r, c, item_id, amount);
@@ -4065,11 +3797,11 @@ void ObjectMgr::LoadPlayerInfo()
 
         for (SkillRaceClassInfoEntry const* rcInfo : sSkillRaceClassInfoStore)
             if (rcInfo->Availability == 1)
-                for (ChrRacesEntry const* race : sChrRacesStore)
-                    if (rcInfo->RaceMask.IsEmpty() || rcInfo->RaceMask.HasRace(race->ID))
+                for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
+                    if (rcInfo->RaceMask.IsEmpty() || rcInfo->RaceMask.HasRace(raceIndex))
                         for (uint32 classIndex = CLASS_WARRIOR; classIndex < MAX_CLASSES; ++classIndex)
                             if (rcInfo->ClassMask == -1 || rcInfo->ClassMask == 0 || ((1 << (classIndex - 1)) & rcInfo->ClassMask))
-                                if (PlayerInfo* playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race->ID), Classes(classIndex) }))
+                                if (auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(raceIndex), Classes(classIndex) }))
                                     playerInfo->skills.push_back(rcInfo);
 
         TC_LOG_INFO("server.loading", ">> Loaded player create skills in {} ms", GetMSTimeDiffToNow(oldMSTime));
@@ -4109,15 +3841,15 @@ void ObjectMgr::LoadPlayerInfo()
                     continue;
                 }
 
-                for (ChrRacesEntry const* race : sChrRacesStore)
+                for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
                 {
-                    if (raceMask.IsEmpty() || raceMask.HasRace(race->ID))
+                    if (raceMask.IsEmpty() || raceMask.HasRace(raceIndex))
                     {
                         for (uint32 classIndex = CLASS_WARRIOR; classIndex < MAX_CLASSES; ++classIndex)
                         {
                             if (classMask == 0 || ((1 << (classIndex - 1)) & classMask))
                             {
-                                if (PlayerInfo* playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, {Races(race->ID), Classes(classIndex)}))
+                                if (auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(raceIndex), Classes(classIndex) }))
                                 {
                                     playerInfo->customSpells.push_back(spellId);
                                     ++count;
@@ -4176,15 +3908,15 @@ void ObjectMgr::LoadPlayerInfo()
                     continue;
                 }
 
-                for (ChrRacesEntry const* race : sChrRacesStore)
+                for (uint32 raceIndex = RACE_HUMAN; raceIndex < MAX_RACES; ++raceIndex)
                 {
-                    if (raceMask.IsEmpty() || raceMask.HasRace(race->ID))
+                    if (raceMask.IsEmpty() || raceMask.HasRace(raceIndex))
                     {
                         for (uint32 classIndex = CLASS_WARRIOR; classIndex < MAX_CLASSES; ++classIndex)
                         {
                             if (classMask == 0 || ((1 << (classIndex - 1)) & classMask))
                             {
-                                if (PlayerInfo* playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race->ID), Classes(classIndex) }))
+                                if (auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(raceIndex), Classes(classIndex) }))
                                 {
                                     playerInfo->castSpells[playerCreateMode].push_back(spellId);
                                     ++count;
@@ -4220,14 +3952,14 @@ void ObjectMgr::LoadPlayerInfo()
                 Field* fields = result->Fetch();
 
                 uint32 current_race = fields[0].GetUInt8();
-                if (!sChrRacesStore.HasRecord(current_race))
+                if (current_race >= MAX_RACES)
                 {
                     TC_LOG_ERROR("sql.sql", "Wrong race {} in `playercreateinfo_action` table, ignoring.", current_race);
                     continue;
                 }
 
                 uint32 current_class = fields[1].GetUInt8();
-                if (!sChrClassesStore.HasRecord(current_class))
+                if (current_class >= MAX_CLASSES)
                 {
                     TC_LOG_ERROR("sql.sql", "Wrong class {} in `playercreateinfo_action` table, ignoring.", current_class);
                     continue;
@@ -4249,18 +3981,14 @@ void ObjectMgr::LoadPlayerInfo()
     {
         struct RaceStats
         {
-            Races Race;
             std::array<int16, MAX_STATS> StatModifier = { };
-
-            explicit RaceStats(Races race) : Race(race) { }
-            std::strong_ordering operator<=>(RaceStats const& right) const { return Race <=> right.Race; }
-            bool operator==(RaceStats const& right) const { return Race == right.Race; }
         };
 
-        Trinity::Containers::FlatSet<RaceStats> raceStatModifiers;
+        std::array<RaceStats, MAX_RACES> raceStatModifiers = { };
 
         uint32 oldMSTime = getMSTime();
 
+        //                                                0      1      2    3    4    5     6
         QueryResult raceStatsResult = WorldDatabase.Query("SELECT race, str, agi, sta, inte, spi FROM player_racestats");
 
         if (!raceStatsResult)
@@ -4274,20 +4002,19 @@ void ObjectMgr::LoadPlayerInfo()
             Field* fields = raceStatsResult->Fetch();
 
             uint32 current_race = fields[0].GetUInt8();
-            if (!sChrRacesStore.HasRecord(current_race))
+            if (current_race >= MAX_RACES)
             {
                 TC_LOG_ERROR("sql.sql", "Wrong race {} in `player_racestats` table, ignoring.", current_race);
                 continue;
             }
 
-            RaceStats& stats = *raceStatModifiers.emplace(Races(current_race)).first;
             for (uint32 i = 0; i < MAX_STATS; ++i)
-                stats.StatModifier[i] = fields[i + 1].GetInt16();
+                raceStatModifiers[current_race].StatModifier[i] = fields[i + 1].GetInt16();
 
         } while (raceStatsResult->NextRow());
 
-        //                                                  0      1     2    3    4    5    6
-        QueryResult result  = WorldDatabase.Query("SELECT class, level, str, agi, sta, inte, spi FROM player_classlevelstats");
+        //                                                0      1      2    3    4    5     6    7
+        QueryResult result  = WorldDatabase.Query("SELECT class, level, str, agi, sta, inte, spi, basehp FROM player_classlevelstats");
 
         if (!result)
         {
@@ -4302,7 +4029,7 @@ void ObjectMgr::LoadPlayerInfo()
             Field* fields = result->Fetch();
 
             uint32 current_class = fields[0].GetUInt8();
-            if (!sChrClassesStore.HasRecord(current_class))
+            if (current_class >= MAX_CLASSES)
             {
                 TC_LOG_ERROR("sql.sql", "Wrong class {} in `player_classlevelstats` table, ignoring.", current_class);
                 continue;
@@ -4319,16 +4046,18 @@ void ObjectMgr::LoadPlayerInfo()
                 continue;
             }
 
-            for (RaceStats const& raceStats : raceStatModifiers)
+            for (std::size_t race = 0; race < raceStatModifiers.size(); ++race)
             {
-                if (PlayerInfo* playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { raceStats.Race, Classes(current_class) }))
+                if (auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race), Classes(current_class) }))
                 {
                     if (!playerInfo->levelInfo)
                         playerInfo->levelInfo = std::make_unique<PlayerLevelInfo[]>(sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
 
                     PlayerLevelInfo& levelInfo = playerInfo->levelInfo[current_level - 1];
                     for (uint8 i = 0; i < MAX_STATS; ++i)
-                        levelInfo.stats[i] = fields[i + 2].GetInt32() + raceStats.StatModifier[i];
+                        levelInfo.stats[i] = fields[i + 2].GetUInt16() + raceStatModifiers[race].StatModifier[i];
+
+                    levelInfo.base_hp = fields[7].GetUInt32();
                 }
             }
 
@@ -4337,24 +4066,55 @@ void ObjectMgr::LoadPlayerInfo()
         while (result->NextRow());
 
         // Fill gaps and check integrity
-        for (auto const& [raceClass, playerInfo] : _playerInfo)
+        for (uint8 race = 0; race < MAX_RACES; ++race)
         {
-            auto [race, class_] = raceClass;
+            // skip non existed races
+            if (!sChrRacesStore.LookupEntry(race))
+                continue;
 
-            // fatal error if no level 1 data
-            if (!playerInfo->levelInfo || playerInfo->levelInfo[0].stats[0] == 0)
+            for (uint8 class_ = 0; class_ < MAX_CLASSES; ++class_)
             {
-                TC_LOG_ERROR("sql.sql", "Race {} Class {} Level 1 does not have stats data!", race, class_);
-                ABORT();
-            }
+                // skip non existed classes
+                if (!sChrClassesStore.LookupEntry(class_))
+                    continue;
 
-            // fill level gaps
-            for (uint8 level = 1; level < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL); ++level)
-            {
-                if (playerInfo->levelInfo[level].stats[0] == 0)
+                auto const& playerInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race), Classes(class_) });
+                if (!playerInfo)
+                    continue;
+
+                // skip expansion races if not playing with expansion
+                if (sWorld->getIntConfig(CONFIG_EXPANSION) < EXPANSION_THE_BURNING_CRUSADE && (race == RACE_BLOODELF || race == RACE_DRAENEI))
+                    continue;
+
+                // skip expansion classes if not playing with expansion
+                if (sWorld->getIntConfig(CONFIG_EXPANSION) < EXPANSION_WRATH_OF_THE_LICH_KING && class_ == CLASS_DEATH_KNIGHT)
+                    continue;
+
+                // skip expansion races if not playing with expansion
+                // if (sWorld->getIntConfig(CONFIG_EXPANSION) < EXPANSION_CATACLYSM && (race == RACE_GOBLIN || race == RACE_WORGEN))
+                //     continue;
+                //
+                // if (sWorld->getIntConfig(CONFIG_EXPANSION) < EXPANSION_LEGION && class_ == CLASS_DEMON_HUNTER)
+                //     continue;
+                //
+                // if (sWorld->getIntConfig(CONFIG_EXPANSION) < EXPANSION_DRAGONFLIGHT && class_ == CLASS_EVOKER)
+                //     continue;
+
+                // fatal error if no level 1 data
+                if (!playerInfo->levelInfo || playerInfo->levelInfo[0].stats[0] == 0)
                 {
-                    TC_LOG_ERROR("sql.sql", "Race {} Class {} Level {} does not have stats data. Using stats data of level {}.", race, class_, level + 1, level);
-                    playerInfo->levelInfo[level] = playerInfo->levelInfo[level - 1];
+                    TC_LOG_ERROR("sql.sql", "Race {} Class {} Level 1 does not have stats data!", race, class_);
+                    ABORT();
+                }
+
+                // fill level gaps
+                for (uint8 level = 1; level < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL); ++level)
+                {
+                    if (playerInfo->levelInfo[level].stats[0] == 0)
+                    {
+                        TC_LOG_ERROR("sql.sql", "Race {} Class {} Level {} does not have stats data. Using stats data of level {}.", race, class_, level + 1, level);
+                        playerInfo->levelInfo[level] = playerInfo->levelInfo[level - 1];
+                    }
                 }
             }
         }
@@ -4367,18 +4127,15 @@ void ObjectMgr::LoadPlayerInfo()
     {
         uint32 oldMSTime = getMSTime();
 
-        _playerXPperLevel.resize(sXpGameTable.GetTableRowCount(), 0);
+        _playerXPperLevel.resize(sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL));
+        for (uint8 level = 0; level < sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL); ++level)
+            _playerXPperLevel[level] = 0;
 
         //                                               0      1
         QueryResult result = WorldDatabase.Query("SELECT Level, Experience FROM player_xp_for_level");
 
-        // load the DBC's levels at first...
-        for (uint32 level = 1; level < sXpGameTable.GetTableRowCount(); ++level)
-            _playerXPperLevel[level] = sXpGameTable.GetRow(level)->Total;
-
         uint32 count = 0;
 
-        // ...overwrite if needed (custom values)
         if (result)
         {
             do
@@ -4411,7 +4168,7 @@ void ObjectMgr::LoadPlayerInfo()
             if (_playerXPperLevel[level] == 0)
             {
                 TC_LOG_ERROR("sql.sql", "Level {} does not have XP for level data. Using data of level [{}] + 12000.", level + 1, level);
-                _playerXPperLevel[level] = _playerXPperLevel[level - 1] + 12000;
+                _playerXPperLevel[level] = _playerXPperLevel[level - 1] + 100;
             }
         }
 
@@ -4427,22 +4184,18 @@ void ObjectMgr::GetPlayerClassLevelInfo(uint32 class_, uint8 level, uint32& base
     if (level > sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
         level = sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL);
 
-    GtBaseMPEntry const* mp = sBaseMPGameTable.GetRow(level);
-    if (!mp)
-    {
-        TC_LOG_ERROR("misc", "Tried to get non-existant Class-Level combination data for base hp/mp. Class {} Level {}", class_, level);
-        return;
-    }
-
-    baseMana = uint32(GetGameTableColumnForClass(mp, class_));
+    if (GtOctBaseMpByClassEntry const* mp = sOctBaseMpByClassGameTable.GetRow(level))
+        baseMana = uint32(GetGameTableColumnForClass(mp, class_));
+    else
+        baseMana = 0;
 }
 
 void ObjectMgr::GetPlayerLevelInfo(uint32 race, uint32 class_, uint8 level, PlayerLevelInfo* info) const
 {
-    if (level < 1)
+    if (level < 1 || race >= MAX_RACES || class_ >= MAX_CLASSES)
         return;
 
-    PlayerInfo const* pInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race), Classes(class_) });
+    PlayerInfo const* pInfo = Trinity::Containers::MapGetValuePtr(_playerInfo, {Races(race), Classes(class_)});
     if (!pInfo)
         return;
 
@@ -4548,21 +4301,39 @@ void ObjectMgr::LoadQuests()
     _exclusiveQuestGroups.clear();
 
     QueryResult result = WorldDatabase.Query("SELECT "
-        "ID, QuestType, QuestPackageID, ContentTuningID, QuestSortID, QuestInfoID, SuggestedGroupNum, RewardNextQuest, RewardXPDifficulty, RewardXPMultiplier, "
-        "RewardMoneyDifficulty, RewardMoneyMultiplier, RewardBonusMoney, RewardSpell, RewardHonor, RewardKillHonor, RewardFavor, StartItem, "
-        "RewardArtifactXPDifficulty, RewardArtifactXPMultiplier, RewardArtifactCategoryID, Flags, FlagsEx, FlagsEx2, FlagsEx3, "
+        //0  1          2           3                         4                      5               6
+        "ID, QuestType, QuestLevel, QuestScalingFactionGroup, QuestMaxScalingLevel,  QuestPackageID, MinLevel, "
+        //7           8            8                  10               11                  12
+        "QuestSortID, QuestInfoID, SuggestedGroupNum, RewardNextQuest, RewardXPDifficulty, RewardXPMultiplier, "
+        //13                    14                     15                16           17           18               19
+        "RewardMoneyDifficulty, RewardMoneyMultiplier, RewardBonusMoney, RewardSpell, RewardHonor, RewardKillHonor, StartItem, "
+        //20                         21                          22                        23     24       25
+        "RewardArtifactXPDifficulty, RewardArtifactXPMultiplier, RewardArtifactCategoryID, Flags, FlagsEx, FlagsEx2, "
+        //26          27             28         29                 30           31             32         33
         "RewardItem1, RewardAmount1, ItemDrop1, ItemDropQuantity1, RewardItem2, RewardAmount2, ItemDrop2, ItemDropQuantity2, "
+        //34          35             36         37                 38           39             40         41
         "RewardItem3, RewardAmount3, ItemDrop3, ItemDropQuantity3, RewardItem4, RewardAmount4, ItemDrop4, ItemDropQuantity4, "
+        //42                  43                         44                          45                   46                         47
         "RewardChoiceItemID1, RewardChoiceItemQuantity1, RewardChoiceItemDisplayID1, RewardChoiceItemID2, RewardChoiceItemQuantity2, RewardChoiceItemDisplayID2, "
+        //48                  49                         50                          51                   52                         53
         "RewardChoiceItemID3, RewardChoiceItemQuantity3, RewardChoiceItemDisplayID3, RewardChoiceItemID4, RewardChoiceItemQuantity4, RewardChoiceItemDisplayID4, "
+        //54                  55                         56                          57                   58                         59
         "RewardChoiceItemID5, RewardChoiceItemQuantity5, RewardChoiceItemDisplayID5, RewardChoiceItemID6, RewardChoiceItemQuantity6, RewardChoiceItemDisplayID6, "
+        //60           61    62    63           64           65                 66                 67
         "POIContinent, POIx, POIy, POIPriority, RewardTitle, RewardArenaPoints, RewardSkillLineID, RewardNumSkillUps, "
+        //68            69                  70                         71
         "PortraitGiver, PortraitGiverMount, PortraitGiverModelSceneID, PortraitTurnIn, "
+        //72               73                   74                      75                   76                77                   78                      79
         "RewardFactionID1, RewardFactionValue1, RewardFactionOverride1, RewardFactionCapIn1, RewardFactionID2, RewardFactionValue2, RewardFactionOverride2, RewardFactionCapIn2, "
+        //80               81                   82                      83                   84                85                   86                      87
         "RewardFactionID3, RewardFactionValue3, RewardFactionOverride3, RewardFactionCapIn3, RewardFactionID4, RewardFactionValue4, RewardFactionOverride4, RewardFactionCapIn4, "
+        //88               89                   90                      91                   92
         "RewardFactionID5, RewardFactionValue5, RewardFactionOverride5, RewardFactionCapIn5, RewardFactionFlags, "
+        //93                94                  95                 96                  97                 98                  99                 100
         "RewardCurrencyID1, RewardCurrencyQty1, RewardCurrencyID2, RewardCurrencyQty2, RewardCurrencyID3, RewardCurrencyQty3, RewardCurrencyID4, RewardCurrencyQty4, "
-        "AcceptedSoundKitID, CompleteSoundKitID, AreaGroupID, TimeAllowed, AllowableRaces, ResetByScheduler, Expansion, ManagedWorldStateID, QuestSessionBonus, "
+        //101                102                 103          104          105             106
+        "AcceptedSoundKitID, CompleteSoundKitID, AreaGroupID, TimeAllowed, AllowableRaces, Expansion, "
+        //107      108             109               110              111                112                113                 114                 115
         "LogTitle, LogDescription, QuestDescription, AreaDescription, PortraitGiverText, PortraitGiverName, PortraitTurnInText, PortraitTurnInName, QuestCompletionLog "
         "FROM quest_template");
     if (!result)
@@ -4581,7 +4352,7 @@ void ObjectMgr::LoadQuests()
         Field* fields = result->Fetch();
 
         uint32 questId = fields[0].GetUInt32();
-        auto itr = _questTemplates.emplace(std::piecewise_construct, std::forward_as_tuple(questId), std::forward_as_tuple(new Quest(result))).first;
+        auto itr = _questTemplates.emplace(std::piecewise_construct, std::forward_as_tuple(questId), std::forward_as_tuple(new Quest(fields))).first;
         itr->second->_weakRef = itr->second;
         if (itr->second->IsAutoPush())
             _questTemplatesAutoPush.push_back(itr->second.get());
@@ -4604,8 +4375,8 @@ void ObjectMgr::LoadQuests()
         // 0        1      2      3      4      5      6
         { "QuestID, Type1, Type2, Type3, Type4, Type5, Type6",                                                                                                            "quest_reward_choice_items", "",                                  "reward choice items", &Quest::LoadRewardChoiceItems },
 
-        // 0        1        2                  3
-        { "QuestID, SpellID, PlayerConditionID, Type",                                                                                                                    "quest_reward_display_spell", "ORDER BY QuestID ASC, Idx ASC",    "reward display spells", &Quest::LoadRewardDisplaySpell },
+        // 0        1    2        3                  4
+        { "QuestID, Idx, SpellID, PlayerConditionID, Type",                                                                                                                    "quest_reward_display_spell", "ORDER BY QuestID ASC, Idx ASC",    "reward display spells", &Quest::LoadRewardDisplaySpell },
 
         // 0   1       2       3       4       5            6            7            8
         { "ID, Emote1, Emote2, Emote3, Emote4, EmoteDelay1, EmoteDelay2, EmoteDelay3, EmoteDelay4",                                                                       "quest_details",        "",                                       "details",             &Quest::LoadQuestDetails       },
@@ -4626,9 +4397,9 @@ void ObjectMgr::LoadQuests()
         // 0        1
         { "QuestId, RewardMailSenderEntry",                                                                                                                               "quest_mail_sender",    "",                                       "mail sender entries", &Quest::LoadQuestMailSender    },
 
-        // 0           1      2        3                4            5          6                     7         8          9                     10                    11          12
-        { "qo.QuestID, qo.ID, qo.Type, qo.StorageIndex, qo.ObjectID, qo.Amount, qo.ConditionalAmount, qo.Flags, qo.Flags2, qo.ProgressBarWeight, qo.ParentObjectiveID, qo.Visible, qo.Description, "
-        //   13                14            15                   16                     17
+        // 0           1      2        3                4            5          6         7          8                     9
+        { "qo.QuestID, qo.ID, qo.Type, qo.StorageIndex, qo.ObjectID, qo.Amount, qo.Flags, qo.Flags2, qo.ProgressBarWeight, qo.Description, "
+        //   10                11            12                   13                     14
             "qoce.GameEventID, qoce.SpellID, qoce.ConversationID, qoce.UpdatePhaseShift, qoce.UpdateZoneAuras",                                                           "quest_objectives qo",  "LEFT JOIN quest_objectives_completion_effect qoce ON qo.ID = qoce.ObjectiveID ORDER BY `Order` ASC, StorageIndex ASC", "quest objectives",    &Quest::LoadQuestObjective     },
 
         // 0        1                  2                     3       4
@@ -4644,13 +4415,7 @@ void ObjectMgr::LoadQuests()
         { "QuestId, PlayerConditionId, QuestgiverCreatureId, Text, locale",                                                                                               "quest_completion_log_conditional", "ORDER BY OrderIndex",        "conditional completion log", &Quest::LoadConditionalConditionalQuestCompletionLog },
 
         // 0        1
-        { "QuestID, TreasurePickerID",                                                                                                                                    "quest_treasure_pickers", "ORDER BY OrderIndex",                  "treasure pickers", &Quest::LoadTreasurePickers },
-
-        // 0        1
-        { "QuestID, HouseRoomID",                                                                                                                                         "quest_reward_house_room", "ORDER BY OrderIndex",                 "house room rewards", &Quest::LoadRewardHouseRoom },
-
-        // 0        1
-        { "QuestID, HouseDecorID",                                                                                                                                        "quest_reward_house_decor", "ORDER BY OrderIndex",                "house decor rewards", &Quest::LoadRewardHouseDecor }
+        { "QuestID, TreasurePickerID",                                                                                                                                    "quest_treasure_pickers", "ORDER BY OrderIndex",                  "treasure pickers", &Quest::LoadTreasurePickers }
     };
 
     for (QuestLoaderHelper const& loader : QuestLoaderHelpers)
@@ -4781,12 +4546,6 @@ void ObjectMgr::LoadQuests()
             }
         }
 
-        if (qinfo->_contentTuningID && !sContentTuningStore.LookupEntry(qinfo->_contentTuningID))
-        {
-            TC_LOG_ERROR("sql.sql", "Quest {} has `ContentTuningID` = {} but content tuning with this id does not exist.",
-                qinfo->GetQuestId(), qinfo->_contentTuningID);
-        }
-
         // client quest log visual (area case)
         if (qinfo->_questSortID > 0)
         {
@@ -4829,13 +4588,12 @@ void ObjectMgr::LoadQuests()
             }
         }
         // AllowableRaces, can be -1/RACEMASK_ALL_PLAYABLE to allow any race
-        if (qinfo->_allowableRaces != RACEMASK_ALL_v<std::array<int32, 2>>)
+        if (qinfo->_allowableRaces.RawValue != uint64(-1))
         {
-            if (!qinfo->_allowableRaces.IsEmpty() && (qinfo->_allowableRaces & RACEMASK_ALL_PLAYABLE_v<std::array<int32, 2>>).IsEmpty())
+            if (!qinfo->_allowableRaces.IsEmpty() && (qinfo->_allowableRaces & RACEMASK_ALL_PLAYABLE).IsEmpty())
             {
-                TC_LOG_ERROR("sql.sql", "Quest {} does not contain any playable races in `AllowableRaces` (0x{:X}{:08X}), value set to -1 (all races).",
-                    qinfo->GetQuestId(), qinfo->_allowableRaces.RawValue[1], qinfo->_allowableRaces.RawValue[0]);
-                qinfo->_allowableRaces = RACEMASK_ALL_v<std::array<int32, 2>>;
+                TC_LOG_ERROR("sql.sql", "Quest {} does not contain any playable races in `AllowableRaces` ({}), value set to -1 (all races).", qinfo->GetQuestId(), qinfo->_allowableRaces.RawValue);
+                qinfo->_allowableRaces.RawValue = uint64(-1);
             }
         }
         // RequiredSkillId, can be 0
@@ -5026,7 +4784,6 @@ void ObjectMgr::LoadQuests()
                 case QUEST_OBJECTIVE_MONEY:
                 case QUEST_OBJECTIVE_WINPVPPETBATTLES:
                 case QUEST_OBJECTIVE_PROGRESS_BAR:
-                case QUEST_OBJECTIVE_KILL_WITH_LABEL:
                     break;
                 default:
                     TC_LOG_ERROR("sql.sql", "Quest {} objective {} has unhandled type {}", qinfo->GetQuestId(), obj.ID, obj.Type);
@@ -5265,18 +5022,13 @@ void ObjectMgr::LoadQuests()
             }
         }
 
-        if (qinfo->_rewardSkillPoints)
+        if (qinfo->_rewardSkillPoints && qinfo->_rewardSkillId)
         {
             if (qinfo->_rewardSkillPoints > sWorld->GetConfigMaxSkillValue())
             {
                 TC_LOG_ERROR("sql.sql", "Quest {} has `RewardSkillPoints` = {} but max possible skill is {}, quest can't be done.",
                     qinfo->GetQuestId(), qinfo->_rewardSkillPoints, sWorld->GetConfigMaxSkillValue());
                 // no changes, quest can't be done for this requirement
-            }
-            if (!qinfo->_rewardSkillId)
-            {
-                TC_LOG_ERROR("sql.sql", "Quest {} has `RewardSkillPoints` = {} but `RewardSkillId` is 0",
-                    qinfo->GetQuestId(), qinfo->_rewardSkillPoints);
             }
         }
 
@@ -5990,7 +5742,7 @@ void ObjectMgr::LoadEventScripts()
         Field* fields = result->Fetch();
 
         uint32 eventId = fields[0].GetUInt32();
-        std::string_view scriptName = fields[1].GetStringView();
+        std::string const scriptName = fields[1].GetString();
 
         if (!IsValidEvent(eventId))
         {
@@ -6026,7 +5778,7 @@ void ObjectMgr::LoadSpellScriptNames()
         Field* fields = result->Fetch();
 
         int32 spellId                = fields[0].GetInt32();
-        std::string_view scriptName  = fields[1].GetStringView();
+        std::string const scriptName = fields[1].GetString();
 
         bool allRanks = false;
         if (spellId < 0)
@@ -6052,7 +5804,6 @@ void ObjectMgr::LoadSpellScriptNames()
                 TC_LOG_ERROR("sql.sql", "Scriptname: `{}` spell (Id: {}) is not first rank of spell.", scriptName, fields[0].GetInt32());
                 continue;
             }
-
             while (spellInfo)
             {
                 _spellScriptsStore.insert(SpellScriptsContainer::value_type(spellInfo->Id, std::make_pair(GetScriptId(scriptName), true)));
@@ -6243,7 +5994,7 @@ void ObjectMgr::LoadInstanceTemplate()
         InstanceTemplate instanceTemplate;
 
         instanceTemplate.Parent     = uint32(fields[1].GetUInt16());
-        instanceTemplate.ScriptId   = GetScriptId(fields[2].GetStringView());
+        instanceTemplate.ScriptId   = GetScriptId(fields[2].GetString());
 
         _instanceTemplateStore[mapID] = instanceTemplate;
 
@@ -6415,13 +6166,10 @@ void ObjectMgr::ReturnOrDeleteOldMails(bool serverUp)
             if (m->messageType != MAIL_NORMAL || (m->checked & (MAIL_CHECK_MASK_COD_PAYMENT | MAIL_CHECK_MASK_RETURNED)))
             {
                 CharacterDatabaseTransaction nonTransactional(nullptr);
+
                 // mail open and then not returned
                 for (MailItemInfoVec::iterator itr2 = m->items.begin(); itr2 != m->items.end(); ++itr2)
-                {
                     Item::DeleteFromDB(nonTransactional, itr2->item_guid);
-                    AzeriteItem::DeleteFromDB(nonTransactional, itr2->item_guid);
-                    AzeriteEmpoweredItem::DeleteFromDB(nonTransactional, itr2->item_guid);
-                }
 
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_MAIL_ITEM_BY_ID);
                 stmt->setUInt64(0, m->messageID);
@@ -6663,7 +6411,7 @@ void ObjectMgr::LoadAreaTriggerScripts()
         Field* fields = result->Fetch();
 
         uint32 triggerId             = fields[0].GetUInt32();
-        std::string_view scriptName  = fields[1].GetStringView();
+        std::string const scriptName = fields[1].GetString();
 
         AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(triggerId);
         if (!atEntry)
@@ -6888,19 +6636,13 @@ WorldSafeLocsEntry const* ObjectMgr::GetClosestGraveyard(WorldLocation const& lo
             parentEntry = nullptr;
     }
 
-    if (!graveyard && !sMapStore.LookupEntry(MapId)->IsBattlegroundOrArena())
-    {
-        if (zoneId != 0)
-            TC_LOG_ERROR("sql.sql", "Table `graveyard_zone` incomplete: Zone {} Team {} does not have a linked graveyard.", zoneId, team);
-
-        graveyard = GetDefaultGraveyard(team);
-    }
-
     return graveyard;
 }
 
 WorldSafeLocsEntry const* ObjectMgr::GetClosestGraveyardInZone(WorldLocation const& location, uint32 team, WorldObject* conditionObject, uint32 zoneId) const
 {
+    float x, y, z;
+    location.GetPosition(x, y, z);
     uint32 MapId = location.GetMapId();
 
     // Simulate std. algorithm:
@@ -6913,12 +6655,21 @@ WorldSafeLocsEntry const* ObjectMgr::GetClosestGraveyardInZone(WorldLocation con
     GraveyardMapBounds range = GraveyardStore.equal_range(zoneId);
     MapEntry const* mapEntry = sMapStore.LookupEntry(MapId);
 
+    // not need to check validity of map object; MapId _MUST_ be valid here
+    if (range.first == range.second && !mapEntry->IsBattlegroundOrArena())
+    {
+        if (zoneId != 0) // zone == 0 can't be fixed, used by bliz for bugged zones
+            TC_LOG_ERROR("sql.sql", "Table `game_graveyard_zone` incomplete: Zone {} Team {} does not have a linked graveyard.", zoneId, team);
+        return GetDefaultGraveyard(team);
+    }
+
     // at corpse map
-    Optional<float> distNear;
+    bool foundNear = false;
+    float distNear = 10000;
     WorldSafeLocsEntry const* entryNear = nullptr;
 
     // at entrance map for corpse map
-    Optional<float> distEntr;
+    bool foundEntr = false;
     WorldSafeLocsEntry const* entryEntr = nullptr;
 
     // some where other
@@ -6967,8 +6718,7 @@ WorldSafeLocsEntry const* ObjectMgr::GetClosestGraveyardInZone(WorldLocation con
             // if find graveyard at different map from where entrance placed (or no entrance data), use any first
             if (!mapEntry
                 || mapEntry->CorpseMapID < 0
-                || uint32(mapEntry->CorpseMapID) != entry->Loc.GetMapId()
-                || (mapEntry->Corpse.X == 0 && mapEntry->Corpse.Y == 0)) // Check X and Y
+                || uint32(mapEntry->CorpseMapID) != entry->Loc.GetMapId())
             {
                 // not have any corrdinates for check distance anyway
                 entryFar = entry;
@@ -6976,19 +6726,35 @@ WorldSafeLocsEntry const* ObjectMgr::GetClosestGraveyardInZone(WorldLocation con
             }
 
             // at entrance map calculate distance (2D);
-            float dist2 = entry->Loc.GetExactDist2dSq(mapEntry->Corpse.X, mapEntry->Corpse.Y);
-            if (!distEntr || dist2 < *distEntr)
+            if (foundEntr)
             {
-                distEntr = dist2;
+                //distEntr = 0.f;
+                entryEntr = entry;
+            }
+            else
+            {
+                foundEntr = true;
+                //distEntr = 0.f;
                 entryEntr = entry;
             }
         }
         // find now nearest graveyard at same map
         else
         {
-            float dist2 = entry->Loc.GetExactDistSq(location);
-            if (!distNear || dist2 < *distNear)
+            float dist2 = (entry->Loc.GetPositionX() - x) * (entry->Loc.GetPositionX() - x)
+                + (entry->Loc.GetPositionY() - y) * (entry->Loc.GetPositionY() - y)
+                + (entry->Loc.GetPositionZ() - z) * (entry->Loc.GetPositionZ() - z);
+            if (foundNear)
             {
+                if (dist2 < distNear)
+                {
+                    distNear = dist2;
+                    entryNear = entry;
+                }
+            }
+            else
+            {
+                foundNear = true;
                 distNear = dist2;
                 entryNear = entry;
             }
@@ -7030,15 +6796,20 @@ void ObjectMgr::LoadWorldSafeLocs()
             WorldLocation loc(fields[1].GetUInt32(), fields[2].GetFloat(), fields[3].GetFloat(), fields[4].GetFloat(), DegToRad(fields[5].GetFloat()));
             if (!MapManager::IsValidMapCoord(loc))
             {
-                TC_LOG_ERROR("sql.sql", "World location (ID: {}) has a invalid position {}, skipped", id, loc);
+                TC_LOG_ERROR("sql.sql", "World location (ID: {}) has a invalid position MapID: {} {}, skipped", id, loc.GetMapId(), loc.ToString());
                 continue;
             }
 
-            Optional<ObjectGuid::LowType> transportSpawnId = fields[6].GetUInt64OrNull();
-            if (transportSpawnId && !sTransportMgr->GetTransportSpawn(*transportSpawnId))
+            Optional<ObjectGuid::LowType> transportSpawnId = {};
+            if (!fields[6].IsNull())
             {
-                TC_LOG_ERROR("sql.sql", "World location (ID: {}) has a invalid transportSpawnID {}, skipped.", id, *transportSpawnId);
-                continue;
+                if (!sTransportMgr->GetTransportSpawn(fields[6].GetUInt64()))
+                {
+                    TC_LOG_ERROR("sql.sql", "World location (ID: {}) has a invalid transportSpawnID {}, skipped.", id, fields[6].GetUInt64());
+                    continue;
+                }
+
+                transportSpawnId = fields[6].GetUInt64();
             }
 
             WorldSafeLocsEntry& worldSafeLocs = _worldSafeLocs[id];
@@ -7064,9 +6835,12 @@ Trinity::IteratorPair<std::unordered_map<uint32, WorldSafeLocsEntry>::const_iter
     return std::make_pair(_worldSafeLocs.begin(), _worldSafeLocs.end());
 }
 
-AreaTriggerTeleport const* ObjectMgr::GetAreaTrigger(uint32 trigger) const
+AreaTriggerStruct const* ObjectMgr::GetAreaTrigger(uint32 trigger) const
 {
-    return Trinity::Containers::MapGetValuePtr(_areaTriggerStore, trigger);
+    AreaTriggerContainer::const_iterator itr = _areaTriggerStore.find(trigger);
+    if (itr != _areaTriggerStore.end())
+        return &itr->second;
+    return nullptr;
 }
 
 AccessRequirement const* ObjectMgr::GetAccessRequirement(uint32 mapid, Difficulty difficulty) const
@@ -7098,6 +6872,8 @@ bool ObjectMgr::AddGraveyardLink(uint32 id, uint32 zoneId, uint32 team, bool per
         // Store graveyard condition if team is set
         if (team != 0)
         {
+            using namespace std::string_view_literals;
+
             WorldDatabasePreparedStatement* conditionStmt = WorldDatabase.GetPreparedStatement(WORLD_INS_CONDITION);
             conditionStmt->setUInt32(0, CONDITION_SOURCE_TYPE_GRAVEYARD); // SourceTypeOrReferenceId
             conditionStmt->setUInt32(1, zoneId); // SourceGroup
@@ -7151,13 +6927,6 @@ void ObjectMgr::LoadAreaTriggerTeleports()
         uint32 Trigger_ID = fields[0].GetUInt32();
         uint32 PortLocID  = fields[1].GetUInt32();
 
-        AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(Trigger_ID);
-        if (!atEntry)
-        {
-            TC_LOG_ERROR("sql.sql", "Area Trigger (ID: {}) does not exist in AreaTrigger.dbc.", Trigger_ID);
-            continue;
-        }
-
         WorldSafeLocsEntry const* portLoc = GetWorldSafeLoc(PortLocID);
         if (!portLoc)
         {
@@ -7165,7 +6934,22 @@ void ObjectMgr::LoadAreaTriggerTeleports()
             continue;
         }
 
-        _areaTriggerStore[Trigger_ID] = portLoc;
+        AreaTriggerStruct at;
+
+        at.target_mapId       = portLoc->Loc.GetMapId();
+        at.target_X           = portLoc->Loc.GetPositionX();
+        at.target_Y           = portLoc->Loc.GetPositionY();
+        at.target_Z           = portLoc->Loc.GetPositionZ();
+        at.target_Orientation = portLoc->Loc.GetOrientation();
+
+        AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(Trigger_ID);
+        if (!atEntry)
+        {
+            TC_LOG_ERROR("sql.sql", "Area Trigger (ID: {}) does not exist in AreaTrigger.dbc.", Trigger_ID);
+            continue;
+        }
+
+        _areaTriggerStore[Trigger_ID] = at;
 
     } while (result->NextRow());
 
@@ -7224,8 +7008,8 @@ void ObjectMgr::LoadAccessRequirements()
             continue;
         }
 
-        Difficulty difficulty = Difficulty(fields[1].GetInt32());
-        if (!sDB2Manager.GetMapDifficultyData(mapid, difficulty))
+        uint32 difficulty = fields[1].GetUInt8();
+        if (!sDB2Manager.GetMapDifficultyData(mapid, Difficulty(difficulty)))
         {
             TC_LOG_ERROR("sql.sql", "Map {} referenced in `access_requirement` does not have difficulty {}, skipped", mapid, difficulty);
             continue;
@@ -7299,7 +7083,7 @@ void ObjectMgr::LoadAccessRequirements()
 /*
  * Searches for the areatrigger which teleports players out of the given map with instance_template.parent field support
  */
-AreaTriggerTeleport const* ObjectMgr::GetGoBackTrigger(uint32 Map) const
+AreaTriggerStruct const* ObjectMgr::GetGoBackTrigger(uint32 Map) const
 {
     Optional<uint32> parentId;
     MapEntry const* mapEntry = sMapStore.LookupEntry(Map);
@@ -7313,11 +7097,11 @@ AreaTriggerTeleport const* ObjectMgr::GetGoBackTrigger(uint32 Map) const
     uint32 entrance_map = parentId.value_or(mapEntry->CorpseMapID);
     for (AreaTriggerContainer::const_iterator itr = _areaTriggerStore.begin(); itr != _areaTriggerStore.end(); ++itr)
     {
-        if (itr->second->Loc.GetMapId() == entrance_map)
+        if (itr->second.target_mapId == entrance_map)
         {
             AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(itr->first);
             if (atEntry && atEntry->ContinentID == Map)
-                return itr->second;
+                return &itr->second;
         }
     }
     return nullptr;
@@ -7326,14 +7110,15 @@ AreaTriggerTeleport const* ObjectMgr::GetGoBackTrigger(uint32 Map) const
 /**
  * Searches for the areatrigger which teleports players to the given map
  */
-AreaTriggerTeleport const* ObjectMgr::GetMapEntranceTrigger(uint32 Map) const
+AreaTriggerStruct const* ObjectMgr::GetMapEntranceTrigger(uint32 Map) const
 {
     for (AreaTriggerContainer::const_iterator itr = _areaTriggerStore.begin(); itr != _areaTriggerStore.end(); ++itr)
     {
-        if (itr->second->Loc.GetMapId() == Map)
+        if (itr->second.target_mapId == Map)
         {
-            if (sAreaTriggerStore.HasRecord(itr->first))
-                return itr->second;
+            AreaTriggerEntry const* atEntry = sAreaTriggerStore.LookupEntry(itr->first);
+            if (atEntry)
+                return &itr->second;
         }
     }
     return nullptr;
@@ -7383,6 +7168,10 @@ void ObjectMgr::SetHighestGuids()
     result = CharacterDatabase.Query("SELECT MAX(guid) FROM `groups`");
     if (result)
         sGroupMgr->SetGroupDbStoreSize((*result)[0].GetUInt32()+1);
+
+    result = CharacterDatabase.Query("SELECT MAX(itemId) from character_void_storage");
+    if (result)
+        _voidItemId = (*result)[0].GetUInt64()+1;
 
     result = WorldDatabase.Query("SELECT MAX(guid) FROM creature");
     if (result)
@@ -7436,6 +7225,16 @@ uint32 ObjectMgr::GeneratePetNumber()
         World::StopNow(ERROR_EXIT_CODE);
     }
     return _hiPetNumber++;
+}
+
+uint64 ObjectMgr::GenerateVoidStorageItemId()
+{
+    if (_voidItemId >= uint64(0xFFFFFFFFFFFFFFFELL))
+    {
+        TC_LOG_ERROR("misc", "_voidItemId overflow!! Can't continue, shutting down server. ");
+        World::StopNow(ERROR_EXIT_CODE);
+    }
+    return _voidItemId++;
 }
 
 uint64 ObjectMgr::GenerateCreatureSpawnId()
@@ -7589,9 +7388,8 @@ void ObjectMgr::LoadGameObjectTemplate()
         go.name = db2go->Name[sWorld->GetDefaultDbcLocale()];
         go.size = db2go->Scale;
         memset(go.raw.data, 0, sizeof(go.raw.data));
-        std::ranges::copy(db2go->PropValue, std::begin(go.raw.data));
+        std::copy(db2go->PropValue.begin(), db2go->PropValue.end(), std::begin(go.raw.data));
         go.ContentTuningId = 0;
-        go.RequiredLevel = 0;
         go.ScriptId = 0;
     }
 
@@ -7601,8 +7399,8 @@ void ObjectMgr::LoadGameObjectTemplate()
                                              "Data0, Data1, Data2, Data3, Data4, Data5, Data6, Data7, Data8, Data9, Data10, Data11, Data12, "
     //                                        21      22      23      24      25      26      27      28      29      30      31      32      33      34      35      36
                                              "Data13, Data14, Data15, Data16, Data17, Data18, Data19, Data20, Data21, Data22, Data23, Data24, Data25, Data26, Data27, Data28, "
-    //                                        37      38       39     40      41      42      43               44             45      46          47
-                                             "Data29, Data30, Data31, Data32, Data33, Data34, ContentTuningId, RequiredLevel, AIName, ScriptName, StringId "
+    //                                        37      38       39     40      41      42      43               44      45          46
+                                             "Data29, Data30, Data31, Data32, Data33, Data34, ContentTuningId, AIName, ScriptName, StringId "
                                              "FROM gameobject_template");
 
     if (!result)
@@ -7632,10 +7430,9 @@ void ObjectMgr::LoadGameObjectTemplate()
             got.raw.data[i] = fields[8 + i].GetUInt32();
 
         got.ContentTuningId = fields[43].GetInt32();
-        got.RequiredLevel = fields[44].GetInt32();
-        got.AIName = fields[45].GetString();
-        got.ScriptId = GetScriptId(fields[46].GetStringView());
-        got.StringId = fields[47].GetString();
+        got.AIName = fields[44].GetString();
+        got.ScriptId = GetScriptId(fields[45].GetString());
+        got.StringId = fields[46].GetString();
 
         // Checks
         if (!got.AIName.empty() && !sGameObjectAIRegistry->HasItem(got.AIName))
@@ -7671,6 +7468,8 @@ void ObjectMgr::LoadGameObjectTemplate()
             {
                 if (got.chest.open)
                     CheckGOLockId(&got, got.chest.open, 0);
+
+                CheckGOConsumable(&got, got.chest.consumable, 3);
 
                 if (got.chest.linkedTrap)               // linked trap
                     CheckGOLinkedTrapId(&got, got.chest.linkedTrap, 7);
@@ -7771,11 +7570,11 @@ void ObjectMgr::LoadGameObjectTemplate()
             case GAMEOBJECT_TYPE_BARBER_CHAIR:              //32
                 CheckAndFixGOChairHeightId(&got, got.barberChair.chairheight, 0);
 
-                if (got.barberChair.CustomSitAnimKit && !sAnimKitStore.LookupEntry(got.barberChair.CustomSitAnimKit))
+                if (got.barberChair.SitAnimKit && !sAnimKitStore.LookupEntry(got.barberChair.SitAnimKit))
                 {
                     TC_LOG_ERROR("sql.sql", "GameObject (Entry: {} GoType: {}) have data2 = {} but AnimKit.dbc (Id: {}) not exist, set to 0.",
-                       entry, got.type, got.barberChair.CustomSitAnimKit, got.barberChair.CustomSitAnimKit);
-                    got.barberChair.CustomSitAnimKit = 0;
+                       entry, got.type, got.barberChair.SitAnimKit, got.barberChair.SitAnimKit);
+                    got.barberChair.SitAnimKit = 0;
                 }
                 break;
             case GAMEOBJECT_TYPE_DESTRUCTIBLE_BUILDING:
@@ -8507,40 +8306,30 @@ void ObjectMgr::LoadNPCSpellClickSpells()
     TC_LOG_INFO("server.loading", ">> Loaded {} spellclick definitions in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
-CreatureData& ObjectMgr::NewOrExistCreatureData(ObjectGuid::LowType spawnId)
-{
-    return _creatureDataStore[spawnId];
-}
-
-void ObjectMgr::DeleteCreatureData(ObjectGuid::LowType spawnId)
+void ObjectMgr::DeleteCreatureData(ObjectGuid::LowType guid)
 {
     // remove mapid*cellid -> guid_set map
-    auto itr = _creatureDataStore.find(spawnId);
-    if (itr == _creatureDataStore.end())
-        return;
+    CreatureData const* data = GetCreatureData(guid);
+    if (data)
+    {
+        RemoveCreatureFromGrid(data);
+        OnDeleteSpawnData(data);
+    }
 
-    RemoveCreatureFromGrid(&itr->second);
-    OnDeleteSpawnData(&itr->second);
-
-    _creatureDataStore.erase(itr);
+    _creatureDataStore.erase(guid);
 }
 
-GameObjectData& ObjectMgr::NewOrExistGameObjectData(ObjectGuid::LowType spawnId)
-{
-    return _gameObjectDataStore[spawnId];
-}
-
-void ObjectMgr::DeleteGameObjectData(ObjectGuid::LowType spawnId)
+void ObjectMgr::DeleteGameObjectData(ObjectGuid::LowType guid)
 {
     // remove mapid*cellid -> guid_set map
-    auto itr = _gameObjectDataStore.find(spawnId);
-    if (itr == _gameObjectDataStore.end())
-        return;
+    GameObjectData const* data = GetGameObjectData(guid);
+    if (data)
+    {
+        RemoveGameobjectFromGrid(data);
+        OnDeleteSpawnData(data);
+    }
 
-    RemoveGameobjectFromGrid(&itr->second);
-    OnDeleteSpawnData(&itr->second);
-
-    _gameObjectDataStore.erase(itr);
+    _gameObjectDataStore.erase(guid);
 }
 
 void ObjectMgr::LoadQuestRelationsHelper(QuestRelations& map, QuestRelationsReverse* reverseMap, std::string const& table)
@@ -9643,13 +9432,18 @@ void ObjectMgr::LoadGossipMenuItems()
         gMenuItem.Flags                 = GossipOptionFlags(fields[7].GetInt32());
         gMenuItem.ActionMenuID          = fields[8].GetUInt32();
         gMenuItem.ActionPoiID           = fields[9].GetUInt32();
-        gMenuItem.GossipNpcOptionID     = fields[10].GetInt32OrNull();
+        if (!fields[10].IsNull())
+            gMenuItem.GossipNpcOptionID = fields[10].GetInt32();
+
         gMenuItem.BoxCoded              = fields[11].GetBool();
-        gMenuItem.BoxMoney              = fields[12].GetUInt64();
+        gMenuItem.BoxMoney              = fields[12].GetUInt32();
         gMenuItem.BoxText               = fields[13].GetString();
         gMenuItem.BoxBroadcastTextID    = fields[14].GetUInt32();
-        gMenuItem.SpellID               = fields[15].GetInt32OrNull();
-        gMenuItem.OverrideIconID        = fields[16].GetInt32OrNull();
+        if (!fields[15].IsNull())
+            gMenuItem.SpellID           = fields[15].GetInt32();
+
+        if (!fields[16].IsNull())
+            gMenuItem.OverrideIconID    = fields[16].GetInt32();
 
         if (gMenuItem.OptionNpc >= GossipOptionNpc::Count)
         {
@@ -9959,17 +9753,16 @@ void ObjectMgr::ScriptNameContainer::reserve(size_t capacity)
     IndexToName.reserve(capacity);
 }
 
-uint32 ObjectMgr::ScriptNameContainer::insert(std::string_view scriptName, bool isScriptNameBound)
+uint32 ObjectMgr::ScriptNameContainer::insert(std::string const& scriptName, bool isScriptNameBound)
 {
-    auto result = NameToIndex.lower_bound(scriptName);
-    if (result == NameToIndex.end() || NameToIndex.key_comp()(scriptName, result->first))
+    auto result = NameToIndex.try_emplace(scriptName, static_cast<uint32>(NameToIndex.size()), isScriptNameBound);
+    if (result.second)
     {
         ASSERT(NameToIndex.size() <= std::numeric_limits<uint32>::max());
-        result = NameToIndex.emplace_hint(result, scriptName, Entry(static_cast<uint32>(NameToIndex.size()), isScriptNameBound));
-        IndexToName.emplace_back(result);
+        IndexToName.emplace_back(result.first);
     }
 
-    return result->second.Id;
+    return result.first->second.Id;
 }
 
 size_t ObjectMgr::ScriptNameContainer::size() const
@@ -9982,7 +9775,7 @@ ObjectMgr::ScriptNameContainer::NameMap::const_iterator ObjectMgr::ScriptNameCon
     return index < IndexToName.size() ? IndexToName[index] : end();
 }
 
-ObjectMgr::ScriptNameContainer::NameMap::const_iterator ObjectMgr::ScriptNameContainer::find(std::string_view name) const
+ObjectMgr::ScriptNameContainer::NameMap::const_iterator ObjectMgr::ScriptNameContainer::find(std::string const& name) const
 {
     // assume "" is the first element
     if (name.empty())
@@ -10043,7 +9836,7 @@ bool ObjectMgr::IsScriptDatabaseBound(uint32 id) const
     }
 }
 
-uint32 ObjectMgr::GetScriptId(std::string_view name, bool isDatabaseBound)
+uint32 ObjectMgr::GetScriptId(std::string const& name, bool isDatabaseBound)
 {
     return _scriptNamesStore.insert(name, isDatabaseBound);
 }
@@ -10055,20 +9848,24 @@ CreatureBaseStats const* ObjectMgr::GetCreatureBaseStats(uint8 level, uint8 unit
     if (it != _creatureBaseStatsStore.end())
         return &(it->second);
 
-    static constexpr CreatureBaseStats defStats
+    struct DefaultCreatureBaseStats : public CreatureBaseStats
     {
-        .BaseMana = 0,
-        .AttackPower = 0,
-        .RangedAttackPower = 0
+        DefaultCreatureBaseStats()
+        {
+            BaseMana = 0;
+            AttackPower = 0;
+            RangedAttackPower = 0;
+        }
     };
+    static const DefaultCreatureBaseStats defStats;
     return &defStats;
 }
 
 void ObjectMgr::LoadCreatureClassLevelStats()
 {
     uint32 oldMSTime = getMSTime();
-    //                                               0      1      2         3            4
-    QueryResult result = WorldDatabase.Query("SELECT level, class, basemana, attackpower, rangedattackpower FROM creature_classlevelstats");
+    //                                               0      1      2        3        4        5         6          7            8                  9            10           11
+    QueryResult result = WorldDatabase.Query("SELECT level, class, basehp0, basehp1, basehp2, basemana, basearmor, attackpower, rangedattackpower, damage_base, damage_exp1, damage_exp2 FROM creature_classlevelstats");
 
     if (!result)
     {
@@ -10089,10 +9886,29 @@ void ObjectMgr::LoadCreatureClassLevelStats()
 
         CreatureBaseStats stats;
 
-        stats.BaseMana = fields[2].GetUInt32();
+        for (uint8 i = 0; i < MAX_CLASSIC_EXPANSIONS; ++i)
+        {
+            stats.BaseHealth[i] = fields[2 + i].GetUInt32();
 
-        stats.AttackPower = fields[3].GetUInt16();
-        stats.RangedAttackPower = fields[4].GetUInt16();
+            if (stats.BaseHealth[i] == 0)
+            {
+                TC_LOG_ERROR("sql.sql", "Creature base stats for class {}, level {} has invalid zero base HP[{}] - set to 1", Class, Level, i);
+                stats.BaseHealth[i] = 1;
+            }
+
+            stats.BaseDamage[i] = fields[9 + i].GetFloat();
+            if (stats.BaseDamage[i] < 0.0f)
+            {
+                TC_LOG_ERROR("sql.sql", "Creature base stats for class {}, level {} has invalid negative base damage[{}] - set to 0.0", Class, Level, i);
+                stats.BaseDamage[i] = 0.0f;
+            }
+        }
+
+        stats.BaseMana = fields[5].GetUInt32();
+        stats.BaseArmor = fields[6].GetUInt32();
+
+        stats.AttackPower = fields[7].GetUInt16();
+        stats.RangedAttackPower = fields[8].GetUInt16();
 
         _creatureBaseStatsStore[MAKE_PAIR16(Level, Class)] = stats;
 
@@ -10100,8 +9916,7 @@ void ObjectMgr::LoadCreatureClassLevelStats()
     }
     while (result->NextRow());
 
-    uint32 maxLevel = GetMaxLevelForExpansion(CURRENT_EXPANSION);
-    for (uint8 unitLevel = 1; unitLevel <= maxLevel + 3; ++unitLevel)
+    for (uint8 unitLevel = 1; unitLevel <= DEFAULT_MAX_LEVEL + 3; ++unitLevel)
     {
         for (uint8 unitClass = 1; unitClass <= MAX_UNIT_CLASSES; ++unitClass)
         {
@@ -10577,6 +10392,10 @@ VehicleAccessoryList const* ObjectMgr::GetVehicleAccessoryList(Vehicle* veh) con
 
 PlayerInfo const* ObjectMgr::GetPlayerInfo(uint32 race, uint32 class_) const
 {
+    if (race >= MAX_RACES)
+        return nullptr;
+    if (class_ >= MAX_CLASSES)
+        return nullptr;
     return Trinity::Containers::MapGetValuePtr(_playerInfo, { Races(race), Classes(class_) });
 }
 
@@ -10825,7 +10644,7 @@ void ObjectMgr::LoadCreatureQuestItems()
         Field* fields = result->Fetch();
 
         uint32 entry = fields[0].GetUInt32();
-        Difficulty difficulty = Difficulty(fields[1].GetInt32());
+        Difficulty difficulty = Difficulty(fields[1].GetUInt8());
         uint32 item  = fields[2].GetUInt32();
         uint32 idx   = fields[3].GetUInt32();
 
@@ -10916,7 +10735,7 @@ void ObjectMgr::LoadCreatureStaticFlagsOverride()
         Field* fields = result->Fetch();
 
         ObjectGuid::LowType spawnId = fields[0].GetUInt64();
-        Difficulty difficultyId = static_cast<Difficulty>(fields[1].GetInt32());
+        Difficulty difficultyId = static_cast<Difficulty>(fields[1].GetUInt8());
 
         CreatureData const* creatureData = GetCreatureData(spawnId);
         if (!creatureData)
@@ -10928,7 +10747,7 @@ void ObjectMgr::LoadCreatureStaticFlagsOverride()
         // DIFFICULTY_NONE is always a valid fallback
         if (difficultyId != DIFFICULTY_NONE)
         {
-            if (!advstd::ranges::contains(creatureData->spawnDifficulties, difficultyId))
+            if (std::find(creatureData->spawnDifficulties.begin(), creatureData->spawnDifficulties.end(), difficultyId) == creatureData->spawnDifficulties.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `creature_static_flags_override` has data for a creature that is not available for the specified DifficultyId (SpawnId: {}, DifficultyId: {}), skipped", spawnId, difficultyId);
                 continue;
@@ -10999,11 +10818,8 @@ void ObjectMgr::InitializeQueriesData(QueryDataGroup mask)
 
 void QuestPOIData::InitializeQueryData()
 {
-    ByteBuffer tempBuffer;
-    tempBuffer << *this;
-    tempBuffer.shrink_to_fit();
-
-    QueryDataBuffer = std::move(tempBuffer).Release();
+    QueryDataBuffer << *this;
+    QueryDataBuffer.shrink_to_fit();
 }
 
 void ObjectMgr::LoadSceneTemplates()
@@ -11019,6 +10835,8 @@ void ObjectMgr::LoadSceneTemplates()
         return;
     }
 
+    uint32 count = 0;
+
     do
     {
         Field* fields = templates->Fetch();
@@ -11029,11 +10847,11 @@ void ObjectMgr::LoadSceneTemplates()
         sceneTemplate.PlaybackFlags     = static_cast<SceneFlag>(fields[1].GetUInt32());
         sceneTemplate.ScenePackageId    = fields[2].GetUInt32();
         sceneTemplate.Encrypted         = fields[3].GetUInt8() != 0;
-        sceneTemplate.ScriptId          = GetScriptId(fields[4].GetStringView());
+        sceneTemplate.ScriptId          = GetScriptId(fields[4].GetCString());
 
     } while (templates->NextRow());
 
-    TC_LOG_INFO("server.loading", ">> Loaded {} scene templates in {} ms.", _sceneTemplateStore.size(), GetMSTimeDiffToNow(oldMSTime));
+    TC_LOG_INFO("server.loading", ">> Loaded {} scene templates in {} ms.", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
 void ObjectMgr::LoadPlayerChoices()
@@ -11041,8 +10859,9 @@ void ObjectMgr::LoadPlayerChoices()
     uint32 oldMSTime = getMSTime();
     _playerChoices.clear();
 
-    QueryResult choices = WorldDatabase.Query("SELECT ChoiceId, UiTextureKitId, SoundKitId, CloseSoundKitId, Duration, Question, PendingChoiceText, "
-        "InfiniteRange, HideWarboardHeader, KeepOpenAfterChoice, ShowChoicesAsList, ForceDontShowChoicesAsList, RequiresSelection, MaxResponses, ScriptName FROM playerchoice");
+    //                                                       0               1           2                3         4         5                  6                   7                    8
+    QueryResult choices = WorldDatabase.Query("SELECT ChoiceId, UiTextureKitId, SoundKitId, CloseSoundKitId, Duration, Question, PendingChoiceText, HideWarboardHeader, KeepOpenAfterChoice FROM playerchoice");
+
     if (!choices)
     {
         TC_LOG_INFO("server.loading", ">> Loaded 0 player choices. DB table `playerchoice` is empty.");
@@ -11057,46 +10876,37 @@ void ObjectMgr::LoadPlayerChoices()
     uint32 itemChoiceRewardCount = 0;
     uint32 mawPowersCount = 0;
 
+    do
     {
-        do
-        {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(UiTextureKitId)(SoundKitId)(CloseSoundKitId)(Duration)(Question)(PendingChoiceText)
-                (InfiniteRange)(HideWarboardHeader)(KeepOpenAfterChoice)(ShowChoicesAsList)(ForceDontShowChoicesAsList)(RequiresSelection)(MaxResponses)(ScriptName)) fields { *choices };
+        Field* fields = choices->Fetch();
 
-            int32 choiceId = fields.ChoiceId().GetInt32();
+        int32 choiceId = fields[0].GetInt32();
 
-            PlayerChoice& choice = _playerChoices[choiceId];
-            choice.ChoiceId = choiceId;
-            choice.UiTextureKitId = fields.UiTextureKitId().GetInt32();
-            choice.SoundKitId = fields.SoundKitId().GetUInt32();
-            choice.CloseSoundKitId = fields.CloseSoundKitId().GetUInt32();
-            if (!fields.Duration().IsNull())
-                choice.Duration = Seconds(fields.Duration().GetInt64());
-            choice.Question = fields.Question().GetStringView();
-            choice.PendingChoiceText = fields.PendingChoiceText().GetStringView();
-            choice.InfiniteRange = fields.InfiniteRange().GetBool();
-            choice.HideWarboardHeader = fields.HideWarboardHeader().GetBool();
-            choice.KeepOpenAfterChoice = fields.KeepOpenAfterChoice().GetBool();
-            choice.ShowChoicesAsList = fields.ShowChoicesAsList().GetBool();
-            choice.ForceDontShowChoicesAsList = fields.ForceDontShowChoicesAsList().GetBool();
-            choice.RequiresSelection = fields.RequiresSelection().GetBool();
-            choice.MaxResponses = fields.MaxResponses().GetUInt32OrNull();
-            choice.ScriptId = GetScriptId(fields.ScriptName().GetStringView());
+        PlayerChoice& choice = _playerChoices[choiceId];
+        choice.ChoiceId = choiceId;
+        choice.UiTextureKitId = fields[1].GetInt32();
+        choice.SoundKitId = fields[2].GetUInt32();
+        choice.CloseSoundKitId = fields[3].GetUInt32();
+        choice.Duration = fields[4].GetInt64();
+        choice.Question = fields[5].GetString();
+        choice.PendingChoiceText = fields[6].GetString();
+        choice.HideWarboardHeader = fields[7].GetBool();
+        choice.KeepOpenAfterChoice = fields[8].GetBool();
 
-        } while (choices->NextRow());
-    }
+    } while (choices->NextRow());
 
-    if (QueryResult responses = WorldDatabase.Query("SELECT ChoiceId, ResponseId, NULL, ChoiceArtFileId, Flags, WidgetSetID, "
+    //                                                             0           1                   2                3      4            5
+    if (QueryResult responses = WorldDatabase.Query("SELECT ChoiceId, ResponseId, ResponseIdentifier, ChoiceArtFileId, Flags, WidgetSetID, "
+    //                         6           7        8               9      10      11         12              13           14            15             16
         "UiTextureAtlasElementID, SoundKitID, GroupID, UiTextureKitID, Answer, Header, SubHeader, ButtonTooltip, Description, Confirmation, RewardQuestID "
         "FROM playerchoice_response ORDER BY `Index` ASC"))
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(ChoiceArtFileId)(Flags)(WidgetSetID)(UiTextureAtlasElementID)(SoundKitID)
-                (GroupID)(UiTextureKitID)(Answer)(Header)(SubHeader)(ButtonTooltip)(Description)(Confirmation)(RewardQuestID)) fields{ *responses };
+            Field* fields = responses->Fetch();
 
-            int32 choiceId      = fields.ChoiceId().GetInt32();
-            int32 responseId    = fields.ResponseId().GetInt32();
+            int32 choiceId      = fields[0].GetInt32();
+            int32 responseId    = fields[1].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11109,20 +10919,22 @@ void ObjectMgr::LoadPlayerChoices()
 
             PlayerChoiceResponse& response = choice->Responses.back();
             response.ResponseId         = responseId;
-            response.ChoiceArtFileId    = fields.ChoiceArtFileId().GetInt32();
-            response.Flags              = static_cast<PlayerChoiceResponseFlags>(fields.Flags().GetInt32());
-            response.WidgetSetID        = fields.WidgetSetID().GetUInt32();
-            response.UiTextureAtlasElementID = fields.UiTextureAtlasElementID().GetUInt32();
-            response.SoundKitID         = fields.SoundKitID().GetUInt32();
-            response.GroupID            = fields.GroupID().GetUInt8();
-            response.UiTextureKitID     = fields.UiTextureKitID().GetInt32();
-            response.Answer             = fields.Answer().GetStringView();
-            response.Header             = fields.Header().GetStringView();
-            response.SubHeader          = fields.SubHeader().GetStringView();
-            response.ButtonTooltip      = fields.ButtonTooltip().GetStringView();
-            response.Description        = fields.Description().GetStringView();
-            response.Confirmation       = fields.Confirmation().GetStringView();
-            response.RewardQuestID  = fields.RewardQuestID().GetUInt32OrNull();
+            response.ResponseIdentifier = fields[2].GetUInt16();
+            response.ChoiceArtFileId    = fields[3].GetInt32();
+            response.Flags              = fields[4].GetInt32();
+            response.WidgetSetID        = fields[5].GetUInt32();
+            response.UiTextureAtlasElementID = fields[6].GetUInt32();
+            response.SoundKitID         = fields[7].GetUInt32();
+            response.GroupID            = fields[8].GetUInt8();
+            response.UiTextureKitID     = fields[9].GetInt32();
+            response.Answer             = fields[10].GetString();
+            response.Header             = fields[11].GetString();
+            response.SubHeader          = fields[12].GetString();
+            response.ButtonTooltip      = fields[13].GetString();
+            response.Description        = fields[14].GetString();
+            response.Confirmation       = fields[15].GetString();
+            if (!fields[16].IsNull())
+                response.RewardQuestID  = fields[16].GetUInt32();
 
             ++responseCount;
 
@@ -11133,11 +10945,10 @@ void ObjectMgr::LoadPlayerChoices()
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(TitleId)(PackageId)(SkillLineId)
-                (SkillPointCount)(ArenaPointCount)(HonorPointCount)(Money)(Xp)) fields{ *rewards };
+            Field* fields = rewards->Fetch();
 
-            int32 choiceId      = fields.ChoiceId().GetInt32();
-            int32 responseId    = fields.ResponseId().GetInt32();
+            int32 choiceId      = fields[0].GetInt32();
+            int32 responseId    = fields[1].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11146,7 +10957,8 @@ void ObjectMgr::LoadPlayerChoices()
                 continue;
             }
 
-            auto responseItr = std::ranges::find(choice->Responses, responseId, &PlayerChoiceResponse::ResponseId);
+            auto responseItr = std::find_if(choice->Responses.begin(), choice->Responses.end(),
+                [responseId](PlayerChoiceResponse const& playerChoiceResponse) { return playerChoiceResponse.ResponseId == responseId; });
             if (responseItr == choice->Responses.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `playerchoice_response_reward` references non-existing ResponseId: {} for ChoiceId {}, skipped", responseId, choiceId);
@@ -11154,14 +10966,14 @@ void ObjectMgr::LoadPlayerChoices()
             }
 
             PlayerChoiceResponseReward* reward = &responseItr->Reward.emplace();
-            reward->TitleId          = fields.TitleId().GetInt32();
-            reward->PackageId        = fields.PackageId().GetInt32();
-            reward->SkillLineId      = fields.SkillLineId().GetInt32();
-            reward->SkillPointCount  = fields.SkillPointCount().GetUInt32();
-            reward->ArenaPointCount  = fields.ArenaPointCount().GetUInt32();
-            reward->HonorPointCount  = fields.HonorPointCount().GetUInt32();
-            reward->Money            = fields.Money().GetUInt64();
-            reward->Xp               = fields.Xp().GetUInt32();
+            reward->TitleId          = fields[2].GetInt32();
+            reward->PackageId        = fields[3].GetInt32();
+            reward->SkillLineId      = fields[4].GetInt32();
+            reward->SkillPointCount  = fields[5].GetUInt32();
+            reward->ArenaPointCount  = fields[6].GetUInt32();
+            reward->HonorPointCount  = fields[7].GetUInt32();
+            reward->Money            = fields[8].GetUInt64();
+            reward->Xp               = fields[9].GetUInt32();
             ++rewardCount;
 
             if (reward->TitleId && !sCharTitlesStore.LookupEntry(reward->TitleId))
@@ -11193,16 +11005,16 @@ void ObjectMgr::LoadPlayerChoices()
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(ItemId)(BonusListIDs)(Quantity)) fields { *rewards };
+            Field* fields = rewards->Fetch();
 
-            int32 choiceId = fields.ChoiceId().GetInt32();
-            int32 responseId = fields.ResponseId().GetInt32();
-            uint32 itemId = fields.ItemId().GetUInt32();
+            int32 choiceId = fields[0].GetInt32();
+            int32 responseId = fields[1].GetInt32();
+            uint32 itemId = fields[2].GetUInt32();
             std::vector<int32> bonusListIds;
-            for (std::string_view token : Trinity::Tokenize(fields.BonusListIDs().GetStringView(), ' ', false))
+            for (std::string_view token : Trinity::Tokenize(fields[3].GetStringView(), ' ', false))
                 if (Optional<int32> bonusListID = Trinity::StringTo<int32>(token))
                     bonusListIds.push_back(*bonusListID);
-            int32 quantity = fields.Quantity().GetInt32();
+            int32 quantity = fields[4].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11211,7 +11023,8 @@ void ObjectMgr::LoadPlayerChoices()
                 continue;
             }
 
-            auto responseItr = std::ranges::find(choice->Responses, responseId, &PlayerChoiceResponse::ResponseId);
+            auto responseItr = std::find_if(choice->Responses.begin(), choice->Responses.end(),
+                [responseId](PlayerChoiceResponse const& playerChoiceResponse) { return playerChoiceResponse.ResponseId == responseId; });
             if (responseItr == choice->Responses.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `playerchoice_response_reward_item` references non-existing ResponseId: {} for ChoiceId {}, skipped", responseId, choiceId);
@@ -11242,12 +11055,12 @@ void ObjectMgr::LoadPlayerChoices()
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(CurrencyId)(Quantity)) fields { *rewards };
+            Field* fields = rewards->Fetch();
 
-            int32 choiceId = fields.ChoiceId().GetInt32();
-            int32 responseId = fields.ResponseId().GetInt32();
-            uint32 currencyId = fields.CurrencyId().GetUInt32();
-            int32 quantity = fields.Quantity().GetInt32();
+            int32 choiceId = fields[0].GetInt32();
+            int32 responseId = fields[1].GetInt32();
+            uint32 currencyId = fields[2].GetUInt32();
+            int32 quantity = fields[3].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11256,7 +11069,8 @@ void ObjectMgr::LoadPlayerChoices()
                 continue;
             }
 
-            auto responseItr = std::ranges::find(choice->Responses, responseId, &PlayerChoiceResponse::ResponseId);
+            auto responseItr = std::find_if(choice->Responses.begin(), choice->Responses.end(),
+                [responseId](PlayerChoiceResponse const& playerChoiceResponse) { return playerChoiceResponse.ResponseId == responseId; });
             if (responseItr == choice->Responses.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `playerchoice_response_reward_currency` references non-existing ResponseId: {} for ChoiceId {}, skipped", responseId, choiceId);
@@ -11287,12 +11101,12 @@ void ObjectMgr::LoadPlayerChoices()
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(FactionId)(Quantity)) fields { *rewards };
+            Field* fields = rewards->Fetch();
 
-            int32 choiceId = fields.ChoiceId().GetInt32();
-            int32 responseId = fields.ResponseId().GetInt32();
-            uint32 factionId = fields.FactionId().GetUInt32();
-            int32 quantity = fields.Quantity().GetInt32();
+            int32 choiceId = fields[0].GetInt32();
+            int32 responseId = fields[1].GetInt32();
+            uint32 factionId = fields[2].GetUInt32();
+            int32 quantity = fields[3].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11301,7 +11115,8 @@ void ObjectMgr::LoadPlayerChoices()
                 continue;
             }
 
-            auto responseItr = std::ranges::find(choice->Responses, responseId, &PlayerChoiceResponse::ResponseId);
+            auto responseItr = std::find_if(choice->Responses.begin(), choice->Responses.end(),
+                [responseId](PlayerChoiceResponse const& playerChoiceResponse) { return playerChoiceResponse.ResponseId == responseId; });
             if (responseItr == choice->Responses.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `playerchoice_response_reward_faction` references non-existing ResponseId: {} for ChoiceId {}, skipped", responseId, choiceId);
@@ -11332,16 +11147,16 @@ void ObjectMgr::LoadPlayerChoices()
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(ItemId)(BonusListIDs)(Quantity)) fields { *rewards };
+            Field* fields = rewards->Fetch();
 
-            int32 choiceId = fields.ChoiceId().GetInt32();
-            int32 responseId = fields.ResponseId().GetInt32();
-            uint32 itemId = fields.ItemId().GetUInt32();
+            int32 choiceId = fields[0].GetInt32();
+            int32 responseId = fields[1].GetInt32();
+            uint32 itemId = fields[2].GetUInt32();
             std::vector<int32> bonusListIds;
-            for (std::string_view token : Trinity::Tokenize(fields.BonusListIDs().GetStringView(), ' ', false))
+            for (std::string_view token : Trinity::Tokenize(fields[3].GetStringView(), ' ', false))
                 if (Optional<int32> bonusListID = Trinity::StringTo<int32>(token))
                     bonusListIds.push_back(*bonusListID);
-            int32 quantity = fields.Quantity().GetInt32();
+            int32 quantity = fields[4].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11350,7 +11165,8 @@ void ObjectMgr::LoadPlayerChoices()
                 continue;
             }
 
-            auto responseItr = std::ranges::find(choice->Responses, responseId, &PlayerChoiceResponse::ResponseId);
+            auto responseItr = std::find_if(choice->Responses.begin(), choice->Responses.end(),
+                [responseId](PlayerChoiceResponse const& playerChoiceResponse) { return playerChoiceResponse.ResponseId == responseId; });
             if (responseItr == choice->Responses.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `playerchoice_response_reward_item_choice` references non-existing ResponseId: {} for ChoiceId {}, skipped", responseId, choiceId);
@@ -11377,14 +11193,13 @@ void ObjectMgr::LoadPlayerChoices()
         } while (rewards->NextRow());
     }
 
-    if (QueryResult mawPowersResult = WorldDatabase.Query("SELECT ChoiceId, ResponseId, TypeArtFileID, Rarity, SpellID, MaxStacks FROM playerchoice_response_maw_power"))
+    if (QueryResult mawPowersResult = WorldDatabase.Query("SELECT ChoiceId, ResponseId, TypeArtFileID, Rarity, RarityColor, SpellID, MaxStacks FROM playerchoice_response_maw_power"))
     {
         do
         {
-            DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (ChoiceId)(ResponseId)(TypeArtFileID)(Rarity)(SpellID)(MaxStacks)) fields { *mawPowersResult };
-
-            int32 choiceId = fields.ChoiceId().GetInt32();
-            int32 responseId = fields.ResponseId().GetInt32();
+            Field* fields = mawPowersResult->Fetch();
+            int32 choiceId = fields[0].GetInt32();
+            int32 responseId = fields[1].GetInt32();
 
             PlayerChoice* choice = Trinity::Containers::MapGetValuePtr(_playerChoices, choiceId);
             if (!choice)
@@ -11393,7 +11208,11 @@ void ObjectMgr::LoadPlayerChoices()
                 continue;
             }
 
-            auto responseItr = std::ranges::find(choice->Responses, responseId, &PlayerChoiceResponse::ResponseId);
+            auto responseItr = std::find_if(choice->Responses.begin(), choice->Responses.end(),
+                [responseId](PlayerChoiceResponse const& playerChoiceResponse)
+            {
+                return playerChoiceResponse.ResponseId == responseId;
+            });
             if (responseItr == choice->Responses.end())
             {
                 TC_LOG_ERROR("sql.sql", "Table `playerchoice_response_maw_power` references non-existing ResponseId: {} for ChoiceId {}, skipped", responseId, choiceId);
@@ -11401,10 +11220,13 @@ void ObjectMgr::LoadPlayerChoices()
             }
 
             PlayerChoiceResponseMawPower& mawPower = responseItr->MawPower.emplace();
-            mawPower.TypeArtFileID = fields.TypeArtFileID().GetInt32();
-            mawPower.Rarity = fields.Rarity().GetInt32OrNull();
-            mawPower.SpellID = fields.SpellID().GetInt32();
-            mawPower.MaxStacks = fields.MaxStacks().GetInt32();
+            mawPower.TypeArtFileID = fields[2].GetInt32();
+            if (!fields[3].IsNull())
+                mawPower.Rarity = fields[3].GetInt32();
+            if (!fields[4].IsNull())
+                mawPower.RarityColor = fields[4].GetUInt32();
+            mawPower.SpellID = fields[5].GetInt32();
+            mawPower.MaxStacks = fields[6].GetInt32();
 
             ++mawPowersCount;
 
@@ -11497,454 +11319,6 @@ void ObjectMgr::LoadPlayerChoicesLocale()
     }
 }
 
-void ObjectMgr::LoadUiMapQuestLines()
-{
-    uint32 oldMSTime = getMSTime();
-
-    // need for reload case
-    _uiMapQuestLinesStore.clear();
-
-    //                                               0        1
-    QueryResult result = WorldDatabase.Query("SELECT UiMapId, QuestLineId FROM ui_map_quest_line");
-
-    if (!result)
-    {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 questlines for UIMaps. DB table `ui_map_quest_line` is empty!");
-        return;
-    }
-
-    uint32 count = 0;
-
-    do
-    {
-        Field* fields = result->Fetch();
-
-        uint32 uiMapId = fields[0].GetUInt32();
-        uint32 questLineId = fields[1].GetUInt32();
-
-        if (!sUiMapStore.HasRecord(uiMapId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `ui_map_quest_line` references non-existing UIMap {}, skipped", uiMapId);
-            continue;
-        }
-
-        if (QuestMgr::GetQuestsForQuestLine(questLineId).empty())
-        {
-            TC_LOG_ERROR("sql.sql", "Table `ui_map_quest_line` references empty or non-existing questline {}, skipped", questLineId);
-            continue;
-        }
-
-        _uiMapQuestLinesStore[uiMapId].push_back(questLineId);
-        ++count;
-
-    } while (result->NextRow());
-
-    TC_LOG_INFO("server.loading", ">> Loaded {} UiMap questlines definitions in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
-}
-
-std::vector<uint32> const* ObjectMgr::GetUiMapQuestLinesList(uint32 uiMapId) const
-{
-    return Trinity::Containers::MapGetValuePtr(_uiMapQuestLinesStore, uiMapId);
-}
-
-void ObjectMgr::LoadUiMapQuests()
-{
-    uint32 oldMSTime = getMSTime();
-
-    // need for reload case
-    _uiMapQuestsStore.clear();
-
-    //                                               0        1
-    QueryResult result = WorldDatabase.Query("SELECT UiMapId, QuestId FROM ui_map_quest");
-
-    if (!result)
-    {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 quests for UIMaps. DB table `ui_map_quest` is empty!");
-        return;
-    }
-
-    uint32 count = 0;
-
-    do
-    {
-        Field* fields = result->Fetch();
-
-        uint32 uiMapId = fields[0].GetUInt32();
-        uint32 questId = fields[1].GetUInt32();
-
-        if (!sUiMapStore.HasRecord(uiMapId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `ui_map_quest` references non-existing UIMap {}, skipped", uiMapId);
-            continue;
-        }
-
-        if (!GetQuestTemplate(questId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `ui_map_quest` references non-existing quest {}, skipped", questId);
-            continue;
-        }
-
-        _uiMapQuestsStore[uiMapId].push_back(questId);
-        ++count;
-
-    } while (result->NextRow());
-
-    TC_LOG_INFO("server.loading", ">> Loaded {} UiMap quests definitions in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
-}
-
-std::vector<uint32> const* ObjectMgr::GetUiMapQuestsList(uint32 uiMapId) const
-{
-    return Trinity::Containers::MapGetValuePtr(_uiMapQuestsStore, uiMapId);
-}
-
-void ObjectMgr::LoadSpawnTrackingTemplates()
-{
-    uint32 oldMSTime = getMSTime();
-
-    // need for reload case
-    _spawnTrackingDataStore.clear();
-
-    //                                               0                1      2        3           4
-    QueryResult result = WorldDatabase.Query("SELECT SpawnTrackingId, MapId, PhaseId, PhaseGroup, PhaseUseFlags FROM spawn_tracking_template");
-
-    if (!result)
-    {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 spawn tracking templates. DB table `spawn_tracking_template` is empty!");
-        return;
-    }
-
-    do
-    {
-        Field* fields = result->Fetch();
-
-        uint32 spawnTrackingId = fields[0].GetUInt32();
-        uint32 mapId = fields[1].GetUInt32();
-
-        if (!sMapStore.HasRecord(mapId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_template` references non-existing map {}, skipped", mapId);
-            continue;
-        }
-
-        SpawnTrackingTemplateData& data = _spawnTrackingDataStore[spawnTrackingId];
-        data.SpawnTrackingId = spawnTrackingId;
-        data.MapId = mapId;
-        data.PhaseId = fields[2].GetUInt32();
-        data.PhaseGroup = fields[3].GetUInt32();
-        data.PhaseUseFlags = fields[4].GetUInt8();
-
-        if (data.PhaseGroup && data.PhaseId)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_template` has spawn tracking (Id: {}) with `PhaseId` and `PhaseGroup` set, `PhaseGroup` set to 0", data.SpawnTrackingId);
-            data.PhaseGroup = 0;
-        }
-
-        if (data.PhaseId)
-        {
-            if (!sPhaseStore.HasRecord(data.PhaseId))
-            {
-                TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_template` has spawn tracking (Id: {}) referencing non-existing `PhaseId` {}, set to 0", data.SpawnTrackingId, data.PhaseId);
-                data.PhaseId = 0;
-            }
-        }
-
-        if (data.PhaseGroup)
-        {
-            if (!sDB2Manager.GetPhasesForGroup(data.PhaseGroup))
-            {
-                TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_template` has spawn tracking (Id: {}) referencing non-existing `PhaseGroup` {}, set to 0", data.SpawnTrackingId, data.PhaseGroup);
-                data.PhaseGroup = 0;
-            }
-        }
-
-        if (data.PhaseUseFlags & ~PHASE_USE_FLAGS_ALL)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_template` has spawn tracking (Id: {}) referencing unknown `PhaseUseFlags`, removed unknown value.", data.SpawnTrackingId);
-            data.PhaseUseFlags &= PHASE_USE_FLAGS_ALL;
-        }
-
-        if (data.PhaseUseFlags & PHASE_USE_FLAGS_ALWAYS_VISIBLE && data.PhaseUseFlags & PHASE_USE_FLAGS_INVERSE)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_template` has spawn tracking (Id: {}) with `PhaseUseFlags` PHASE_USE_FLAGS_ALWAYS_VISIBLE and PHASE_USE_FLAGS_INVERSE,"
-                " removing PHASE_USE_FLAGS_INVERSE.", data.SpawnTrackingId);
-            data.PhaseUseFlags &= ~PHASE_USE_FLAGS_INVERSE;
-        }
-
-    } while (result->NextRow());
-
-    TC_LOG_INFO("server.loading", ">>  Loaded {} spawn tracking templates in {} ms", _spawnTrackingDataStore.size(), GetMSTimeDiffToNow(oldMSTime));
-}
-
-SpawnTrackingTemplateData const* ObjectMgr::GetSpawnTrackingData(uint32 spawnTrackingId) const
-{
-    return Trinity::Containers::MapGetValuePtr(_spawnTrackingDataStore, spawnTrackingId);
-}
-
-bool ObjectMgr::IsQuestObjectiveForSpawnTracking(uint32 spawnTrackingId, uint32 questObjectiveId) const
-{
-    if (std::vector<QuestObjective const*> const* questObjectiveList = Trinity::Containers::MapGetValuePtr(_spawnTrackingQuestObjectiveStore, spawnTrackingId))
-        return advstd::ranges::contains(*questObjectiveList, questObjectiveId, &QuestObjective::ID);
-
-    return false;
-}
-
-void ObjectMgr::LoadSpawnTrackingQuestObjectives()
-{
-    uint32 oldMSTime = getMSTime();
-
-    // need for reload case
-    _spawnTrackingQuestObjectiveStore.clear();
-
-    //                                               0                1
-    QueryResult result = WorldDatabase.Query("SELECT SpawnTrackingId, QuestObjectiveId FROM spawn_tracking_quest_objective");
-
-    if (!result)
-    {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 spawn tracking quest objectives. DB table `spawn_tracking_quest_objective` is empty!");
-        return;
-    }
-
-    uint32 count = 0;
-
-    do
-    {
-        Field* fields = result->Fetch();
-
-        uint32 spawnTrackingId = fields[0].GetUInt32();
-        uint32 objectiveId = fields[1].GetUInt32();
-
-        if (!GetSpawnTrackingData(spawnTrackingId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_quest_objective` has quest objective {} assigned to spawn tracking {}, but spawn tracking does not exist!", objectiveId, spawnTrackingId);
-            continue;
-        }
-
-        QuestObjective const* questObjective = GetQuestObjective(objectiveId);
-        if (!questObjective)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_quest_objective` has quest objective {} assigned to spawn tracking {}, but quest objective does not exist!", objectiveId, spawnTrackingId);
-            continue;
-        }
-
-        _spawnTrackingQuestObjectiveStore[spawnTrackingId].push_back(questObjective);
-
-        ++count;
-    } while (result->NextRow());
-
-    TC_LOG_INFO("server.loading", ">>  Loaded {} spawn tracking quest objectives in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
-}
-
-void ObjectMgr::LoadSpawnTrackings()
-{
-    uint32 oldMSTime = getMSTime();
-
-    // need for reload case
-    _spawnTrackingMapStore.clear();
-
-    //                                               0                1          2        3
-    QueryResult result = WorldDatabase.Query("SELECT SpawnTrackingId, SpawnType, SpawnId, QuestObjectiveIds FROM spawn_tracking");
-
-    if (!result)
-    {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 spawn tracking members. DB table `spawn_tracking` is empty!");
-        return;
-    }
-
-    uint32 count = 0;
-
-    do
-    {
-        Field* fields = result->Fetch();
-        uint32 spawnTrackingId = fields[0].GetUInt32();
-        SpawnObjectType spawnType = SpawnObjectType(fields[1].GetUInt8());
-        ObjectGuid::LowType spawnId = fields[2].GetUInt64();
-
-        if (!SpawnData::TypeIsValid(spawnType))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn data with invalid type {} listed for spawn tracking {}. Skipped.", uint32(spawnType), spawnTrackingId);
-            continue;
-        }
-        else if (spawnType == SPAWN_TYPE_AREATRIGGER)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has areatrigger spawn ({}) listed for spawn tracking {}. Skipped.", uint32(spawnType), spawnTrackingId);
-            continue;
-        }
-
-        SpawnMetadata const* data = GetSpawnMetadata(spawnType, spawnId);
-        if (!data)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn ({},{}) not found, but is listed as a member of spawn tracking {}!", uint32(spawnType), spawnId, spawnTrackingId);
-            continue;
-        }
-        else if (data->spawnTrackingData)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn ({},{}) is listed as a member of spawn tracking {}, but is already a member of spawn tracking {}. Skipped.",
-                uint32(spawnType), spawnId, spawnTrackingId, data->spawnTrackingData->SpawnTrackingId);
-            continue;
-        }
-
-        SpawnTrackingTemplateData const* spawnTrackingTemplateData = GetSpawnTrackingData(spawnTrackingId);
-        if (!spawnTrackingTemplateData)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn tracking {} assigned to spawn ({},{}), but spawn tracking does not exist!", spawnTrackingId, uint32(spawnType), spawnId);
-            continue;
-        }
-
-        if (spawnTrackingTemplateData->MapId != data->mapId)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn tracking {} (map {}) assigned to spawn ({},{}), but spawn has map {} - spawn NOT added to spawn tracking!",
-                spawnTrackingId, spawnTrackingTemplateData->MapId, uint32(spawnType), spawnId, data->mapId);
-            continue;
-        }
-
-        SpawnData const* spawnData = data->ToSpawnData();
-        if (spawnTrackingTemplateData->PhaseId != spawnData->phaseId || spawnTrackingTemplateData->PhaseGroup != spawnData->phaseGroup || spawnTrackingTemplateData->PhaseUseFlags != spawnData->phaseUseFlags)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn tracking {} with phase info (PhaseId: {}, PhaseGroup: {}, PhaseUseFlags: {}), ",
-                "but spawn ({},{}) has different phase info (PhaseId: {}, PhaseGroup: {}, PhaseUseFlags: {}) - spawn NOT added to spawn tracking!",
-                spawnTrackingId, spawnTrackingTemplateData->PhaseId, spawnTrackingTemplateData->PhaseGroup, spawnTrackingTemplateData->PhaseUseFlags,
-                uint32(spawnType), spawnId, spawnData->phaseId, spawnData->phaseGroup, spawnData->phaseUseFlags);
-            continue;
-        }
-
-        std::vector<uint32> objectiveList;
-        if (Optional<std::string_view> objectivesStr = fields[3].GetStringViewOrNull())
-        {
-            for (std::string_view objectiveStr : Trinity::Tokenize(*objectivesStr, ',', false))
-            {
-                Optional<uint32> objectiveId = Trinity::StringTo<uint32>(objectiveStr);
-                if (!objectiveId)
-                    continue;
-
-                if (!IsQuestObjectiveForSpawnTracking(spawnTrackingId, *objectiveId))
-                {
-                    TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn tracking {} assigned to spawn ({},{}), but spawn tracking is not linked to quest objective {}. Skipped.", spawnTrackingId, uint32(spawnType), spawnId, objectiveId);
-                    continue;
-                }
-
-                objectiveList.push_back(*objectiveId);
-            }
-
-            if (objectiveList.empty())
-            {
-                TC_LOG_ERROR("sql.sql", "Table `spawn_tracking` has spawn tracking {} assigned to spawn ({},{}), but spawn tracking is not linked to any quest objective - spawn NOT added to spawn tracking!", spawnTrackingId, uint32(spawnType), spawnId);
-                continue;
-            }
-        }
-
-        const_cast<SpawnMetadata*>(data)->spawnTrackingData = spawnTrackingTemplateData;
-        const_cast<SpawnMetadata*>(data)->spawnTrackingQuestObjectives = std::move(objectiveList);
-        _spawnTrackingMapStore.emplace(spawnTrackingId, data);
-
-        ++count;
-    } while (result->NextRow());
-
-    TC_LOG_INFO("server.loading", ">> Loaded {} spawn tracking members in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
-}
-
-void ObjectMgr::LoadSpawnTrackingStates()
-{
-    uint32 oldMSTime = getMSTime();
-
-    //                                               0          1        2      3        4                   5            6               7
-    QueryResult result = WorldDatabase.Query("SELECT SpawnType, SpawnId, State, Visible, StateSpellVisualId, StateAnimId, StateAnimKitId, StateWorldEffects FROM spawn_tracking_state");
-
-    if (!result)
-    {
-        TC_LOG_INFO("server.loading", ">> Loaded 0 spawn tracking states. DB table `spawn_tracking_state` is empty!");
-        return;
-    }
-
-    uint32 count = 0;
-
-    do
-    {
-        Field* fields = result->Fetch();
-        SpawnObjectType spawnType = SpawnObjectType(fields[0].GetUInt8());
-        ObjectGuid::LowType spawnId = fields[1].GetUInt64();
-        SpawnTrackingState state = SpawnTrackingState(fields[2].GetUInt8());
-
-        if (!SpawnData::TypeIsValid(spawnType))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` has spawn data with invalid type {}. Skipped.", uint32(spawnType));
-            continue;
-        }
-        else if (spawnType == SPAWN_TYPE_AREATRIGGER)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` has areatrigger spawn ({}). Skipped.", uint32(spawnType));
-            continue;
-        }
-
-        SpawnMetadata const* data = GetSpawnMetadata(spawnType, spawnId);
-        if (!data)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` has spawn ({},{}) not found!", uint32(spawnType), spawnId);
-            continue;
-        }
-        else if (!data->spawnTrackingData)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` has spawn ({},{}) with spawn tracking states, but is not part of a spawn tracking. Skipped.", uint32(spawnType), spawnId);
-            continue;
-        }
-
-        if (state >= SpawnTrackingState::Max)
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` has spawn ({},{}) with invalid state type {}. Skipped.", uint32(spawnType), spawnId, uint8(state));
-            continue;
-        }
-
-        SpawnTrackingStateData& spawnTrackingStateData = const_cast<SpawnMetadata*>(data)->spawnTrackingStates[AsUnderlyingType(state)];
-        spawnTrackingStateData.Visible = fields[3].GetBool();
-        spawnTrackingStateData.StateSpellVisualId = fields[4].GetUInt32OrNull();
-        spawnTrackingStateData.StateAnimId = fields[5].GetUInt16OrNull();
-        spawnTrackingStateData.StateAnimKitId = fields[6].GetUInt16OrNull();
-
-        if (spawnTrackingStateData.StateSpellVisualId && !sSpellVisualStore.HasRecord(*spawnTrackingStateData.StateSpellVisualId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` references invalid StateSpellVisualId {} for spawn ({},{}), set to none.",
-                *spawnTrackingStateData.StateSpellVisualId, uint32(spawnType), spawnId);
-            spawnTrackingStateData.StateSpellVisualId.reset();
-        }
-
-        if (spawnTrackingStateData.StateAnimId && *spawnTrackingStateData.StateAnimId != sDB2Manager.GetEmptyAnimStateID() && !sAnimationDataStore.HasRecord(*spawnTrackingStateData.StateAnimId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` references invalid StateAnimId {} for spawn ({},{}), set to none.",
-                *spawnTrackingStateData.StateAnimId, uint32(spawnType), spawnId);
-            spawnTrackingStateData.StateAnimId.reset();
-        }
-
-        if (spawnTrackingStateData.StateAnimKitId && !sAnimKitStore.HasRecord(*spawnTrackingStateData.StateAnimKitId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` references invalid StateAnimKitId {} for spawn ({},{}), set to none.",
-                *spawnTrackingStateData.StateAnimKitId, uint32(spawnType), spawnId);
-            spawnTrackingStateData.StateAnimKitId.reset();
-        }
-
-        if (Optional<std::string_view> worldEffectsStr = fields[7].GetStringViewOrNull())
-        {
-            for (std::string_view worldEffectStr : Trinity::Tokenize(*worldEffectsStr, ',', false))
-            {
-                Optional<uint32> worldEffectId = Trinity::StringTo<uint32>(worldEffectStr);
-                if (!worldEffectId)
-                    continue;
-
-                if (!sWorldEffectStore.HasRecord(*worldEffectId))
-                {
-                    TC_LOG_ERROR("sql.sql", "Table `spawn_tracking_state` references invalid WorldEffectId {} for spawn ({},{}). Skipped.",
-                        *worldEffectId, uint32(spawnType), spawnId);
-                    continue;
-                }
-
-                spawnTrackingStateData.StateWorldEffects.push_back(*worldEffectId);
-            }
-        }
-
-        ++count;
-    } while (result->NextRow());
-
-    TC_LOG_INFO("server.loading", ">> Loaded {} spawn tracking states in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
-}
-
 void ObjectMgr::LoadJumpChargeParams()
 {
     uint32 oldMSTime = getMSTime();
@@ -11952,84 +11326,73 @@ void ObjectMgr::LoadJumpChargeParams()
     // need for reload case
     _jumpChargeParams.clear();
 
-    QueryResult result = WorldDatabase.Query("SELECT id, speed, treatSpeedAsMoveTimeSeconds, minHeight, maxHeight, unlimitedSpeed, spellVisualId, progressCurveId, parabolicCurveId, triggerSpellId FROM jump_charge_params");
+    //                                               0   1      2                            3            4              5                6
+    QueryResult result = WorldDatabase.Query("SELECT id, speed, treatSpeedAsMoveTimeSeconds, jumpGravity, spellVisualId, progressCurveId, parabolicCurveId FROM jump_charge_params");
     if (!result)
     {
         return;
     }
 
-    DEFINE_FIELD_ACCESSOR_CACHE_ANONYMOUS(ResultSet, (id)(speed)(treatSpeedAsMoveTimeSeconds)(minHeight)(maxHeight)(unlimitedSpeed)
-        (spellVisualId)(progressCurveId)(parabolicCurveId)(triggerSpellId)) fields { *result };
-
     do
     {
-        int32 id = fields.id().GetInt32();
-        JumpChargeParams& params = _jumpChargeParams[id];
-        params.Speed = fields.speed().GetFloat();
-        params.TreatSpeedAsMoveTimeSeconds = fields.treatSpeedAsMoveTimeSeconds().GetBool();
-        params.UnlimitedSpeed = fields.unlimitedSpeed().GetBool();
-        params.MinHeight = fields.minHeight().GetFloatOrNull();
-        params.MaxHeight = fields.maxHeight().GetFloatOrNull();
-        params.SpellVisualId = fields.spellVisualId().GetInt32OrNull();
-        params.ProgressCurveId = fields.progressCurveId().GetInt32OrNull();
-        params.ParabolicCurveId = fields.parabolicCurveId().GetInt32OrNull();
-        params.TriggerSpellId = fields.triggerSpellId().GetInt32OrNull();
+        Field* fields = result->Fetch();
 
-        if (params.Speed <= 0.0f)
+        int32 id = fields[0].GetInt32();
+        float speed = fields[1].GetFloat();
+        bool treatSpeedAsMoveTimeSeconds = fields[2].GetBool();
+        float jumpGravity = fields[3].GetFloat();
+        Optional<int32> spellVisualId;
+        Optional<int32> progressCurveId;
+        Optional<int32> parabolicCurveId;
+
+        if (speed <= 0.0f)
         {
             TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` uses invalid speed {} for id {}, set to default charge speed {}.",
-                params.Speed, id, SPEED_CHARGE);
-            params.Speed = SPEED_CHARGE;
+                speed, id, SPEED_CHARGE);
+            speed = SPEED_CHARGE;
         }
 
-        if (params.MinHeight && *params.MinHeight <= 0.0f)
+        if (jumpGravity <= 0.0f)
         {
-            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` uses invalid min height {} for id {}, set to none.",
-                params.MinHeight, id);
-            params.MinHeight.reset();
+            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` uses invalid jump gravity {} for id {}, set to default {}.",
+                jumpGravity, id, Movement::gravity);
+            jumpGravity = Movement::gravity;
         }
 
-        if (params.MaxHeight && *params.MaxHeight <= 0.0f)
+        if (!fields[4].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` uses invalid max height {} for id {}, set to none.",
-                params.MaxHeight, id);
-            params.MaxHeight.reset();
+            if (sSpellVisualStore.LookupEntry(fields[4].GetInt32()))
+                spellVisualId = fields[4].GetInt32();
+            else
+                TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` references non-existing SpellVisual: {} for id {}, ignored.",
+                    fields[4].GetInt32(), id);
         }
 
-        if (params.MinHeight && params.MaxHeight && *params.MinHeight >= *params.MaxHeight)
+        if (!fields[5].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` uses invalid max height {} (must be greated than min height {}) for id {}, set to none.",
-                params.MaxHeight, params.MinHeight, id);
-            params.MaxHeight.reset();
+            if (sCurveStore.LookupEntry(fields[5].GetInt32()))
+                progressCurveId = fields[5].GetInt32();
+            else
+                TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` references non-existing progress Curve: {} for id {}, ignored.",
+                    fields[4].GetInt32(), id);
         }
 
-        if (params.SpellVisualId && !sSpellVisualStore.LookupEntry(*params.SpellVisualId))
+        if (!fields[6].IsNull())
         {
-            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` references non-existing SpellVisual: {} for id {}, ignored.",
-                *params.SpellVisualId, id);
-            params.SpellVisualId.reset();
+            if (sCurveStore.LookupEntry(fields[6].GetInt32()))
+                parabolicCurveId = fields[6].GetInt32();
+            else
+                TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` references non-existing parabolic Curve: {} for id {}, ignored.",
+                    fields[6].GetInt32(), id);
         }
 
-        if (params.ProgressCurveId && !sCurveStore.LookupEntry(*params.ProgressCurveId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` references non-existing progress Curve: {} for id {}, ignored.",
-                *params.ProgressCurveId, id);
-            params.ProgressCurveId.reset();
-        }
-
-        if (params.ParabolicCurveId && !sCurveStore.LookupEntry(*params.ParabolicCurveId))
-        {
-            TC_LOG_ERROR("sql.sql", "Table `jump_charge_params` references non-existing parabolic Curve: {} for id {}, ignored.",
-                *params.ParabolicCurveId, id);
-            params.ParabolicCurveId.reset();
-        }
-
-        if (params.TriggerSpellId && !sSpellMgr->GetSpellInfo(*params.TriggerSpellId, DIFFICULTY_NONE))
-        {
-            TC_LOG_DEBUG("sql.sql", "Table `jump_charge_params` references non-existing trigger spell id: {} for id {}, ignored.",
-                *params.TriggerSpellId, id);
-            params.TriggerSpellId.reset();
-        }
+        JumpChargeParams& params = _jumpChargeParams[id];
+        params.Speed = speed;
+        params.TreatSpeedAsMoveTimeSeconds = treatSpeedAsMoveTimeSeconds;
+        params.JumpGravity = jumpGravity;
+        params.SpellVisualId = spellVisualId;
+        params.ProgressCurveId = progressCurveId;
+        params.ParabolicCurveId = parabolicCurveId;
 
     } while (result->NextRow());
 

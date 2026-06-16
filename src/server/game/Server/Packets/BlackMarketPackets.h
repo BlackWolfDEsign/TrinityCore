@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_BLACK_MARKET_PACKETS_H
-#define TRINITYCORE_BLACK_MARKET_PACKETS_H
+#ifndef BlackMarketPackets_h__
+#define BlackMarketPackets_h__
 
 #include "Packet.h"
 #include "ItemPacketsCommon.h"
@@ -43,28 +43,17 @@ namespace WorldPackets
         class BlackMarketOpen final : public ClientPacket
         {
         public:
-            explicit BlackMarketOpen(WorldPacket&& packet) : ClientPacket(CMSG_BLACK_MARKET_OPEN, std::move(packet)) { }
+            BlackMarketOpen(WorldPacket&& packet) : ClientPacket(CMSG_BLACK_MARKET_OPEN, std::move(packet)) { }
 
             void Read() override;
 
             ObjectGuid Guid;
-        };
-
-        class BlackMarketRequestItems final : public ClientPacket
-        {
-        public:
-            explicit BlackMarketRequestItems(WorldPacket&& packet) : ClientPacket(CMSG_BLACK_MARKET_REQUEST_ITEMS, std::move(packet)) { }
-
-            void Read() override;
-
-            ObjectGuid Guid;
-            Timestamp<> LastUpdateID;
         };
 
         class BlackMarketRequestItemsResult final : public ServerPacket
         {
         public:
-            explicit BlackMarketRequestItemsResult() : ServerPacket(SMSG_BLACK_MARKET_REQUEST_ITEMS_RESULT, 4) { }
+            BlackMarketRequestItemsResult() : ServerPacket(SMSG_BLACK_MARKET_REQUEST_ITEMS_RESULT, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -72,23 +61,10 @@ namespace WorldPackets
             std::vector<BlackMarketItem> Items;
         };
 
-        class BlackMarketBidOnItem final : public ClientPacket
-        {
-        public:
-            explicit BlackMarketBidOnItem(WorldPacket&& packet) : ClientPacket(CMSG_BLACK_MARKET_BID_ON_ITEM, std::move(packet)) { }
-
-            void Read() override;
-
-            ObjectGuid Guid;
-            int32 MarketID = 0;
-            Item::ItemInstance Item;
-            uint64 BidAmount = 0;
-        };
-
         class BlackMarketBidOnItemResult final : public ServerPacket
         {
         public:
-            explicit BlackMarketBidOnItemResult() : ServerPacket(SMSG_BLACK_MARKET_BID_ON_ITEM_RESULT, 4 + 76 + 4) { }
+            BlackMarketBidOnItemResult() : ServerPacket(SMSG_BLACK_MARKET_BID_ON_ITEM_RESULT, 4 + 76 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -100,7 +76,7 @@ namespace WorldPackets
         class BlackMarketOutbid final : public ServerPacket
         {
         public:
-            explicit BlackMarketOutbid() : ServerPacket(SMSG_BLACK_MARKET_OUTBID, 4 + 76 + 4) { }
+            BlackMarketOutbid() : ServerPacket(SMSG_BLACK_MARKET_OUTBID, 4 + 76 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -112,7 +88,7 @@ namespace WorldPackets
         class BlackMarketWon final : public ServerPacket
         {
         public:
-            explicit BlackMarketWon() : ServerPacket(SMSG_BLACK_MARKET_WON, 4 + 76 + 4) { }
+            BlackMarketWon() : ServerPacket(SMSG_BLACK_MARKET_WON, 4 + 76 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -123,4 +99,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_BLACK_MARKET_PACKETS_H
+#endif // BlackMarketPackets_h__

@@ -8,42 +8,28 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_library(argon2 STATIC)
-
-target_sources(argon2
-  PRIVATE
-    argon2/argon2.c
-    argon2/core.c
-    argon2/encoding.c
-    argon2/thread.c
-    argon2/blake2/blake2b.c)
+file(GLOB_RECURSE sources *.c)
 
 if(TRINITY_SYSTEM_PROCESSOR MATCHES "x86|amd64")
-  target_sources(argon2 PRIVATE argon2/opt.c)
+  list(REMOVE_ITEM sources
+    ${CMAKE_CURRENT_SOURCE_DIR}/argon2/ref.c)
 else()
-  target_sources(argon2 PRIVATE argon2/ref.c)
+  list(REMOVE_ITEM sources
+    ${CMAKE_CURRENT_SOURCE_DIR}/argon2/opt.c)
 endif()
 
-target_sources(argon2
-  PUBLIC
-    FILE_SET HEADERS
-    FILES
-      argon2/argon2.h
-  PRIVATE
-    FILE_SET argon2_private_headers
-    TYPE HEADERS
-    FILES
-      argon2/core.h
-      argon2/encoding.h
-      argon2/thread.h
-      argon2/blake2/blake2.h
-      argon2/blake2/blake2-impl.h)
+add_library(argon2 STATIC
+  ${sources})
 
 target_compile_definitions(argon2
   PRIVATE
     ARGON2_NO_THREADS)
 
 set_target_properties(argon2 PROPERTIES LINKER_LANGUAGE CXX)
+
+target_include_directories(argon2
+  PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_link_libraries(argon2
   PRIVATE

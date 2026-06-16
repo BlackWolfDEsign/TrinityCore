@@ -33,7 +33,7 @@
 #define PLAYER_FLIGHT_SPEED 32.0f
 
 FlightPathMovementGenerator::FlightPathMovementGenerator(Optional<float> speed,
-    Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult)
+    Optional<Scripting::v2::ActionResultSetter<MovementStopReason>>&& scriptResult)
 {
     _speed = speed;
     _endGridX = 0.0f;
@@ -88,12 +88,13 @@ void FlightPathMovementGenerator::DoReset(Player* owner)
     }
 
     Movement::MoveSplineInit init(owner);
-    init.Path().reserve(end - currentNodeId + 1);
     // Providing a starting vertex since the taxi paths do not provide such
-    init.Path().emplace_back(owner->GetPositionX(), owner->GetPositionY(), owner->GetPositionZ());
+    init.Path().push_back(G3D::Vector3(owner->GetPositionX(), owner->GetPositionY(), owner->GetPositionZ()));
     for (uint32 i = currentNodeId; i != end; ++i)
-        init.Path().emplace_back(_path[i]->Loc.X, _path[i]->Loc.Y, _path[i]->Loc.Z);
-
+    {
+        G3D::Vector3 vertice(_path[i]->Loc.X, _path[i]->Loc.Y, _path[i]->Loc.Z);
+        init.Path().push_back(vertice);
+    }
     init.SetFirstPointId(GetCurrentNode());
     init.SetFly();
     init.SetSmooth();

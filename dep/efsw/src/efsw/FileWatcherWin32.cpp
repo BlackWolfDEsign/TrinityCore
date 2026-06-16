@@ -26,8 +26,7 @@ FileWatcherWin32::~FileWatcherWin32() {
 
 	removeAllWatches();
 
-	if ( mIOCP )
-		CloseHandle( mIOCP );
+	CloseHandle( mIOCP );
 }
 
 WatchID FileWatcherWin32::addWatch( const std::string& directory, FileWatchListener* watcher,
@@ -113,7 +112,7 @@ void FileWatcherWin32::removeWatch( WatcherStructWin32* watch ) {
 
 void FileWatcherWin32::watch() {
 	if ( NULL == mThread ) {
-		mThread = new Thread([this]{run();});
+		mThread = new Thread( &FileWatcherWin32::run, this );
 		mThread->launch();
 	}
 }
@@ -144,8 +143,7 @@ void FileWatcherWin32::run() {
 					break;
 				} else {
 					Lock lock( mWatchesLock );
-					if (mWatches.find( (WatcherStructWin32*)ov ) != mWatches.end())
-						WatchCallback( numOfBytes, ov );
+					WatchCallback( numOfBytes, ov );
 				}
 			}
 		} else {

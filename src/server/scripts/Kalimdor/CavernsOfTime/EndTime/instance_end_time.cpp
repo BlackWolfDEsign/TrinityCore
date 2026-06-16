@@ -19,12 +19,13 @@
 #include "end_time.h"
 #include "InstanceScript.h"
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_MUROZOND, BOSS_MUROZOND },
+    { 0,            0             } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_ECHO_OF_BAINE,       {{ 1881 }}  },
     { BOSS_ECHO_OF_SYLVANAS,    {{ 1882 }}  },
@@ -44,7 +45,7 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDungeonEncounterData(encounters);
         }
     };

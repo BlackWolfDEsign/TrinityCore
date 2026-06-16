@@ -29,7 +29,6 @@
 #include "PetDefines.h"
 #include "Player.h"
 #include "ScriptMgr.h"
-#include "SpellAuras.h"
 #include "Vehicle.h"
 #include "WaypointManager.h"
 
@@ -46,8 +45,8 @@ bool SmartAI::IsAIControlled() const
     return !_charmed;
 }
 
-void SmartAI::StartPath(uint32 pathId/* = 0*/, bool repeat/* = false*/, Unit* invoker/* = nullptr*/, uint32 nodeId/* = 0*/, uint32 fadeObjectDuration /*= 0*/,
-    Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult/* = {}*/)
+void SmartAI::StartPath(uint32 pathId/* = 0*/, bool repeat/* = false*/, Unit* invoker/* = nullptr*/, uint32 nodeId/* = 0*/,
+    Optional<Scripting::v2::ActionResultSetter<MovementStopReason>>&& scriptResult/* = {}*/)
 {
     if (HasEscortState(SMART_ESCORT_ESCORTING))
         StopPath();
@@ -73,12 +72,7 @@ void SmartAI::StartPath(uint32 pathId/* = 0*/, bool repeat/* = false*/, Unit* in
         me->ReplaceAllNpcFlags(UNIT_NPC_FLAG_NONE);
     }
 
-    Optional<MovementFadeObject> fadeObject;
-    if (fadeObjectDuration)
-        fadeObject.emplace(Milliseconds(fadeObjectDuration));
-
-    me->GetMotionMaster()->MovePath(pathId, _repeatWaypointPath, {}, {}, MovementWalkRunSpeedSelectionMode::Default,
-        {}, {}, {}, {}, true, fadeObject, std::move(scriptResult));
+    me->GetMotionMaster()->MovePath(pathId, _repeatWaypointPath, {}, {}, MovementWalkRunSpeedSelectionMode::Default, {}, {}, {}, {}, true, std::move(scriptResult));
 }
 
 WaypointPath const* SmartAI::LoadPath(uint32 entry)
@@ -197,7 +191,7 @@ void SmartAI::EndPath(bool fail)
     ObjectVector const* targets = GetScript()->GetStoredTargetVector(SMART_ESCORT_TARGETS, *me);
     if (targets && _escortQuestId)
     {
-        if (targets->size() == 1 && targets->front()->IsPlayer())
+        if (targets->size() == 1 && GetScript()->IsPlayer((*targets->begin())))
         {
             Player* player = targets->front()->ToPlayer();
             if (!fail && player->IsAtGroupRewardDistance(me) && !player->HasCorpse())
@@ -208,9 +202,9 @@ void SmartAI::EndPath(bool fail)
 
             if (Group* group = player->GetGroup())
             {
-                for (GroupReference const& groupRef : group->GetMembers())
+                for (GroupReference* groupRef = group->GetFirstMember(); groupRef != nullptr; groupRef = groupRef->next())
                 {
-                    Player* groupGuy = groupRef.GetSource();
+                    Player* groupGuy = groupRef->GetSource();
                     if (!groupGuy->IsInMap(player))
                         continue;
 
@@ -225,8 +219,9 @@ void SmartAI::EndPath(bool fail)
         {
             for (WorldObject* target : *targets)
             {
-                if (Player* player = target->ToPlayer())
+                if (GetScript()->IsPlayer(target))
                 {
+                    Player* player = target->ToPlayer();
                     if (!fail && player->IsAtGroupRewardDistance(me) && !player->HasCorpse())
                         player->AreaExploredOrEventHappens(_escortQuestId);
                     else if (fail)
@@ -303,17 +298,17 @@ bool SmartAI::IsEscortInvokerInRange()
     if (ObjectVector const* targets = GetScript()->GetStoredTargetVector(SMART_ESCORT_TARGETS, *me))
     {
         float checkDist = me->GetInstanceScript() ? SMART_ESCORT_MAX_PLAYER_DIST * 2 : SMART_ESCORT_MAX_PLAYER_DIST;
-        if (targets->size() == 1 && targets->front()->IsPlayer())
+        if (targets->size() == 1 && GetScript()->IsPlayer((*targets->begin())))
         {
-            Player* player = targets->front()->ToPlayer();
+            Player* player = (*targets->begin())->ToPlayer();
             if (me->GetDistance(player) <= checkDist)
                 return true;
 
             if (Group* group = player->GetGroup())
             {
-                for (GroupReference const& groupRef : group->GetMembers())
+                for (GroupReference* groupRef = group->GetFirstMember(); groupRef != nullptr; groupRef = groupRef->next())
                 {
-                    Player* groupGuy = groupRef.GetSource();
+                    Player* groupGuy = groupRef->GetSource();
                     if (groupGuy->IsInMap(player) && me->GetDistance(groupGuy) <= checkDist)
                         return true;
                 }
@@ -322,8 +317,13 @@ bool SmartAI::IsEscortInvokerInRange()
         else
         {
             for (WorldObject* target : *targets)
-                if (target->IsPlayer() && me->GetDistance(target) <= checkDist)
-                    return true;
+            {
+                if (GetScript()->IsPlayer(target))
+                {
+                    if (me->GetDistance(target->ToPlayer()) <= checkDist)
+                        return true;
+                }
+            }
         }
 
         // no valid target found
@@ -615,16 +615,6 @@ void SmartAI::OnSpellFailed(SpellInfo const* spellInfo)
 void SmartAI::OnSpellStart(SpellInfo const* spellInfo)
 {
     GetScript()->ProcessEventsFor(SMART_EVENT_ON_SPELL_START, nullptr, 0, 0, false, spellInfo);
-}
-
-void SmartAI::OnAuraApplied(AuraApplication const* aurApp)
-{
-    GetScript()->ProcessEventsFor(SMART_EVENT_ON_AURA_APPLIED, nullptr, 0, 0, false, aurApp->GetBase()->GetSpellInfo());
-}
-
-void SmartAI::OnAuraRemoved(AuraApplication const* aurApp)
-{
-    GetScript()->ProcessEventsFor(SMART_EVENT_ON_AURA_REMOVED, nullptr, 0, 0, false, aurApp->GetBase()->GetSpellInfo());
 }
 
 void SmartAI::DamageTaken(Unit* doneBy, uint32& damage, DamageEffectType /*damageType*/, SpellInfo const* /*spellInfo = nullptr*/)
@@ -1151,7 +1141,7 @@ void SmartAreaTriggerAI::OnUnitEnter(Unit* unit)
     GetScript()->ProcessEventsFor(SMART_EVENT_AREATRIGGER_ENTER, unit);
 }
 
-void SmartAreaTriggerAI::OnUnitExit(Unit* unit, AreaTriggerExitReason /*reason*/)
+void SmartAreaTriggerAI::OnUnitExit(Unit* unit)
 {
     GetScript()->ProcessEventsFor(SMART_EVENT_AREATRIGGER_EXIT, unit);
 }

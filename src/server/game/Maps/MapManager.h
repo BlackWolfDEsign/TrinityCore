@@ -31,13 +31,12 @@
 
 class Battleground;
 class BattlegroundMap;
-class GarrisonMap;
 class Group;
 class InstanceLock;
 class InstanceMap;
 class Map;
 class Player;
-enum Difficulty : int16;
+enum Difficulty : uint8;
 
 class TC_GAME_API MapManager
 {
@@ -143,7 +142,6 @@ class TC_GAME_API MapManager
         InstanceMap* CreateInstance(uint32 mapId, uint32 instanceId, InstanceLock* instanceLock, Difficulty difficulty, TeamId team, Group* group,
             Optional<uint32> lfgDungeonsId);
         BattlegroundMap* CreateBattleground(uint32 mapId, uint32 instanceId, Battleground* bg);
-        GarrisonMap* CreateGarrison(uint32 mapId, uint32 instanceId, Player* owner);
 
         bool DestroyMap(Map* map);
 

@@ -19,7 +19,6 @@
 #define RestMgr_h__
 
 #include "Define.h"
-#include "Optional.h"
 #include <ctime>
 
 class Player;
@@ -56,12 +55,6 @@ enum RestFlag : uint32
     REST_FLAG_IN_FACTION_AREA   = 0x4 // used with AREA_FLAG_REST_ZONE_*
 };
 
-struct InnAreaTrigger
-{
-    bool IsDBC = true;
-    uint32 AreaTriggerEntryId = 0;
-};
-
 class TC_GAME_API RestMgr
 {
     friend class Player;
@@ -79,8 +72,8 @@ public:
     void RemoveRestFlag(RestFlag restFlag);
 
     uint32 GetRestBonusFor(RestTypes restType, uint32 xp);
-    Optional<InnAreaTrigger> GetInnTrigger() const { return _innAreaTrigger; }
-    void SetInnTrigger(Optional<InnAreaTrigger> trigger) { _innAreaTrigger = trigger; }
+    uint32 GetInnTriggerID() const { return _innAreaTriggerId; }
+    void SetInnTriggerID(uint32 id) { _innAreaTriggerId = id; }
 
     void Update(time_t now);
 
@@ -92,7 +85,7 @@ protected:
 private:
     Player* _player;
     time_t _restTime;
-    Optional<InnAreaTrigger> _innAreaTrigger;
+    uint32 _innAreaTriggerId;
     float _restBonus[REST_TYPE_MAX];
     uint32 _restFlagMask;
 };

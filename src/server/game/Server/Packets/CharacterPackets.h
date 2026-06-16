@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_CHARACTER_PACKETS_H
-#define TRINITYCORE_CHARACTER_PACKETS_H
+#ifndef CharacterPackets_h__
+#define CharacterPackets_h__
 
 #include "Packet.h"
 #include "ObjectGuid.h"
@@ -49,7 +49,7 @@ namespace WorldPackets
         class EnumCharacters final : public ClientPacket
         {
         public:
-            explicit EnumCharacters(WorldPacket&& packet);
+            EnumCharacters(WorldPacket&& packet);
 
             void Read() override { }
         };
@@ -120,7 +120,6 @@ namespace WorldPackets
         {
             uint32 WarbandScenePlacementID = 0;
             int32 Type = 0;
-            int32 ContentSetID = 0;
             ObjectGuid Guid;
         };
 
@@ -130,7 +129,6 @@ namespace WorldPackets
             uint8 OrderIndex = 0;
             uint32 WarbandSceneID = 0;
             uint32 Flags = 0;    ///< enum WarbandGroupFlags { Collapsed = 1 }
-            int32 ContentSetID = 0;
             std::vector<WarbandGroupMember> Members;
             std::string_view Name;
         };
@@ -153,7 +151,7 @@ namespace WorldPackets
                 uint32 VirtualRealmAddress = 0;
                 uint64 GuildClubMemberID = 0; ///< same as bgs.protocol.club.v1.MemberId.unique_id, guessed basing on SMSG_QUERY_PLAYER_NAME_RESPONSE (that one is known)
                 std::string Name;
-                uint16 ListPosition      = 0; ///< Order of the characters in list
+                uint8 ListPosition       = 0; ///< Order of the characters in list
                 uint8 RaceID             = 0;
                 uint8 ClassID            = 0;
                 uint8 SexID              = 0;
@@ -168,11 +166,10 @@ namespace WorldPackets
                 uint32 Flags3            = 0; ///< Character flags 3 @todo research
                 uint32 Flags4            = 0; ///< Character flags 4 @todo research
                 bool FirstLogin      = false;
-                uint8 CantLoginReason    = 0;
-                Timestamp<> CreateTime;
-                Timestamp<> LastActiveTime;
+                uint8 unkWod61x          = 0;
+                Timestamp<> LastPlayedTime;
                 uint16 SpecID            = 0;
-                uint32 SaveVersion       = 0;
+                uint32 Unknown703        = 0;
                 uint32 LastLoginVersion  = 0;
                 uint32 OverrideSelectScreenFileDataID = 0;
                 int32 TimerunningSeasonID = 0;
@@ -185,30 +182,30 @@ namespace WorldPackets
 
                 struct VisualItemInfo
                 {
-                    uint32 ItemID           = 0;
-                    uint32 TransmogrifiedItemID = 0;
-                    uint8 Subclass          = 0;
-                    uint8 InvType           = 0;
-                    uint8 SheatheCategory   = 0;
-                    uint32 DisplayID        = 0;
+                    uint32 DisplayID = 0;
                     uint32 DisplayEnchantID = 0;
                     int32 SecondaryItemModifiedAppearanceID = 0; // also -1 is some special value
+                    uint8 InvType = 0;
+                    uint8 Subclass = 0;
+                    uint32 ItemID = 0;
+                    uint32 TransmogrifiedItemID = 0;
                 };
 
                 std::array<VisualItemInfo, 19> VisualItems = { };
                 CustomTabardInfo PersonalTabard;
-                uint32 RealmQueue = 0;
-                bool RealmInfoFound = false;
-                bool IsRealmOffline = false;
+                uint32 Unused1110_1 = 0;
+                bool Unused1110_2 = false;
+                bool Unused1110_3 = false;
             };
 
             struct CharacterRestrictionAndMailData
             {
                 bool BoostInProgress = false; ///< @todo
-                uint32 RestrictionFlags  = 0;
+                uint32 Flags4 = 0;
                 std::vector<std::string> MailSenders;
                 std::vector<uint32> MailSenderTypes;
-                bool RpeAvailable = false;
+                bool RpeResetAvailable = false;
+                bool RpeResetQuestClearAvailable = false;
             };
 
             struct CharacterInfo
@@ -232,28 +229,20 @@ namespace WorldPackets
                 int16 PvpRatingAssociatedSpecID = 0;
             };
 
-            struct ClassUnlock
-            {
-               int8 ClassID = 0;
-               bool HasUnlockedAchievement = false;
-               uint32 AchievementID = 0;
-            };
-
             struct RaceUnlock
             {
-                int8 RaceID = 0;
-                bool HasUnlockedLicense = false;
-                bool HasUnlockedAchievement = false;
-                bool HasHeritageArmorUnlockAchievement = false;
-                bool HideRaceOnClient = false;
-                bool FactionBalanceDisabled = false;
-                std::vector<ClassUnlock> ClassUnlocks;
+                int8 RaceID          = 0;
+                bool HasExpansion     = false;
+                bool HasAchievement   = false;
+                bool HasHeritageArmor = false;
+                bool IsLocked         = false;
+                bool Unused1027       = false;
             };
 
             struct UnlockedConditionalAppearance
             {
                 int32 AchievementID = 0;
-                int32 ConditionalType = 0;
+                int32 Unused = 0;
             };
 
             struct RaceLimitDisableInfo
@@ -265,25 +254,24 @@ namespace WorldPackets
                 };
 
                 int8 RaceID = 0;
-                int8 Reason = 0;
+                int32 BlockReason = 0;
             };
 
-            explicit EnumCharactersResult() : ServerPacket(SMSG_ENUM_CHARACTERS_RESULT) { }
+            EnumCharactersResult() : ServerPacket(SMSG_ENUM_CHARACTERS_RESULT) { }
 
             WorldPacket const* Write() override;
 
             bool Success                          = false;
             bool Realmless                        = false;
             bool IsDeletedCharacters              = false; ///< used for character undelete list
-            bool IgnoreNewPlayerRestrictions      = false; ///< allows client to skip new player restrictions
-            bool IsRestrictedNewPlayer            = false; ///< forbids using level boost and class trials
-            bool IsNewcomerChatCompleted          = false; ///< forbids hero classes and allied races
-            bool IsRestrictedTrial                = false;
-            bool IsAccountLapsedPlayer            = false;
-            bool ForceCharacterListSort           = false;
+            bool IsNewPlayerRestrictionSkipped    = false; ///< allows client to skip new player restrictions
+            bool IsNewPlayerRestricted            = false; ///< forbids using level boost and class trials
+            bool IsNewPlayer                      = false; ///< forbids hero classes and allied races
+            bool IsTrialAccountRestricted         = false;
+            bool DontCreateCharacterDisplays      = false;
 
             int32 MaxCharacterLevel     = 1;
-            Optional<uint32> ClassDisableMask;
+            Optional<uint32> DisabledClassesMask;
 
             std::vector<CharacterInfo> Characters; ///< all characters on the list
             std::vector<RegionwideCharacterListEntry> RegionwideCharacters;
@@ -293,21 +281,10 @@ namespace WorldPackets
             std::vector<WarbandGroup> WarbandGroups;
         };
 
-        class CheckCharacterNameAvailability final : public ClientPacket
-        {
-        public:
-            explicit CheckCharacterNameAvailability(WorldPacket&& packet) : ClientPacket(CMSG_CHECK_CHARACTER_NAME_AVAILABILITY, std::move(packet)) { }
-
-            void Read() override;
-
-            uint32 SequenceIndex = 0;
-            std::string Name;
-        };
-
         class CheckCharacterNameAvailabilityResult final : public ServerPacket
         {
         public:
-            explicit CheckCharacterNameAvailabilityResult(uint32 sequenceIndex, uint32 result) : ServerPacket(SMSG_CHECK_CHARACTER_NAME_AVAILABILITY_RESULT, 4 + 4),
+            CheckCharacterNameAvailabilityResult(uint32 sequenceIndex, uint32 result) : ServerPacket(SMSG_CHECK_CHARACTER_NAME_AVAILABILITY_RESULT, 4 + 4),
                 SequenceIndex(sequenceIndex), Result(result)
             {
             }
@@ -321,7 +298,7 @@ namespace WorldPackets
         class CreateCharacter final : public ClientPacket
         {
         public:
-            explicit CreateCharacter(WorldPacket&& packet) : ClientPacket(CMSG_CREATE_CHARACTER, std::move(packet)) { }
+            CreateCharacter(WorldPacket&& packet) : ClientPacket(CMSG_CREATE_CHARACTER, std::move(packet)) { }
 
             void Read() override;
 
@@ -344,18 +321,18 @@ namespace WorldPackets
         class CreateChar final : public ServerPacket
         {
         public:
-            explicit CreateChar() : ServerPacket(SMSG_CREATE_CHAR, 1) { }
+            CreateChar() : ServerPacket(SMSG_CREATE_CHAR, 1) { }
 
             WorldPacket const* Write() override;
 
-            uint32 Code = 0; ///< Result code @see enum ResponseCodes
+            uint8 Code = 0; ///< Result code @see enum ResponseCodes
             ObjectGuid Guid;
         };
 
         class CharDelete final : public ClientPacket
         {
         public:
-            explicit CharDelete(WorldPacket&& packet): ClientPacket(CMSG_CHAR_DELETE, std::move(packet)) { }
+            CharDelete(WorldPacket&& packet): ClientPacket(CMSG_CHAR_DELETE, std::move(packet)) { }
 
             void Read() override;
 
@@ -365,17 +342,17 @@ namespace WorldPackets
         class DeleteChar final : public ServerPacket
         {
         public:
-            explicit DeleteChar(): ServerPacket(SMSG_DELETE_CHAR, 1) { }
+            DeleteChar(): ServerPacket(SMSG_DELETE_CHAR, 1) { }
 
             WorldPacket const* Write() override;
 
-            uint32 Code = 0; ///< Result code @see enum ResponseCodes
+            uint8 Code = 0; ///< Result code @see enum ResponseCodes
         };
 
         class CharacterRenameRequest final : public ClientPacket
         {
         public:
-            explicit CharacterRenameRequest(WorldPacket&& packet) : ClientPacket(CMSG_CHARACTER_RENAME_REQUEST, std::move(packet)) { }
+            CharacterRenameRequest(WorldPacket&& packet) : ClientPacket(CMSG_CHARACTER_RENAME_REQUEST, std::move(packet)) { }
 
             void Read() override;
 
@@ -389,19 +366,19 @@ namespace WorldPackets
         class CharacterRenameResult final : public ServerPacket
         {
         public:
-            explicit CharacterRenameResult() : ServerPacket(SMSG_CHARACTER_RENAME_RESULT, 20) { }
+            CharacterRenameResult() : ServerPacket(SMSG_CHARACTER_RENAME_RESULT, 20) { }
 
             WorldPacket const* Write() override;
 
             std::string Name;
-            uint32 Result = 0;
+            uint8 Result = 0;
             Optional<ObjectGuid> Guid;
         };
 
         class CharCustomize final : public ClientPacket
         {
         public:
-            explicit CharCustomize(WorldPacket&& packet) : ClientPacket(CMSG_CHAR_CUSTOMIZE, std::move(packet)) { }
+            CharCustomize(WorldPacket&& packet) : ClientPacket(CMSG_CHAR_CUSTOMIZE, std::move(packet)) { }
 
             void Read() override;
 
@@ -418,34 +395,12 @@ namespace WorldPackets
             std::shared_ptr<CharCustomizeInfo> CustomizeInfo;
         };
 
-        class CharCustomizeSuccess final : public ServerPacket
-        {
-        public:
-            explicit CharCustomizeSuccess(CharCustomizeInfo const* customizeInfo);
-
-            WorldPacket const* Write() override;
-
-            ObjectGuid CharGUID;
-            std::string CharName;
-            uint8 SexID = 0;
-            Array<ChrCustomizationChoice, 250> const& Customizations;
-        };
-
-        class CharCustomizeFailure final : public ServerPacket
-        {
-        public:
-            explicit CharCustomizeFailure() : ServerPacket(SMSG_CHAR_CUSTOMIZE_FAILURE, 1 + 16) { }
-
-            WorldPacket const* Write() override;
-
-            uint32 Result = 0;
-            ObjectGuid CharGUID;
-        };
+        /// @todo: CharCustomizeResult
 
         class CharRaceOrFactionChange final : public ClientPacket
         {
         public:
-            explicit CharRaceOrFactionChange(WorldPacket&& packet) : ClientPacket(CMSG_CHAR_RACE_OR_FACTION_CHANGE, std::move(packet)) { }
+            CharRaceOrFactionChange(WorldPacket&& packet) : ClientPacket(CMSG_CHAR_RACE_OR_FACTION_CHANGE, std::move(packet)) { }
 
             void Read() override;
 
@@ -475,11 +430,11 @@ namespace WorldPackets
         class CharFactionChangeResult final : public ServerPacket
         {
         public:
-            explicit CharFactionChangeResult() : ServerPacket(SMSG_CHAR_FACTION_CHANGE_RESULT, 20 + sizeof(CharFactionChangeDisplayInfo)) { }
+            CharFactionChangeResult() : ServerPacket(SMSG_CHAR_FACTION_CHANGE_RESULT, 20 + sizeof(CharFactionChangeDisplayInfo)) { }
 
             WorldPacket const* Write() override;
 
-            uint32 Result = 0; ///< @see enum ResponseCodes
+            uint8 Result = 0; ///< @see enum ResponseCodes
             ObjectGuid Guid;
             Optional<CharFactionChangeDisplayInfo> Display;
         };
@@ -487,7 +442,7 @@ namespace WorldPackets
         class GenerateRandomCharacterName final : public ClientPacket
         {
         public:
-            explicit GenerateRandomCharacterName(WorldPacket&& packet) : ClientPacket(CMSG_GENERATE_RANDOM_CHARACTER_NAME, std::move(packet)) { }
+            GenerateRandomCharacterName(WorldPacket&& packet) : ClientPacket(CMSG_GENERATE_RANDOM_CHARACTER_NAME, std::move(packet)) { }
 
             void Read() override;
 
@@ -498,7 +453,7 @@ namespace WorldPackets
         class GenerateRandomCharacterNameResult final : public ServerPacket
         {
         public:
-            explicit GenerateRandomCharacterNameResult() : ServerPacket(SMSG_GENERATE_RANDOM_CHARACTER_NAME_RESULT, 20) { }
+            GenerateRandomCharacterNameResult() : ServerPacket(SMSG_GENERATE_RANDOM_CHARACTER_NAME_RESULT, 20) { }
 
             WorldPacket const* Write() override;
 
@@ -515,7 +470,7 @@ namespace WorldPackets
                 uint8 NewPosition = 0;
             };
 
-            explicit ReorderCharacters(WorldPacket&& packet);
+            ReorderCharacters(WorldPacket&& packet);
 
             void Read() override;
 
@@ -525,7 +480,7 @@ namespace WorldPackets
         class UndeleteCharacter final : public ClientPacket
         {
         public:
-            explicit UndeleteCharacter(WorldPacket&& packet) : ClientPacket(CMSG_UNDELETE_CHARACTER, std::move(packet)) { }
+            UndeleteCharacter(WorldPacket&& packet) : ClientPacket(CMSG_UNDELETE_CHARACTER, std::move(packet)) { }
 
             void Read() override;
 
@@ -539,7 +494,7 @@ namespace WorldPackets
         class UndeleteCharacterResponse final : public ServerPacket
         {
         public:
-            explicit UndeleteCharacterResponse() : ServerPacket(SMSG_UNDELETE_CHARACTER_RESPONSE, 26) { }
+            UndeleteCharacterResponse() : ServerPacket(SMSG_UNDELETE_CHARACTER_RESPONSE, 26) { }
 
             WorldPacket const* Write() override;
 
@@ -554,7 +509,7 @@ namespace WorldPackets
         class GetUndeleteCharacterCooldownStatus final : public ClientPacket
         {
         public:
-            explicit GetUndeleteCharacterCooldownStatus(WorldPacket&& packet) : ClientPacket(CMSG_GET_UNDELETE_CHARACTER_COOLDOWN_STATUS, std::move(packet)) { }
+            GetUndeleteCharacterCooldownStatus(WorldPacket&& packet) : ClientPacket(CMSG_GET_UNDELETE_CHARACTER_COOLDOWN_STATUS, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -562,31 +517,30 @@ namespace WorldPackets
         class UndeleteCooldownStatusResponse final : public ServerPacket
         {
         public:
-            explicit UndeleteCooldownStatusResponse() : ServerPacket(SMSG_UNDELETE_COOLDOWN_STATUS_RESPONSE, 9) { }
+            UndeleteCooldownStatusResponse() : ServerPacket(SMSG_UNDELETE_COOLDOWN_STATUS_RESPONSE, 9) { }
 
             WorldPacket const* Write() override;
 
+            bool OnCooldown    = false; ///<
             uint32 MaxCooldown     = 0; ///< Max. cooldown until next free character restoration. Displayed in undelete confirm message. (in sec)
             uint32 CurrentCooldown = 0; ///< Current cooldown until next free character restoration. (in sec)
-            bool OnCooldown    = false; ///<
         };
 
         class PlayerLogin final : public ClientPacket
         {
         public:
-            explicit PlayerLogin(WorldPacket&& packet) : ClientPacket(CMSG_PLAYER_LOGIN, std::move(packet)) { }
+            PlayerLogin(WorldPacket&& packet) : ClientPacket(CMSG_PLAYER_LOGIN, std::move(packet)) { }
 
             void Read() override;
 
             ObjectGuid Guid;      ///< Guid of the player that is logging in
             float FarClip = 0.0f; ///< Visibility distance (for terrain)
-            bool RPE = false;
         };
 
         class LoginVerifyWorld final : public ServerPacket
         {
         public:
-            explicit LoginVerifyWorld() : ServerPacket(SMSG_LOGIN_VERIFY_WORLD, 4 + 4 * 4 + 4) { }
+            LoginVerifyWorld() : ServerPacket(SMSG_LOGIN_VERIFY_WORLD, 4 + 4 * 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -617,7 +571,7 @@ namespace WorldPackets
         class CharacterLoginFailed  final : public ServerPacket
         {
         public:
-            explicit CharacterLoginFailed(LoginFailureReason code) : ServerPacket(SMSG_CHARACTER_LOGIN_FAILED, 1), Code(code) { }
+            CharacterLoginFailed(LoginFailureReason code) : ServerPacket(SMSG_CHARACTER_LOGIN_FAILED, 1), Code(code) { }
 
             WorldPacket const* Write() override;
 
@@ -627,7 +581,7 @@ namespace WorldPackets
         class LogoutRequest final : public ClientPacket
         {
         public:
-            explicit LogoutRequest(WorldPacket&& packet) : ClientPacket(CMSG_LOGOUT_REQUEST, std::move(packet)) { }
+            LogoutRequest(WorldPacket&& packet) : ClientPacket(CMSG_LOGOUT_REQUEST, std::move(packet)) { }
 
             void Read() override;
 
@@ -637,7 +591,7 @@ namespace WorldPackets
         class LogoutResponse final : public ServerPacket
         {
         public:
-            explicit LogoutResponse() : ServerPacket(SMSG_LOGOUT_RESPONSE, 4 + 1) { }
+            LogoutResponse() : ServerPacket(SMSG_LOGOUT_RESPONSE, 4 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -678,7 +632,7 @@ namespace WorldPackets
         class LogoutCancel final : public ClientPacket
         {
         public:
-            explicit LogoutCancel(WorldPacket&& packet) : ClientPacket(CMSG_LOGOUT_CANCEL, std::move(packet)) { }
+            LogoutCancel(WorldPacket&& packet) : ClientPacket(CMSG_LOGOUT_CANCEL, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -686,7 +640,7 @@ namespace WorldPackets
         class LogoutCancelAck final : public ServerPacket
         {
         public:
-            explicit LogoutCancelAck() : ServerPacket(SMSG_LOGOUT_CANCEL_ACK, 0) { }
+            LogoutCancelAck() : ServerPacket(SMSG_LOGOUT_CANCEL_ACK, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -694,7 +648,7 @@ namespace WorldPackets
         class LoadingScreenNotify final : public ClientPacket
         {
         public:
-            explicit LoadingScreenNotify(WorldPacket&& packet) : ClientPacket(CMSG_LOADING_SCREEN_NOTIFY, std::move(packet)) { }
+            LoadingScreenNotify(WorldPacket&& packet) : ClientPacket(CMSG_LOADING_SCREEN_NOTIFY, std::move(packet)) { }
 
             void Read() override;
 
@@ -705,7 +659,7 @@ namespace WorldPackets
         class InitialSetup final : public ServerPacket
         {
         public:
-            explicit InitialSetup() : ServerPacket(SMSG_INITIAL_SETUP, 1 + 1) { }
+            InitialSetup() : ServerPacket(SMSG_INITIAL_SETUP, 1 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -716,7 +670,7 @@ namespace WorldPackets
         class SetActionBarToggles final : public ClientPacket
         {
         public:
-            explicit SetActionBarToggles(WorldPacket&& packet) : ClientPacket(CMSG_SET_ACTION_BAR_TOGGLES, std::move(packet)) { }
+            SetActionBarToggles(WorldPacket&& packet) : ClientPacket(CMSG_SET_ACTION_BAR_TOGGLES, std::move(packet)) { }
 
             void Read() override;
 
@@ -726,7 +680,7 @@ namespace WorldPackets
         class RequestPlayedTime final : public ClientPacket
         {
         public:
-            explicit RequestPlayedTime(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_PLAYED_TIME, std::move(packet)) { }
+            RequestPlayedTime(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_PLAYED_TIME, std::move(packet)) { }
 
             void Read() override;
 
@@ -736,7 +690,7 @@ namespace WorldPackets
         class PlayedTime final : public ServerPacket
         {
         public:
-            explicit PlayedTime() : ServerPacket(SMSG_PLAYED_TIME, 9) { }
+            PlayedTime() : ServerPacket(SMSG_PLAYED_TIME, 9) { }
 
             WorldPacket const* Write() override;
 
@@ -748,7 +702,7 @@ namespace WorldPackets
         class SetTitle final : public ClientPacket
         {
         public:
-            explicit SetTitle(WorldPacket&& packet) : ClientPacket(CMSG_SET_TITLE, std::move(packet)) { }
+            SetTitle(WorldPacket&& packet) : ClientPacket(CMSG_SET_TITLE, std::move(packet)) { }
 
             void Read() override;
 
@@ -758,15 +712,15 @@ namespace WorldPackets
         class AlterApperance final : public ClientPacket
         {
         public:
-            explicit AlterApperance(WorldPacket&& packet) : ClientPacket(CMSG_ALTER_APPEARANCE, std::move(packet)) { }
+            AlterApperance(WorldPacket&& packet) : ClientPacket(CMSG_ALTER_APPEARANCE, std::move(packet)) { }
 
             void Read() override;
 
             uint8 NewSex = 0;
             Array<ChrCustomizationChoice, 250> Customizations;
-            int8 CustomizedRace = 0;
+            int32 CustomizedRace = 0;
             int32 CustomizedChrModelID = 0;
-            int8 UnalteredVisualRaceID = 0;
+            int32 UnalteredVisualRaceID = 0;
         };
 
         class BarberShopResult final : public ServerPacket
@@ -780,7 +734,7 @@ namespace WorldPackets
                 NoMoney2 = 3
             };
 
-            explicit BarberShopResult(ResultEnum result) : ServerPacket(SMSG_BARBER_SHOP_RESULT, 4), Result(result) { }
+            BarberShopResult(ResultEnum result) : ServerPacket(SMSG_BARBER_SHOP_RESULT, 4), Result(result) { }
 
             WorldPacket const* Write() override;
 
@@ -790,7 +744,7 @@ namespace WorldPackets
         class LogXPGain final : public ServerPacket
         {
         public:
-            explicit LogXPGain() : ServerPacket(SMSG_LOG_XP_GAIN, 16 + 4 + 1 + 4 + 4) { }
+            LogXPGain() : ServerPacket(SMSG_LOG_XP_GAIN, 16 + 4 + 1 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -804,7 +758,7 @@ namespace WorldPackets
         class TitleEarned final : public ServerPacket
         {
         public:
-            explicit TitleEarned(OpcodeServer opcode) : ServerPacket(opcode, 4) { }
+            TitleEarned(OpcodeServer opcode) : ServerPacket(opcode, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -814,7 +768,7 @@ namespace WorldPackets
         class SetFactionAtWar final : public ClientPacket
         {
         public:
-            explicit SetFactionAtWar(WorldPacket&& packet) : ClientPacket(CMSG_SET_FACTION_AT_WAR, std::move(packet)) { }
+            SetFactionAtWar(WorldPacket&& packet) : ClientPacket(CMSG_SET_FACTION_AT_WAR, std::move(packet)) { }
 
             void Read() override;
 
@@ -824,7 +778,7 @@ namespace WorldPackets
         class SetFactionNotAtWar final : public ClientPacket
         {
         public:
-            explicit SetFactionNotAtWar(WorldPacket&& packet) : ClientPacket(CMSG_SET_FACTION_NOT_AT_WAR, std::move(packet)) { }
+            SetFactionNotAtWar(WorldPacket&& packet) : ClientPacket(CMSG_SET_FACTION_NOT_AT_WAR, std::move(packet)) { }
 
             void Read() override;
 
@@ -834,7 +788,7 @@ namespace WorldPackets
         class SetFactionInactive final : public ClientPacket
         {
         public:
-            explicit SetFactionInactive(WorldPacket&& packet) : ClientPacket(CMSG_SET_FACTION_INACTIVE, std::move(packet)) { }
+            SetFactionInactive(WorldPacket&& packet) : ClientPacket(CMSG_SET_FACTION_INACTIVE, std::move(packet)) { }
 
             void Read() override;
 
@@ -845,7 +799,7 @@ namespace WorldPackets
         class SetWatchedFaction final : public ClientPacket
         {
         public:
-            explicit SetWatchedFaction(WorldPacket&& packet) : ClientPacket(CMSG_SET_WATCHED_FACTION, std::move(packet)) { }
+            SetWatchedFaction(WorldPacket&& packet) : ClientPacket(CMSG_SET_WATCHED_FACTION, std::move(packet)) { }
 
             void Read() override;
 
@@ -855,17 +809,41 @@ namespace WorldPackets
         class SetFactionVisible : public ServerPacket
         {
         public:
-            explicit SetFactionVisible(bool visible) : ServerPacket(visible ? SMSG_SET_FACTION_VISIBLE : SMSG_SET_FACTION_NOT_VISIBLE, 4) { }
+            SetFactionVisible(bool visible) : ServerPacket(visible ? SMSG_SET_FACTION_VISIBLE : SMSG_SET_FACTION_NOT_VISIBLE, 4) { }
 
             WorldPacket const* Write() override;
 
             uint32 FactionIndex = 0;
         };
 
+        class CharCustomizeSuccess final : public ServerPacket
+        {
+        public:
+            CharCustomizeSuccess(CharCustomizeInfo const* customizeInfo);
+
+            WorldPacket const* Write() override;
+
+            ObjectGuid CharGUID;
+            std::string CharName;
+            uint8 SexID = 0;
+            Array<ChrCustomizationChoice, 250> const& Customizations;
+        };
+
+        class CharCustomizeFailure final : public ServerPacket
+        {
+        public:
+            CharCustomizeFailure() : ServerPacket(SMSG_CHAR_CUSTOMIZE_FAILURE, 1 + 16) { }
+
+            WorldPacket const* Write() override;
+
+            uint8 Result = 0;
+            ObjectGuid CharGUID;
+        };
+
         class SetPlayerDeclinedNames final : public ClientPacket
         {
         public:
-            explicit SetPlayerDeclinedNames(WorldPacket&& packet) : ClientPacket(CMSG_SET_PLAYER_DECLINED_NAMES, std::move(packet)) { }
+            SetPlayerDeclinedNames(WorldPacket&& packet) : ClientPacket(CMSG_SET_PLAYER_DECLINED_NAMES, std::move(packet)) { }
 
             void Read() override;
 
@@ -876,23 +854,12 @@ namespace WorldPackets
         class SetPlayerDeclinedNamesResult final : public ServerPacket
         {
         public:
-            explicit SetPlayerDeclinedNamesResult() : ServerPacket(SMSG_SET_PLAYER_DECLINED_NAMES_RESULT, 8 + 4) { }
+            SetPlayerDeclinedNamesResult() : ServerPacket(SMSG_SET_PLAYER_DECLINED_NAMES_RESULT, 8 + 4) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid Player;
             int32 ResultCode = 0;
-        };
-
-        class SavePersonalEmblem final : public ClientPacket
-        {
-        public:
-            explicit SavePersonalEmblem(WorldPacket&& packet) : ClientPacket(CMSG_SAVE_PERSONAL_EMBLEM, std::move(packet)) { }
-
-            void Read() override;
-
-            ObjectGuid Vendor;
-            CustomTabardInfo PersonalTabard;
         };
 
         class PlayerSavePersonalEmblem final : public ServerPacket
@@ -907,4 +874,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_CHARACTER_PACKETS_H
+#endif // CharacterPackets_h__

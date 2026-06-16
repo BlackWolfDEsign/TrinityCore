@@ -22,7 +22,7 @@
 #include "Map.h"
 #include "ScriptedCreature.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_PRISON_DOOR_01, DATA_KELIDAN_THE_BREAKER, EncounterDoorBehavior::OpenWhenDone },
     { GO_PRISON_DOOR_02, DATA_THE_MAKER,           EncounterDoorBehavior::OpenWhenNotInProgress },
@@ -30,19 +30,22 @@ static constexpr DoorData doorData[] =
     { GO_PRISON_DOOR_04, DATA_BROGGOK,             EncounterDoorBehavior::OpenWhenDone },
     { GO_PRISON_DOOR_05, DATA_BROGGOK,             EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_SUMMON_DOOR,    DATA_KELIDAN_THE_BREAKER, EncounterDoorBehavior::OpenWhenDone },
+    { 0,                 0,                        EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_BROGGOK,             DATA_BROGGOK             },
+    { 0,                       0                        } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_BROGGOK_LEVER,      DATA_BROGGOK_LEVER },
+    { 0,                     0                  } //END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_THE_MAKER, {{ 1922 }} },
     { DATA_BROGGOK, {{ 1924 }} },

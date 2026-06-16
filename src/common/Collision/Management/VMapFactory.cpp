@@ -16,18 +16,18 @@
  */
 
 #include "VMapFactory.h"
-#include "VMapManager.h"
+#include "VMapManager2.h"
 
 namespace VMAP
 {
-    VMapManager* gVMapManager = nullptr;
+    VMapManager2* gVMapManager = nullptr;
 
     //===============================================
     // just return the instance
-    VMapManager* VMapFactory::createOrGetVMapManager()
+    VMapManager2* VMapFactory::createOrGetVMapManager()
     {
         if (gVMapManager == nullptr)
-            gVMapManager= new VMapManager();
+            gVMapManager= new VMapManager2();
         return gVMapManager;
     }
 

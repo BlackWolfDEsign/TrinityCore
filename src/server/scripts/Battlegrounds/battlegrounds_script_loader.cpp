@@ -16,9 +16,6 @@
  */
 
 // This is where scripts' loading functions should be declared:
-// Generic Arena Scripts
-void AddSC_arena_scripts_generic();
-
 // Alterac Valley
 void AddSC_alterac_valley();
 void AddSC_boss_balinda();
@@ -56,41 +53,10 @@ void AddSC_arena_ring_of_valor();
 void AddSC_battleground_twin_peaks();
 void AddSC_battleground_battle_for_gilneas();
 
-void AddSC_battleground_seething_shore();
-
-void AddSC_battleground_silvershard_mines();
-void AddSC_battleground_temple_of_kotmogu();
-
-void AddSC_battleground_deephaul_ravine();
-
-void AddSC_arena_tol_viron_arena();
-
-void AddSC_arena_the_tigers_peak();
-
-void AddSC_arena_blades_edge_legion();
-void AddSC_arena_nagrand_arena_legion();
-void AddSC_arena_ashamanes_fall();
-
-void AddSC_arena_mugambala();
-void AddSC_arena_hook_point();
-void AddSC_arena_the_robodrome();
-
-void AddSC_arena_maldraxxus_coliseum();
-void AddSC_arena_enigma_crucible();
-
-void AddSC_arena_nokhudon_proving_grounds();
-
-void AddSC_arena_cage_of_carnage();
-
-void AddSC_arena_black_rook_hold_arena();
-void AddSC_arena_empyrean_domain();
-
 // The name of this function should match:
 // void Add${NameOfDirectory}Scripts()
 void AddBattlegroundsScripts()
 {
-    AddSC_arena_scripts_generic();
-
     // Alterac Valley
     AddSC_alterac_valley();
     AddSC_boss_balinda();
@@ -126,32 +92,4 @@ void AddBattlegroundsScripts()
 
     AddSC_battleground_twin_peaks();
     AddSC_battleground_battle_for_gilneas();
-
-    AddSC_battleground_seething_shore();
-
-    AddSC_battleground_silvershard_mines();
-    AddSC_battleground_temple_of_kotmogu();
-    AddSC_battleground_deephaul_ravine();
-
-    AddSC_arena_tol_viron_arena();
-
-    AddSC_arena_the_tigers_peak();
-
-    AddSC_arena_blades_edge_legion();
-    AddSC_arena_nagrand_arena_legion();
-    AddSC_arena_ashamanes_fall();
-
-    AddSC_arena_mugambala();
-    AddSC_arena_hook_point();
-    AddSC_arena_the_robodrome();
-
-    AddSC_arena_maldraxxus_coliseum();
-    AddSC_arena_enigma_crucible();
-
-    AddSC_arena_nokhudon_proving_grounds();
-
-    AddSC_arena_cage_of_carnage();
-
-    AddSC_arena_black_rook_hold_arena();
-    AddSC_arena_empyrean_domain();
 }

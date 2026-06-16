@@ -22,7 +22,9 @@
  */
 
 #include "ScriptMgr.h"
+#include "CellImpl.h"
 #include "CreatureAIImpl.h"
+#include "GridNotifiersImpl.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
@@ -413,7 +415,7 @@ class spell_q12634_despawn_fruit_tosser : public SpellScript
             case 2: spellId = SPELL_PAPAYA_FALLS_TO_GROUND; break;
         }
         // sometimes, if you're lucky, you get a dwarf
-        if (roll_chance(5))
+        if (roll_chance_i(5))
             spellId = SPELL_SUMMON_ADVENTUROUS_DWARF;
         GetCaster()->CastSpell(GetCaster(), spellId, true);
     }
@@ -521,7 +523,7 @@ class spell_q12805_lifeblood_dummy : public SpellScript
         if (Creature* target = GetHitCreature())
         {
             caster->KilledMonsterCredit(NPC_SHARD_KILL_CREDIT);
-            target->CastSpell(target, uint32(GetEffectValueAsInt()), true);
+            target->CastSpell(target, uint32(GetEffectValue()), true);
             target->DespawnOrUnsummon(2s);
         }
     }
@@ -722,13 +724,15 @@ class spell_q11010_q11102_q11023_choose_loc : public SpellScript
     {
         Unit* caster = GetCaster();
         // Check for player that is in 65 y range
-        std::vector<Player*> playerList;
-        caster->GetPlayerListInGrid(playerList, 65.0f);
-        for (Player* player : playerList)
+        std::list<Player*> playerList;
+        Trinity::AnyPlayerInObjectRangeCheck checker(caster, 65.0f);
+        Trinity::PlayerListSearcher<Trinity::AnyPlayerInObjectRangeCheck> searcher(caster, playerList, checker);
+        Cell::VisitWorldObjects(caster, searcher, 65.0f);
+        for (std::list<Player*>::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
             // Check if found player target is on fly mount or using flying form
-            if (player->HasAuraType(SPELL_AURA_FLY) || player->HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
+            if ((*itr)->HasAuraType(SPELL_AURA_FLY) || (*itr)->HasAuraType(SPELL_AURA_MOD_INCREASE_MOUNTED_FLIGHT_SPEED))
                 // Summom Fel Cannon (bunny version) at found player
-                caster->SummonCreature(NPC_FEL_CANNON2, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+                caster->SummonCreature(NPC_FEL_CANNON2, (*itr)->GetPositionX(), (*itr)->GetPositionY(), (*itr)->GetPositionZ());
     }
 
     void Register() override
@@ -897,13 +901,13 @@ class spell_q13086_cannons_target : public SpellScript
     bool Validate(SpellInfo const* spellInfo) override
     {
         return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } })
-            && ValidateSpellInfo({ static_cast<uint32>(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()) });
+            && ValidateSpellInfo({ static_cast<uint32>(spellInfo->GetEffect(EFFECT_0).CalcValue()) });
     }
 
     void HandleEffectDummy(SpellEffIndex /*effIndex*/)
     {
         if (WorldLocation const* pos = GetExplTargetDest())
-            GetCaster()->CastSpell(pos->GetPosition(), GetEffectValueAsInt(), true);
+            GetCaster()->CastSpell(pos->GetPosition(), GetEffectValue(), true);
     }
 
     void Register() override
@@ -1084,7 +1088,7 @@ class spell_q13264_q13276_q13288_q13289_assign_credit_to_master : public SpellSc
         {
             if (Unit* owner = target->GetOwner())
             {
-                owner->CastSpell(owner, GetEffectValueAsInt(), true);
+                owner->CastSpell(owner, GetEffectValue(), true);
             }
         }
     }
@@ -1183,7 +1187,7 @@ class spell_q12308_escape_from_silverbrook_summon_worgen : public SpellScript
 {
     void ModDest(SpellDestination& dest)
     {
-        float dist = GetEffectInfo(EFFECT_0).CalcRadius(GetCaster()).Max;
+        float dist = GetEffectInfo(EFFECT_0).CalcRadius(GetCaster());
         float angle = frand(0.75f, 1.25f) * float(M_PI);
 
         Position pos = GetCaster()->GetNearPosition(dist, angle);
@@ -1299,7 +1303,7 @@ class spell_q12619_emblazon_runeblade_effect : public SpellScript
 {
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
-        GetCaster()->CastSpell(GetCaster(), uint32(GetEffectValueAsInt()), false);
+        GetCaster()->CastSpell(GetCaster(), uint32(GetEffectValue()), false);
     }
 
     void Register() override
@@ -1537,7 +1541,7 @@ class spell_q13665_q13790_bested_trigger : public SpellScript
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
         Unit* target = GetHitUnit()->GetCharmerOrOwnerOrSelf();
-        target->CastSpell(target, uint32(GetEffectValueAsInt()), true);
+        target->CastSpell(target, uint32(GetEffectValue()), true);
     }
 
     void Register() override
@@ -1647,7 +1651,7 @@ class spell_q11896_weakness_to_lightning_46444 : public SpellScript
         {
             if (Unit* owner = target->GetOwner())
             {
-                target->CastSpell(owner, GetEffectValueAsInt(), true);
+                target->CastSpell(owner, GetEffectValue(), true);
             }
         }
     }
@@ -1772,8 +1776,8 @@ class spell_quest_portal_with_condition : public SpellScript
     bool Validate(SpellInfo const* spellInfo) override
     {
         return ValidateSpellEffect({ { spellInfo->Id, EFFECT_1 } })
-            && ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_0).CalcValueAsInt()) })
-            && sObjectMgr->GetQuestTemplate(uint32(spellInfo->GetEffect(EFFECT_1).CalcValueAsInt()));
+            && ValidateSpellInfo({ uint32(spellInfo->GetEffect(EFFECT_0).CalcValue()) })
+            && sObjectMgr->GetQuestTemplate(uint32(spellInfo->GetEffect(EFFECT_1).CalcValue()));
     }
 
     void HandleScriptEffect(SpellEffIndex /* effIndex */)
@@ -1782,8 +1786,8 @@ class spell_quest_portal_with_condition : public SpellScript
         if (!target)
             return;
 
-        uint32 spellId = GetEffectInfo().CalcValueAsInt();
-        uint32 questId = GetEffectInfo(EFFECT_1).CalcValueAsInt();
+        uint32 spellId = GetEffectInfo().CalcValue();
+        uint32 questId = GetEffectInfo(EFFECT_1).CalcValue();
 
         // This probably should be a way to throw error in SpellCastResult
         if (target->IsActiveQuest(questId))

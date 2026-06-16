@@ -29,14 +29,15 @@ public:
     typedef LinkedListHead::Iterator<ReferenceType const> const_iterator;
     RefManager() { }
 
-    ReferenceType* front() { return front_impl<ReferenceType>(); }
-    ReferenceType const* front() const { return front_impl<ReferenceType>(); }
+    ReferenceType* getFirst() { return static_cast<ReferenceType*>(LinkedListHead::getFirst()); }
 
-    iterator begin() { return begin_impl<ReferenceType>(); }
-    iterator end() { return end_impl<ReferenceType>(); }
+    ReferenceType const* getFirst() const { return static_cast<ReferenceType const*>(LinkedListHead::getFirst()); }
 
-    const_iterator begin() const { return begin_impl<ReferenceType>(); }
-    const_iterator end() const { return end_impl<ReferenceType>(); }
+    iterator begin() { return iterator(getFirst()); }
+    iterator end() { return iterator(nullptr); }
+
+    const_iterator begin() const { return const_iterator(getFirst()); }
+    const_iterator end() const { return const_iterator(nullptr); }
 
     virtual ~RefManager()
     {
@@ -45,8 +46,8 @@ public:
 
     void clearReferences()
     {
-        while (!empty())
-            front()->invalidate();
+        while (ReferenceType* ref = getFirst())
+            ref->invalidate();
     }
 };
 

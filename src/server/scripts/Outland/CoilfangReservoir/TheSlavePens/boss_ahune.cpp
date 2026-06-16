@@ -203,7 +203,7 @@ struct boss_ahune : public BossAI
             Unit::Kill(me, frozenCore);
 
         Map::PlayerList const& players = me->GetMap()->GetPlayers();
-        if (!players.empty())
+        if (!players.isEmpty())
         {
             if (Group* group = players.begin()->GetSource()->GetGroup())
                 if (group->isLFGGroup())
@@ -604,7 +604,7 @@ struct npc_ahune_ice_spear_bunny : public ScriptedAI
         DoCastSelf(SPELL_SUMMON_ICE_SPEAR_GO);
         DoCastSelf(SPELL_ICE_SPEAR_VISUAL);
 
-        _scheduler.Schedule(2500ms, [this](TaskContext const& /*task*/)
+        _scheduler.Schedule(2500ms, [this](TaskContext /*task*/)
         {
             DoCastSelf(SPELL_ICE_SPEAR_DELAY);
             me->DespawnOrUnsummon(3500ms);
@@ -626,7 +626,7 @@ struct go_ahune_ice_spear : public GameObjectAI
 
     void Reset() override
     {
-        _scheduler.Schedule(2500ms, [this](TaskContext const& /*context*/)
+        _scheduler.Schedule(2500ms, [this](TaskContext /*context*/)
         {
             me->UseDoorOrButton();
             me->DespawnOrUnsummon(3500ms);
@@ -826,7 +826,7 @@ class spell_ahune_spanky_hands : public AuraScript
     void HandleProc(AuraEffect* /*aurEff*/, ProcEventInfo& eventInfo)
     {
         PreventDefaultAction();
-        eventInfo.GetActor()->CastSpell(eventInfo.GetActionTarget(), SPELL_COLD_SLAP, true);
+        GetTarget()->CastSpell(eventInfo.GetProcTarget(), SPELL_COLD_SLAP, true);
     }
 
     void Register() override

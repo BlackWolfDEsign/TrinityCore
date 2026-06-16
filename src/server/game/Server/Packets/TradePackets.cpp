@@ -16,48 +16,40 @@
  */
 
 #include "TradePackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::Trade
-{
-void AcceptTrade::Read()
+void WorldPackets::Trade::AcceptTrade::Read()
 {
     _worldPacket >> StateIndex;
 }
 
-void ClearTradeItem::Read()
+void WorldPackets::Trade::ClearTradeItem::Read()
 {
     _worldPacket >> TradeSlot;
 }
 
-void InitiateTrade::Read()
+void WorldPackets::Trade::InitiateTrade::Read()
 {
     _worldPacket >> Guid;
 }
 
-void SetTradeCurrency::Read()
-{
-    _worldPacket >> Type >> Quantity;
-}
-
-void SetTradeGold::Read()
+void WorldPackets::Trade::SetTradeGold::Read()
 {
     _worldPacket >> Coinage;
 }
 
-void SetTradeItem::Read()
+void WorldPackets::Trade::SetTradeItem::Read()
 {
     _worldPacket >> TradeSlot >> PackSlot >> ItemSlotInPack;
 }
 
-WorldPacket const* TradeStatus::Write()
+WorldPacket const* WorldPackets::Trade::TradeStatus::Write()
 {
-    _worldPacket << Bits<1>(PartnerIsSameBnetAccount);
-    _worldPacket << Bits<5>(Status);
+    _worldPacket.WriteBit(PartnerIsSameBnetAccount);
+    _worldPacket.WriteBits(Status, 5);
     switch (Status)
     {
         case TRADE_STATUS_FAILED:
-            _worldPacket << Bits<1>(FailureForYou);
+            _worldPacket.WriteBit(FailureForYou);
             _worldPacket << int32(BagResult);
             _worldPacket << int32(ItemID);
             break;
@@ -85,7 +77,7 @@ WorldPacket const* TradeStatus::Write()
     return &_worldPacket;
 }
 
-ByteBuffer& operator<<(ByteBuffer& buffer, UnwrappedTradeItem const& unwrappedTradeItem)
+ByteBuffer& operator<<(ByteBuffer& buffer, WorldPackets::Trade::UnwrappedTradeItem const& unwrappedTradeItem)
 {
     buffer << int32(unwrappedTradeItem.EnchantID);
     buffer << int32(unwrappedTradeItem.OnUseEnchantmentID);
@@ -93,23 +85,23 @@ ByteBuffer& operator<<(ByteBuffer& buffer, UnwrappedTradeItem const& unwrappedTr
     buffer << int32(unwrappedTradeItem.Charges);
     buffer << uint32(unwrappedTradeItem.MaxDurability);
     buffer << uint32(unwrappedTradeItem.Durability);
-    buffer << BitsSize<2>(unwrappedTradeItem.Gems);
-    buffer << Bits<1>(unwrappedTradeItem.Lock);
+    buffer.WriteBits(unwrappedTradeItem.Gems.size(), 2);
+    buffer.WriteBit(unwrappedTradeItem.Lock);
     buffer.FlushBits();
 
-    for (Item::ItemGemData const& gem : unwrappedTradeItem.Gems)
+    for (WorldPackets::Item::ItemGemData const& gem : unwrappedTradeItem.Gems)
         buffer << gem;
 
     return buffer;
 }
 
-ByteBuffer& operator<<(ByteBuffer& buffer, TradeItem const& tradeItem)
+ByteBuffer& operator<<(ByteBuffer& buffer, WorldPackets::Trade::TradeItem const& tradeItem)
 {
     buffer << uint8(tradeItem.Slot);
     buffer << uint32(tradeItem.StackCount);
     buffer << tradeItem.GiftCreator;
     buffer << tradeItem.Item;
-    buffer << OptionalInit(tradeItem.Unwrapped);
+    buffer.WriteBit(tradeItem.Unwrapped.has_value());
     buffer.FlushBits();
     if (tradeItem.Unwrapped)
         buffer << *tradeItem.Unwrapped;
@@ -117,7 +109,7 @@ ByteBuffer& operator<<(ByteBuffer& buffer, TradeItem const& tradeItem)
     return buffer;
 }
 
-WorldPacket const* TradeUpdated::Write()
+WorldPacket const* WorldPackets::Trade::TradeUpdated::Write()
 {
     _worldPacket << uint8(WhichPlayer);
     _worldPacket << uint32(ID);
@@ -127,11 +119,10 @@ WorldPacket const* TradeUpdated::Write()
     _worldPacket << int32(CurrencyType);
     _worldPacket << int32(CurrencyQuantity);
     _worldPacket << int32(ProposedEnchantment);
-    _worldPacket << Size<uint32>(Items);
+    _worldPacket << uint32(Items.size());
 
     for (TradeItem const& item : Items)
         _worldPacket << item;
 
     return &_worldPacket;
-}
 }

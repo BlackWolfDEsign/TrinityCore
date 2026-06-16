@@ -35,7 +35,7 @@
 // TO-DO:
 // - Find out spell IDs for both Stonecore Teleporters (spellclick).
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_MILLHOUSE_MANASTORM,    DATA_MILLHOUSE_MANASTORM },
     { NPC_CORBORUS,               DATA_CORBORUS },
@@ -43,9 +43,10 @@ static constexpr ObjectData creatureData[] =
     { NPC_HIGH_PRIESTESS_AZIL,    DATA_HIGH_PRIESTESS_AZIL },
     { NPC_STONECORE_TELEPORTER,   DATA_STONECORE_TELEPORTER },
     { NPC_STONECORE_TELEPORTER_2, DATA_STONECORE_TELEPORTER_2 },
+    { 0, 0 } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_CORBORUS, {{ 1056 }} },
     { DATA_SLABHIDE, {{ 1059 }} },
@@ -64,7 +65,7 @@ class instance_stonecore : public InstanceMapScript
             {
                 SetHeaders(DataHeader);
                 SetBossNumber(MAX_ENCOUNTER);
-                LoadObjectData(creatureData, {});
+                LoadObjectData(creatureData, nullptr);
                 LoadDungeonEncounterData(encounters);
             }
 

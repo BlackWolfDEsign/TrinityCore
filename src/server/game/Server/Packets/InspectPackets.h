@@ -15,8 +15,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_INSPECT_PACKETS_H
-#define TRINITYCORE_INSPECT_PACKETS_H
+#pragma once
 
 #include "Packet.h"
 #include "CharacterPackets.h"
@@ -38,7 +37,7 @@ namespace WorldPackets
         class Inspect final : public ClientPacket
         {
         public:
-            explicit Inspect(WorldPacket&& packet) : ClientPacket(CMSG_INSPECT, std::move(packet)) { }
+            Inspect(WorldPacket&& packet) : ClientPacket(CMSG_INSPECT, std::move(packet)) { }
 
             void Read() override;
 
@@ -99,18 +98,18 @@ namespace WorldPackets
         struct PVPBracketData
         {
             int32 Rating = 0;
-            int32 RatingID = 0;
             int32 Rank = 0;
             int32 WeeklyPlayed = 0;
             int32 WeeklyWon = 0;
             int32 SeasonPlayed = 0;
             int32 SeasonWon = 0;
             int32 WeeklyBestRating = 0;
-            int32 LastWeeksBestRating = 0;
-            int32 Tier = 0;
-            int32 WeeklyBestTier = 0;
             int32 SeasonBestRating = 0;
-            uint8 SeasonBestTierEnum = 0;
+            int32 PvpTierID = 0;
+            int32 WeeklyBestWinPvpTierID = 0;
+            int32 Unused1 = 0;
+            int32 Unused2 = 0;
+            int32 Unused3 = 0;
             int32 RoundsSeasonPlayed = 0;
             int32 RoundsSeasonWon = 0;
             int32 RoundsWeeklyPlayed = 0;
@@ -121,22 +120,25 @@ namespace WorldPackets
 
         struct TraitInspectInfo
         {
-            int32 PlayerLevel = 0;
-            int32 SpecID = 0;
-            Traits::TraitConfig ActiveCombatTraits;
+            int32 Level = 0;
+            int32 ChrSpecializationID = 0;
+            Traits::TraitConfig Config;
         };
 
         class InspectResult final : public ServerPacket
         {
         public:
-            explicit InspectResult() : ServerPacket(SMSG_INSPECT_RESULT, 4096) { }
+            InspectResult() : ServerPacket(SMSG_INSPECT_RESULT, 4096)
+            {
+                PvpTalents.fill(0);
+            }
 
             WorldPacket const* Write() override;
 
             PlayerModelDisplayInfo DisplayInfo;
-            std::vector<uint16> Glyphs;
-            std::vector<uint16> Talents;
-            std::array<uint16, MAX_PVP_TALENT_SLOTS> PvpTalents = { };
+            std::array<uint16, 3> PvpTalents;
+            Talent::TalentInfoUpdate TalentInfo;
+
             Optional<InspectGuildData> GuildData;
             std::array<PVPBracketData, 9> Bracket;
             Optional<int32> AzeriteLevel;
@@ -146,14 +148,13 @@ namespace WorldPackets
             uint16 TodayHK = 0;
             uint16 YesterdayHK = 0;
             uint8 LifetimeMaxRank = 0;
-            Talent::ClassicTalentInfoUpdate TalentInfo;
-            TraitInspectInfo TraitsInfo;
+            TraitInspectInfo TalentTraits;
         };
 
         class QueryInspectAchievements final : public ClientPacket
         {
         public:
-            explicit QueryInspectAchievements(WorldPacket&& packet) : ClientPacket(CMSG_QUERY_INSPECT_ACHIEVEMENTS, std::move(packet)) { }
+            QueryInspectAchievements(WorldPacket&& packet) : ClientPacket(CMSG_QUERY_INSPECT_ACHIEVEMENTS, std::move(packet)) { }
 
             void Read() override;
 
@@ -163,5 +164,3 @@ namespace WorldPackets
         /// RespondInspectAchievements in AchievementPackets
     }
 }
-
-#endif // TRINITYCORE_INSPECT_PACKETS_H

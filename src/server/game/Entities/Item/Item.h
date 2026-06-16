@@ -60,11 +60,10 @@ extern int32 const ItemTransmogrificationSlots[MAX_INVTYPE];
 struct BonusData
 {
     uint32 Quality;
-    uint32 ItemLevel;
     int32 ItemLevelBonus;
     int32 RequiredLevel;
     int32 ItemStatType[MAX_ITEM_PROTO_STATS];
-    int32 StatPercentEditor[MAX_ITEM_PROTO_STATS];
+    int32 ItemStatAmount[MAX_ITEM_PROTO_STATS];
     float ItemStatSocketCostMultiplier[MAX_ITEM_PROTO_STATS];
     uint32 SocketColor[MAX_ITEM_PROTO_SOCKETS];
     ItemBondingType Bonding;
@@ -78,25 +77,13 @@ struct BonusData
     uint16 GemRelicRankBonus[MAX_ITEM_PROTO_SOCKETS];
     int32 RelicType;
     int32 RequiredLevelOverride;
-    int32 AzeriteTierUnlockSetId;
     uint32 Suffix;
     int32 RequiredLevelCurve;
-    uint16 PvpItemLevel;
-    int16 PvpItemLevelBonus;
-    uint32 ItemLevelOffsetCurveId;
-    uint32 ItemLevelOffsetItemLevel;
-    uint32 ItemLevelOffset;
-    uint32 ItemSquishEraID;
     std::array<ItemEffectEntry const*, 13> Effects;
     std::size_t EffectCount;
-    uint32 LimitCategory;
     bool CanDisenchant;
     bool CanScrap;
-    bool CanSalvage;
-    bool CanRecraft;
     bool HasFixedLevel;
-    bool CannotTradeBindOnPickup;
-    bool IgnoreSquish;
 
     void Initialize(ItemTemplate const* proto);
     void Initialize(WorldPackets::Item::ItemInstance const& itemInstance);
@@ -108,62 +95,11 @@ private:
     {
         int32 SuffixPriority;
         int32 AppearanceModPriority;
-        int32 DisenchantLootPriority;
         int32 ScalingStatDistributionPriority;
         int32 AzeriteTierUnlockSetPriority;
         int32 RequiredLevelCurvePriority;
-        int32 ItemLevelPriority;
-        int32 PvpItemLevelPriority;
-        int32 BondingPriority;
         bool HasQualityBonus;
-        bool HasItemLimitCategory;
     } _state;
-};
-
-struct ArtifactPowerData
-{
-    uint32 ArtifactPowerId = 0;
-    uint8 PurchasedRank = 0;
-    uint8 CurrentRankWithBonus = 0;
-};
-
-struct ArtifactData
-{
-    uint64 Xp = 0;
-    uint32 ArtifactAppearanceId = 0;
-    uint32 ArtifactTierId = 0;
-    std::vector<ArtifactPowerData> ArtifactPowers;
-};
-
-struct AzeriteItemSelectedEssencesData
-{
-    uint32 SpecializationId = 0;
-    std::array<uint32, MAX_AZERITE_ESSENCE_SLOT> AzeriteEssenceId = { };
-};
-
-struct AzeriteItemData
-{
-    uint64 Xp;
-    uint32 Level;
-    uint32 KnowledgeLevel;
-    std::vector<uint32> AzeriteItemMilestonePowers;
-    std::vector<AzeriteEssencePowerEntry const*> UnlockedAzeriteEssences;
-    std::array<AzeriteItemSelectedEssencesData, 4> SelectedAzeriteEssences = { };
-};
-
-struct AzeriteEmpoweredItemData
-{
-    std::array<int32, MAX_AZERITE_EMPOWERED_TIER> SelectedAzeritePowers;
-};
-
-struct ItemAdditionalLoadInfo
-{
-    static void Init(std::unordered_map<ObjectGuid::LowType, ItemAdditionalLoadInfo>* loadInfo, PreparedQueryResult artifactResult, PreparedQueryResult azeriteItemResult,
-        PreparedQueryResult azeriteItemMilestonePowersResult, PreparedQueryResult azeriteItemUnlockedEssencesResult, PreparedQueryResult azeriteEmpoweredItemResult);
-
-    Optional<ArtifactData> Artifact;
-    Optional<AzeriteItemData> AzeriteItem;
-    Optional<AzeriteEmpoweredItemData> AzeriteEmpoweredItem;
 };
 
 struct ItemDynamicFieldGems
@@ -231,9 +167,6 @@ class TC_GAME_API Item : public Object
         bool IsBoundByEnchant() const;
         virtual void SaveToDB(CharacterDatabaseTransaction trans);
         virtual bool LoadFromDB(ObjectGuid::LowType guid, ObjectGuid ownerGuid, Field* fields, uint32 entry);
-        void LoadAdditionalDataFromDB(Player const* owner, ItemAdditionalLoadInfo* addionalData);
-        void LoadArtifactData(Player const* owner, uint64 xp, uint32 artifactAppearanceId, uint32 artifactTier, std::vector<ArtifactPowerData>& powers);  // must be called after LoadFromDB to have gems (relics) initialized
-        void CheckArtifactRelicSlotUnlock(Player const* owner);
 
         void AddBonuses(uint32 bonusListID);
         std::vector<int32> const& GetBonusListIDs() const { return m_itemData->ItemBonusKey->BonusListIDs; }
@@ -248,12 +181,8 @@ class TC_GAME_API Item : public Object
         void SaveRefundDataToDB();
         void DeleteRefundDataFromDB(CharacterDatabaseTransaction* trans);
 
-        Bag* ToBag() { return IsBag() ? reinterpret_cast<Bag*>(this) : nullptr; }
-        Bag const* ToBag() const { return IsBag() ? reinterpret_cast<Bag const*>(this) : nullptr; }
-        AzeriteItem* ToAzeriteItem() { return IsAzeriteItem() ? reinterpret_cast<AzeriteItem*>(this) : nullptr; }
-        AzeriteItem const* ToAzeriteItem() const { return IsAzeriteItem() ? reinterpret_cast<AzeriteItem const*>(this) : nullptr; }
-        AzeriteEmpoweredItem* ToAzeriteEmpoweredItem() { return IsAzeriteEmpoweredItem() ? reinterpret_cast<AzeriteEmpoweredItem*>(this) : nullptr; }
-        AzeriteEmpoweredItem const* ToAzeriteEmpoweredItem() const { return IsAzeriteEmpoweredItem() ? reinterpret_cast<AzeriteEmpoweredItem const*>(this) : nullptr; }
+        Bag* ToBag() { if (IsBag()) return reinterpret_cast<Bag*>(this); else return nullptr; }
+        Bag const* ToBag() const { if (IsBag()) return reinterpret_cast<Bag const*>(this); else return nullptr; }
 
         bool IsRefundable() const { return HasItemFlag(ITEM_FIELD_FLAG_REFUNDABLE); }
         bool IsBOPTradeable() const { return HasItemFlag(ITEM_FIELD_FLAG_BOP_TRADEABLE); }
@@ -301,6 +230,7 @@ class TC_GAME_API Item : public Object
 
         ItemRandomBonusListId GetItemRandomBonusListId() const { return m_randomBonusListId; }
         void SetItemRandomBonusList(ItemRandomBonusListId bonusListId);
+        void SetItemRandomEnchantment(ItemRandomPropertiesId randomEnchantmentId);
         void SetEnchantment(EnchantmentSlot slot, uint32 id, uint32 duration, uint32 charges, ObjectGuid caster = ObjectGuid::Empty);
         void SetEnchantmentDuration(EnchantmentSlot slot, uint32 duration, Player* owner);
         void SetEnchantmentCharges(EnchantmentSlot slot, uint32 charges);
@@ -341,28 +271,29 @@ class TC_GAME_API Item : public Object
 
         bool hasQuest(uint32 quest_id) const override { return GetTemplate()->GetStartQuest() == quest_id; }
         bool hasInvolvedQuest(uint32 /*quest_id*/) const override { return false; }
+        bool IsPotion() const { return GetTemplate()->IsPotion(); }
         bool IsVellum() const { return GetTemplate()->IsVellum(); }
         bool IsConjuredConsumable() const { return GetTemplate()->IsConjuredConsumable(); }
+        bool IsRangedWeapon() const { return GetTemplate()->IsRangedWeapon(); }
         uint32 GetQuality() const { return _bonusData.Quality; }
         uint32 GetItemLevel(Player const* owner) const;
         static uint32 GetItemLevel(ItemTemplate const* itemTemplate, BonusData const& bonusData, uint32 level, uint32 fixedLevel,
-            uint32 minItemLevel, uint32 minItemLevelCutoff, uint32 maxItemLevel, bool pvpBonus, uint32 azeriteLevel);
+            uint32 minItemLevel, uint32 minItemLevelCutoff, uint32 maxItemLevel, bool pvpBonus);
         int32 GetRequiredLevel() const;
         int32 GetItemStatType(uint32 index) const { ASSERT(index < MAX_ITEM_PROTO_STATS); return _bonusData.ItemStatType[index]; }
-        float GetItemStatValue(uint32 index, Player const* owner) const;
-        uint32 GetSocketColor(uint32 index) const { ASSERT(index < MAX_ITEM_PROTO_SOCKETS); return _bonusData.SocketColor[index]; }
+        float GetItemStatValue(uint32 index, Player const* owner, ScalingStatDistributionEntry const* ssd = nullptr, ScalingStatValuesEntry const* ssv = nullptr) const;
+        SocketColor GetSocketColor(uint32 index) const { ASSERT(index < MAX_ITEM_PROTO_SOCKETS); return SocketColor(_bonusData.SocketColor[index]); }
         uint32 GetAppearanceModId() const { return m_itemData->ItemAppearanceModID; }
         void SetAppearanceModId(uint32 appearanceModId) { SetUpdateFieldValue(m_values.ModifyValue(&Item::m_itemData).ModifyValue(&UF::ItemData::ItemAppearanceModID), appearanceModId); }
         uint32 GetDisplayId(Player const* owner) const;
         ItemModifiedAppearanceEntry const* GetItemModifiedAppearance() const;
         float GetRepairCostMultiplier() const { return _bonusData.RepairCostMultiplier; }
         uint32 GetScalingContentTuningId() const { return _bonusData.ContentTuningId; }
-        Optional<uint32> GetDisenchantLootId() const;
-        Optional<uint16> GetDisenchantSkillRequired() const;
-        static ItemDisenchantLootEntry const* GetBaseDisenchantLoot(ItemTemplate const* itemTemplate, uint32 quality, uint32 itemLevel);
+        ItemDisenchantLootEntry const* GetDisenchantLoot(Player const* owner) const;
+        static ItemDisenchantLootEntry const* GetDisenchantLoot(ItemTemplate const* itemTemplate, uint32 quality, uint32 itemLevel);
         void SetFixedLevel(uint8 level);
+        void SetReforgeId(uint32 itemReforceRecId);
         std::span<ItemEffectEntry const* const> GetEffects() const { return { _bonusData.Effects.data(), _bonusData.EffectCount }; }
-        uint32 GetItemLimitCategory() const { return _bonusData.LimitCategory; }
 
         // Item Refund system
         void SetNotRefundable(Player* owner, bool changestate = true, CharacterDatabaseTransaction* trans = nullptr, bool addToCollection = true);
@@ -386,23 +317,22 @@ class TC_GAME_API Item : public Object
 
     protected:
         UF::UpdateFieldFlag GetUpdateFieldFlagsFor(Player const* target) const final;
-        void BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void ClearValuesChangesMask() override;
+        void BuildValuesCreate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void BuildValuesUpdate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void ClearUpdateMask(bool remove) override;
 
     public:
-        void BuildValuesUpdateWithFlag(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
+        void BuildValuesUpdateWithFlag(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
         void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
-            UF::ItemData::Mask const& requestedItemMask, Player const* target, bool ignoreNestedChangesMask) const;
+            UF::ItemData::Mask const& requestedItemMask, Player const* target) const;
 
         struct ValuesUpdateForPlayerWithMaskSender // sender compatible with MessageDistDeliverer
         {
-            explicit ValuesUpdateForPlayerWithMaskSender(Item const* owner) : Owner(owner), IgnoreNestedChangesMask(false) { }
+            explicit ValuesUpdateForPlayerWithMaskSender(Item const* owner) : Owner(owner) { }
 
             Item const* Owner;
             UF::ObjectData::Base ObjectMask;
             UF::ItemData::Base ItemMask;
-            bool IgnoreNestedChangesMask;
 
             void operator()(Player const* player) const;
         };
@@ -413,6 +343,8 @@ class TC_GAME_API Item : public Object
         uint32 GetScriptId() const { return GetTemplate()->ScriptId; }
 
         bool IsValidTransmogrificationTarget() const;
+        bool HasStats() const;
+        static bool HasStats(WorldPackets::Item::ItemInstance const& itemInstance, BonusData const* bonus);
         static bool CanTransmogrifyItemWithItem(Item const* item, ItemModifiedAppearanceEntry const* itemModifiedAppearance);
         uint32 GetBuyPrice(Player const* owner, bool& standardPrice) const;
         static uint32 GetBuyPrice(ItemTemplate const* proto, uint32 quality, uint32 itemLevel, bool& standardPrice);
@@ -432,26 +364,14 @@ class TC_GAME_API Item : public Object
         ObjectGuid GetChildItem() const { return m_childItem; }
         void SetChildItem(ObjectGuid childItem) { m_childItem = childItem; }
 
-        bool IsArtifactDisabled() const;
-
-        UF::ArtifactPower const* GetArtifactPower(uint32 artifactPowerId) const;
-        void AddArtifactPower(ArtifactPowerData const* artifactPower);
-        void SetArtifactPower(uint16 artifactPowerId, uint8 purchasedRank, uint8 currentRankWithBonus);
-
-        void InitArtifactPowers(uint8 artifactId, uint8 artifactTier);
-        uint32 GetTotalUnlockedArtifactPowers() const;
-        uint32 GetTotalPurchasedArtifactPowers() const;
-        void ApplyArtifactPowerEnchantmentBonuses(EnchantmentSlot slot, uint32 enchantId, bool apply, Player* owner);
-        void CopyArtifactDataFromParent(Item* parent);
-
-        void SetArtifactXP(uint64 xp) { SetUpdateFieldValue(m_values.ModifyValue(&Item::m_itemData).ModifyValue(&UF::ItemData::ArtifactXP), xp); }
-        void GiveArtifactXp(uint64 amount, Item* sourceItem, uint32 artifactCategoryId);
-
         ItemContext GetContext() const { return ItemContext(*m_itemData->Context); }
         void SetContext(ItemContext context) { SetUpdateFieldValue(m_values.ModifyValue(&Item::m_itemData).ModifyValue(&UF::ItemData::Context), int32(context)); }
 
         void SetPetitionId(uint32 petitionId) { SetUpdateFieldValue(m_values.ModifyValue(&Item::m_itemData).ModifyValue(&UF::ItemData::Enchantment, 0).ModifyValue(&UF::ItemEnchantment::ID), petitionId); }
         void SetPetitionNumSignatures(uint32 signatures) { SetUpdateFieldValue(m_values.ModifyValue(&Item::m_itemData).ModifyValue(&UF::ItemData::Enchantment, 0).ModifyValue(&UF::ItemEnchantment::Duration), signatures); }
+
+        int32 GetRandomPropertiesId() const { return  m_itemData->RandomPropertiesID; };
+        int32 GetPropertySeed() const { return  m_itemData->PropertySeed; };
 
         std::string GetDebugInfo() const override;
 
@@ -474,7 +394,5 @@ class TC_GAME_API Item : public Object
         ItemRandomBonusListId m_randomBonusListId;          // store separately to easily find which bonus list is the one randomly given for stat rerolling
         ObjectGuid m_childItem;
         std::array<uint32, MAX_ITEM_PROTO_SOCKETS> m_gemScalingLevels;
-
-        int32 GetArtifactPowerIndex(uint32 artifactPowerId) const;
 };
 #endif

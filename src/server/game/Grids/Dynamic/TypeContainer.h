@@ -24,7 +24,7 @@
  */
 
 #include "Define.h"
-#include "Types.h"
+#include <type_traits>
 
 template <template <typename> typename UnderlyingContainer, typename... Types>
 struct TypeListContainerStorage
@@ -63,31 +63,28 @@ struct TypeListContainer
     TypeListContainerStorage<UnderlyingContainer, Types...> Data;
 
     template <typename ObjectType>
-    static constexpr bool TypeExists = Trinity::has_type_in_list_v<ObjectType, Types...>;
-
-    template <typename ObjectType>
-    using ValueType = typename UnderlyingContainer<ObjectType>::ValueType;
+    static constexpr bool TypeExists = std::disjunction_v<std::is_same<ObjectType, Types>...>;
 
     template <typename ObjectType> requires TypeExists<ObjectType>
-    bool Insert(ValueType<ObjectType> object)
+    bool Insert(ObjectType* object)
     {
         return UnderlyingContainer<ObjectType>::Insert(Data.template FindContainer<ObjectType>(), object);
     }
 
     template <typename ObjectType> requires TypeExists<ObjectType>
-    bool Remove(ValueType<ObjectType> object)
+    bool Remove(ObjectType* object)
     {
         return UnderlyingContainer<ObjectType>::Remove(Data.template FindContainer<ObjectType>(), object);
     }
 
     template <typename ObjectType> requires TypeExists<ObjectType>
-    std::size_t Size() const
+    bool Size() const
     {
         return UnderlyingContainer<ObjectType>::Size(Data.template FindContainer<ObjectType>());
     }
 
     template <typename ObjectType> requires TypeExists<ObjectType> && requires { typename UnderlyingContainer<ObjectType>::KeyType; }
-    ValueType<ObjectType> Find(typename UnderlyingContainer<ObjectType>::KeyType const& key) const
+    ObjectType* Find(typename UnderlyingContainer<ObjectType>::KeyType const& key) const
     {
         return UnderlyingContainer<ObjectType>::Find(Data.template FindContainer<ObjectType>(), key);
     }

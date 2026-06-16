@@ -17,7 +17,6 @@
 #ifndef TRINITYCORE_FLAT_SET_H
 #define TRINITYCORE_FLAT_SET_H
 
-#include <algorithm>
 #include <functional>
 #include <vector>
 
@@ -39,17 +38,11 @@ public:
     auto end()  { return _storage.end(); }
     auto end() const { return _storage.end(); }
 
-    bool contains(Key const& value) const
-    {
-        return std::binary_search(this->begin(), this->end(), value, Compare());
-    }
-
     auto find(Key const& value) const
     {
-        auto compare = Compare();
         auto end = this->end();
-        auto itr = std::lower_bound(this->begin(), end, value, compare);
-        if (itr != end && compare(value, *itr))
+        auto itr = std::lower_bound(this->begin(), end, value, Compare());
+        if (itr != end && Compare()(value, *itr))
             itr = end;
 
         return itr;
@@ -57,10 +50,9 @@ public:
 
     auto find(Key const& value)
     {
-        auto compare = Compare();
         auto end = this->end();
-        auto itr = std::lower_bound(this->begin(), end, value, compare);
-        if (itr != end && compare(value, *itr))
+        auto itr = std::lower_bound(this->begin(), end, value, Compare());
+        if (itr != end && Compare()(value, *itr))
             itr = end;
 
         return itr;
@@ -70,10 +62,9 @@ public:
     std::pair<iterator, bool> emplace(Args&&... args)
     {
         Key newElement(std::forward<Args>(args)...);
-        auto compare = Compare();
         auto end = this->end();
-        auto itr = std::lower_bound(this->begin(), end, newElement, compare);
-        if (itr != end && !compare(newElement, *itr))
+        auto itr = std::lower_bound(this->begin(), end, newElement, Compare());
+        if (itr != end && !Compare()(newElement, *itr))
             return { itr, false };
 
         return { _storage.emplace(itr, std::move(newElement)), true };
@@ -96,8 +87,15 @@ public:
 
     void shrink_to_fit() { _storage.shrink_to_fit(); }
 
-    friend std::strong_ordering operator<=>(FlatSet const& left, FlatSet const& right) = default;
-    friend bool operator==(FlatSet const& left, FlatSet const& right) = default;
+    friend bool operator==(FlatSet const& left, FlatSet const& right)
+    {
+        return left._storage == right._storage;
+    }
+
+    friend bool operator!=(FlatSet const& left, FlatSet const& right)
+    {
+        return !(left == right);
+    }
 
 private:
     KeyContainer _storage;

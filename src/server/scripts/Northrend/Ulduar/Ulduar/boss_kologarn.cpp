@@ -339,7 +339,7 @@ class spell_ulduar_rubble_summon : public SpellScriptLoader
                     return;
 
                 ObjectGuid originalCaster = caster->GetInstanceScript() ? caster->GetInstanceScript()->GetGuidData(DATA_KOLOGARN) : ObjectGuid::Empty;
-                uint32 spellId = GetEffectValueAsInt();
+                uint32 spellId = GetEffectValue();
                 for (uint8 i = 0; i < 5; ++i)
                     caster->CastSpell(caster, spellId, CastSpellExtraArgs(TRIGGERED_FULL_MASK)
                         .SetOriginalCaster(originalCaster));
@@ -460,7 +460,7 @@ class spell_ulduar_cancel_stone_grip : public SpellScriptLoader
                 if (target->GetMap()->Is25ManRaid())
                     effectIndexToCancel = EFFECT_1;
 
-                target->RemoveAura(GetEffectInfo(effectIndexToCancel).CalcValueAsInt());
+                target->RemoveAura(GetEffectInfo(effectIndexToCancel).CalcValue());
             }
 
             void Register() override
@@ -558,7 +558,7 @@ class spell_ulduar_stone_grip : public SpellScriptLoader
         {
             void OnRemoveStun(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
             {
-                GetUnitOwner()->RemoveAurasDueToSpell(aurEff->GetAmountAsInt());
+                GetUnitOwner()->RemoveAurasDueToSpell(aurEff->GetAmount());
             }
 
             void OnRemoveVehicle(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)

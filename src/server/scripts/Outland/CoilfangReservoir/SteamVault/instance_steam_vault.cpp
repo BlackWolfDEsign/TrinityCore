@@ -41,22 +41,24 @@ private:
     InstanceScript* _instance;
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_ACCESS_PANEL_HYDRO, DATA_ACCESS_PANEL_HYDRO },
     { GO_ACCESS_PANEL_MEK,   DATA_ACCESS_PANEL_MEK   },
     { GO_MAIN_CHAMBERS_DOOR, DATA_MAIN_DOOR          },
+    { 0,                     0                       } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_HYDROMANCER_THESPIA,      DATA_HYDROMANCER_THESPIA   },
     { NPC_MEKGINEER_STEAMRIGGER,    DATA_MEKGINEER_STEAMRIGGER },
     { NPC_WARLORD_KALITHRESH,       DATA_WARLORD_KALITHRESH    },
     { NPC_COILFANG_DOOR_CONTROLLER, DATA_DOOR_CONTROLLER       },
+    { 0,                            0                          } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_HYDROMANCER_THESPIA, {{ 1942 }} },
     { DATA_MEKGINEER_STEAMRIGGER, {{ 1943 }} },

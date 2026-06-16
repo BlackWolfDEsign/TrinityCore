@@ -17,7 +17,6 @@
 
 #include "TraitPacketsCommon.h"
 #include "DBCEnums.h"
-#include "PacketOperators.h"
 #include "UpdateFields.h"
 
 namespace WorldPackets::Traits
@@ -30,17 +29,6 @@ TraitEntry::TraitEntry(UF::TraitEntry const& ufEntry)
     TraitNodeEntryID = ufEntry.TraitNodeEntryID;
     Rank = ufEntry.Rank;
     GrantedRanks = ufEntry.GrantedRanks;
-    BonusRanks = ufEntry.BonusRanks;
-}
-
-TraitSubTreeCache::TraitSubTreeCache() = default;
-
-TraitSubTreeCache::TraitSubTreeCache(UF::TraitSubTreeCache const& ufSubTreeCache)
-{
-    TraitSubTreeID = ufSubTreeCache.TraitSubTreeID;
-    for (UF::TraitEntry const& ufEntry : ufSubTreeCache.Entries)
-        Entries.emplace_back(ufEntry);
-    Active = ufSubTreeCache.Active;
 }
 
 TraitConfig::TraitConfig() = default;
@@ -54,11 +42,8 @@ TraitConfig::TraitConfig(UF::TraitConfig const& ufConfig)
     LocalIdentifier = ufConfig.LocalIdentifier;
     SkillLineID = ufConfig.SkillLineID;
     TraitSystemID = ufConfig.TraitSystemID;
-    VariationID = ufConfig.VariationID;
     for (UF::TraitEntry const& ufEntry : ufConfig.Entries)
         Entries.emplace_back(ufEntry);
-    for (UF::TraitSubTreeCache const& ufSubTree : ufConfig.SubTrees)
-        SubTrees.emplace_back(ufSubTree);
     Name = ufConfig.Name;
 }
 
@@ -68,7 +53,6 @@ ByteBuffer& operator>>(ByteBuffer& data, TraitEntry& traitEntry)
     data >> traitEntry.TraitNodeEntryID;
     data >> traitEntry.Rank;
     data >> traitEntry.GrantedRanks;
-    data >> traitEntry.BonusRanks;
 
     return data;
 }
@@ -79,37 +63,6 @@ ByteBuffer& operator<<(ByteBuffer& data, TraitEntry const& traitEntry)
     data << int32(traitEntry.TraitNodeEntryID);
     data << int32(traitEntry.Rank);
     data << int32(traitEntry.GrantedRanks);
-    data << int32(traitEntry.BonusRanks);
-
-    return data;
-}
-
-ByteBuffer& operator>>(ByteBuffer& data, TraitSubTreeCache& traitSubTreeCache)
-{
-    data >> traitSubTreeCache.TraitSubTreeID;
-    uint32 entriesSize = data.read<uint32>();
-    if (entriesSize > 100)
-        OnInvalidArraySize(entriesSize, 100);
-
-    traitSubTreeCache.Entries.resize(entriesSize);
-    for (TraitEntry& traitEntry : traitSubTreeCache.Entries)
-        data >> traitEntry;
-
-    data >> Bits<1>(traitSubTreeCache.Active);
-
-    return data;
-}
-
-ByteBuffer& operator<<(ByteBuffer& data, TraitSubTreeCache const& traitSubTreeCache)
-{
-    data << int32(traitSubTreeCache.TraitSubTreeID);
-    data << Size<uint32>(traitSubTreeCache.Entries);
-
-    for (TraitEntry const& traitEntry : traitSubTreeCache.Entries)
-        data << traitEntry;
-
-    data << Bits<1>(traitSubTreeCache.Active);
-    data.FlushBits();
 
     return data;
 }
@@ -120,16 +73,9 @@ ByteBuffer& operator>>(ByteBuffer& data, TraitConfig& traitConfig)
     data >> As<int32>(traitConfig.Type);
     uint32 entriesSize = data.read<uint32>();
     if (entriesSize > 100)
-        OnInvalidArraySize(entriesSize, 100);
+        throw PacketArrayMaxCapacityException(entriesSize, 100);
 
     traitConfig.Entries.resize(entriesSize);
-
-    uint32 subtreesSize = data.read<uint32>();
-    if (subtreesSize > 10)
-        OnInvalidArraySize(subtreesSize, 10);
-
-    traitConfig.SubTrees.resize(subtreesSize);
-
     switch (traitConfig.Type)
     {
         case TraitConfigType::Combat:
@@ -142,7 +88,6 @@ ByteBuffer& operator>>(ByteBuffer& data, TraitConfig& traitConfig)
             break;
         case TraitConfigType::Generic:
             data >> traitConfig.TraitSystemID;
-            data >> traitConfig.VariationID;
             break;
         default:
             break;
@@ -151,12 +96,8 @@ ByteBuffer& operator>>(ByteBuffer& data, TraitConfig& traitConfig)
     for (TraitEntry& traitEntry : traitConfig.Entries)
         data >> traitEntry;
 
-    data >> SizedString::BitsSize<9>(traitConfig.Name);
-
-    for (TraitSubTreeCache& traitSubTreeCache : traitConfig.SubTrees)
-        data >> traitSubTreeCache;
-
-    data >> SizedString::Data<Strings::DontValidateUtf8>(traitConfig.Name);
+    uint32 nameLength = data.ReadBits(9);
+    traitConfig.Name = data.ReadString(nameLength, false);
 
     return data;
 }
@@ -165,8 +106,8 @@ ByteBuffer& operator<<(ByteBuffer& data, TraitConfig const& traitConfig)
 {
     data << int32(traitConfig.ID);
     data << int32(traitConfig.Type);
-    data << Size<uint32>(traitConfig.Entries);
-    data << Size<uint32>(traitConfig.SubTrees);
+    data << uint32(traitConfig.Entries.size());
+
     switch (traitConfig.Type)
     {
         case TraitConfigType::Combat:
@@ -179,7 +120,6 @@ ByteBuffer& operator<<(ByteBuffer& data, TraitConfig const& traitConfig)
             break;
         case TraitConfigType::Generic:
             data << int32(traitConfig.TraitSystemID);
-            data << int32(traitConfig.VariationID);
             break;
         default:
             break;
@@ -188,14 +128,10 @@ ByteBuffer& operator<<(ByteBuffer& data, TraitConfig const& traitConfig)
     for (TraitEntry const& traitEntry : traitConfig.Entries)
         data << traitEntry;
 
-    data << SizedString::BitsSize<9>(traitConfig.Name);
-
-    for (TraitSubTreeCache const& traitSubTreeCache : traitConfig.SubTrees)
-        data << traitSubTreeCache;
-
+    data.WriteBits(traitConfig.Name.length(), 9);
     data.FlushBits();
 
-    data << SizedString::Data(static_cast<std::string const&>(traitConfig.Name));
+    data.WriteString(static_cast<std::string const&>(traitConfig.Name));
 
     return data;
 }

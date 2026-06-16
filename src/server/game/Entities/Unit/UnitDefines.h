@@ -127,29 +127,6 @@ enum UnitMoveType : uint8
 
 #define MAX_MOVE_TYPE     9
 
-enum AdvFlyingRateTypeSingle : uint8
-{
-    ADV_FLYING_AIR_FRICTION             = 0,
-    ADV_FLYING_MAX_VEL                  = 1,
-    ADV_FLYING_LIFT_COEFFICIENT         = 2,
-    ADV_FLYING_DOUBLE_JUMP_VEL_MOD      = 3,
-    ADV_FLYING_GLIDE_START_MIN_HEIGHT   = 4,
-    ADV_FLYING_ADD_IMPULSE_MAX_SPEED    = 5,
-    ADV_FLYING_SURFACE_FRICTION         = 14,
-    ADV_FLYING_OVER_MAX_DECELERATION    = 15,
-    ADV_FLYING_LAUNCH_SPEED_COEFFICIENT = 16
-};
-
-enum AdvFlyingRateTypeRange : uint8
-{
-    ADV_FLYING_BANKING_RATE             = 6,
-    ADV_FLYING_PITCHING_RATE_DOWN       = 8,
-    ADV_FLYING_PITCHING_RATE_UP         = 10,
-    ADV_FLYING_TURN_VELOCITY_THRESHOLD  = 12
-};
-
-#define ADV_FLYING_MAX_SPEED_TYPE 17
-
 enum DamageEffectType : uint8
 {
     DIRECT_DAMAGE           = 0,                            // used for normal weapon damage (not for class abilities or spells)
@@ -177,7 +154,7 @@ enum UnitFlags : uint32
     UNIT_FLAG_LOOTING               = 0x00000400,           // loot animation
     UNIT_FLAG_PET_IN_COMBAT         = 0x00000800,           // on player pets: whether the pet is chasing a target to attack || on other units: whether any of the unit's minions is in combat
     UNIT_FLAG_PVP_ENABLING          = 0x00001000,           // changed in 3.0.3, now UNIT_BYTES_2_OFFSET_PVP_FLAG from UNIT_FIELD_BYTES_2
-    UNIT_FLAG_FORCE_NAMEPLATE       = 0x00002000,           // Force show nameplate, 9.0
+    UNIT_FLAG_SILENCED              = 0x00002000,           // silenced
     UNIT_FLAG_CANT_SWIM             = 0x00004000,           // TITLE Can't Swim
     UNIT_FLAG_CAN_SWIM              = 0x00008000,           // TITLE Can Swim DESCRIPTION shows swim animation in water
     UNIT_FLAG_NON_ATTACKABLE_2      = 0x00010000,           // removes attackable icon, if on yourself, cannot assist self but can cast TARGET_SELF spells - added by SPELL_AURA_MOD_UNATTACKABLE
@@ -199,7 +176,7 @@ enum UnitFlags : uint32
 
     UNIT_FLAG_DISALLOWED            = (UNIT_FLAG_SERVER_CONTROLLED | UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_REMOVE_CLIENT_CONTROL |
                                        UNIT_FLAG_PLAYER_CONTROLLED | UNIT_FLAG_RENAME | UNIT_FLAG_PREPARATION | /* UNIT_FLAG_UNK_6 | */
-                                       UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_LOOTING | UNIT_FLAG_PET_IN_COMBAT | UNIT_FLAG_PVP_ENABLING |
+                                       UNIT_FLAG_NOT_ATTACKABLE_1 | UNIT_FLAG_LOOTING | UNIT_FLAG_PET_IN_COMBAT | UNIT_FLAG_PVP_ENABLING | UNIT_FLAG_SILENCED |
                                        UNIT_FLAG_CANT_SWIM | UNIT_FLAG_CAN_SWIM | UNIT_FLAG_NON_ATTACKABLE_2 | UNIT_FLAG_PACIFIED | UNIT_FLAG_STUNNED |
                                        UNIT_FLAG_IN_COMBAT | UNIT_FLAG_ON_TAXI | UNIT_FLAG_DISARMED | UNIT_FLAG_CONFUSED | UNIT_FLAG_FLEEING |
                                        UNIT_FLAG_POSSESSED | UNIT_FLAG_SKINNABLE | UNIT_FLAG_MOUNT | UNIT_FLAG_UNK_28 |
@@ -374,8 +351,8 @@ enum NPCFlags2 : uint32
     UNIT_NPC_FLAG_2_AZERITE_RESPEC                                  = 0x00004000,   // TITLE is azerite respec
     UNIT_NPC_FLAG_2_ISLANDS_QUEUE                                   = 0x00008000,   // TITLE is islands queue
     UNIT_NPC_FLAG_2_SUPPRESS_NPC_SOUNDS_EXCEPT_END_OF_INTERACTION   = 0x00010000,
-    UNIT_NPC_FLAG_2_PERKS_VENDOR                                    = 0x00080000,   // TITLE is trading post vendor
     UNIT_NPC_FLAG_2_PERSONAL_TABARD_DESIGNER                        = 0x00200000,   // TITLE is personal tabard designer
+    UNIT_NPC_FLAG_2_REFORGER                                        = 0x00400000,   // TITLE is reforger
 };
 
 DEFINE_ENUM_FLAG(NPCFlags2);
@@ -472,10 +449,6 @@ enum MovementFlags3 : uint32
     MOVEMENTFLAG3_DISABLE_INERTIA   = 0x00000001,
     MOVEMENTFLAG3_CAN_ADV_FLY       = 0x00000002,
     MOVEMENTFLAG3_ADV_FLYING        = 0x00000004,
-    MOVEMENTFLAG3_CANNOT_SWIM       = 0x00002000,
-    MOVEMENTFLAG3_CAN_DRIVE         = 0x00004000,
-    MOVEMENTFLAG3_DRIVING_FORWARD   = 0x00008000,
-    MOVEMENTFLAG3_DRIVING_BACKWARD  = 0x00010000,
 };
 
 enum HitInfo
@@ -518,19 +491,19 @@ enum class AttackSwingErr : uint8
 
 #define MAX_DECLINED_NAME_CASES 5
 
-struct DeclinedName
+struct TC_GAME_API DeclinedName
 {
     DeclinedName() = default;
-    TC_GAME_API DeclinedName(UF::DeclinedNames const& uf);
+    DeclinedName(UF::DeclinedNames const& uf);
 
     std::string name[MAX_DECLINED_NAME_CASES];
 };
 
-enum ActiveStates : uint8
+enum ActiveStates : uint16
 {
     ACT_PASSIVE  = 0x01,                                    // 0x01 - passive
-    ACT_DISABLED = 0x81,                                    // 0x80 - castable
-    ACT_ENABLED  = 0xC1,                                    // 0x40 | 0x80 - auto cast + castable
+    ACT_DISABLED = 0x101,                                   // 0x100 - castable
+    ACT_ENABLED  = 0x181,                                   // 0x80 | 0x100 - auto cast + castable
     ACT_COMMAND  = 0x07,                                    // 0x01 | 0x02 | 0x04
     ACT_REACTION = 0x06,                                    // 0x02 | 0x04
     ACT_DECIDE   = 0x00                                     // custom

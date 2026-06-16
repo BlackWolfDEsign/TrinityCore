@@ -113,38 +113,8 @@ template<typename Callable, typename SessionImpl>
 concept HttpRequestHandler = invocable_r<Callable, RequestHandlerResult, std::shared_ptr<SessionImpl>, RequestContext&>;
 
 template<typename SessionImpl>
-class HttpService;
-
-template<typename SessionImpl>
-class HttpNetworkThread final : public NetworkThread<SessionImpl, HttpNetworkThread<SessionImpl>>
+class HttpService : public SocketMgr<SessionImpl>, public DispatcherService, public SessionService
 {
-public:
-    void SocketRemoved(std::shared_ptr<SessionImpl> const& session) override
-    {
-        if (Optional<boost::uuids::uuid> id = session->GetSessionId())
-            _service->MarkSessionInactive(*id);
-    }
-
-private:
-    friend class HttpService<SessionImpl>;
-    SessionService* _service = nullptr;
-};
-
-template<typename SessionImpl>
-struct HttpServiceTraits
-{
-    using Self = HttpService<SessionImpl>;
-    using SocketType = SessionImpl;
-    using ThreadType = HttpNetworkThread<SessionImpl>;
-};
-
-template<typename SessionImpl>
-class HttpService : public SocketMgr<HttpServiceTraits<SessionImpl>>, public DispatcherService, public SessionService
-{
-    using BaseSocketMgr = SocketMgr<HttpServiceTraits<SessionImpl>>;
-
-    friend BaseSocketMgr;
-
 public:
     HttpService(std::string_view loggerSuffix) : DispatcherService(loggerSuffix), SessionService(loggerSuffix), _ioContext(nullptr), _logger("server.http.")
     {
@@ -153,7 +123,7 @@ public:
 
     bool StartNetwork(Asio::IoContext& ioContext, std::string const& bindIp, uint16 port, int32 threadCount = 1) override
     {
-        if (!BaseSocketMgr::StartNetwork(ioContext, bindIp, port, threadCount))
+        if (!SocketMgr<SessionImpl>::StartNetwork(ioContext, bindIp, port, threadCount))
             return false;
 
         SessionService::Start(ioContext);
@@ -163,7 +133,7 @@ public:
     void StopNetwork() override
     {
         SessionService::Stop();
-        BaseSocketMgr::StopNetwork();
+        SocketMgr<SessionImpl>::StopNetwork();
     }
 
     // http handling
@@ -187,9 +157,24 @@ public:
     }
 
 protected:
-    std::unique_ptr<HttpNetworkThread<SessionImpl>[]> CreateThreads() const override
+    class Thread : public NetworkThread<SessionImpl>
     {
-        std::unique_ptr<HttpNetworkThread<SessionImpl>[]> threads = std::make_unique<HttpNetworkThread<SessionImpl>[]>(this->GetNetworkThreadCount());
+    protected:
+        void SocketRemoved(std::shared_ptr<SessionImpl> const& session) override
+        {
+            if (Optional<boost::uuids::uuid> id = session->GetSessionId())
+                _service->MarkSessionInactive(*id);
+        }
+
+    private:
+        friend HttpService;
+
+        SessionService* _service;
+    };
+
+    NetworkThread<SessionImpl>* CreateThreads() const override
+    {
+        Thread* threads = new Thread[this->GetNetworkThreadCount()];
         for (int32 i = 0; i < this->GetNetworkThreadCount(); ++i)
             threads[i]._service = const_cast<HttpService*>(this);
         return threads;

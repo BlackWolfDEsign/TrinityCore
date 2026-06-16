@@ -20,22 +20,24 @@
 #include "gruuls_lair.h"
 #include "InstanceScript.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_MAULGAR_DOOR,  DATA_MAULGAR,   EncounterDoorBehavior::OpenWhenDone },
     { GO_GRUUL_DOOR,    DATA_GRUUL,     EncounterDoorBehavior::OpenWhenNotInProgress },
+    { 0,                0,              EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr MinionData minionData[] =
+MinionData const minionData[] =
 {
     { NPC_MAULGAR,              DATA_MAULGAR },
     { NPC_KROSH_FIREHAND,       DATA_MAULGAR },
     { NPC_OLM_THE_SUMMONER,     DATA_MAULGAR },
     { NPC_KIGGLER_THE_CRAZED,   DATA_MAULGAR },
     { NPC_BLINDEYE_THE_SEER,    DATA_MAULGAR },
+    { 0, 0 }
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_MAULGAR, {{ 649 }} },
     { DATA_GRUUL, {{ 650 }} }

@@ -52,9 +52,7 @@ enum DumpTableType
 
     DTT_ITEM_GIFT,      // <- item guids                    // character_gifts
 
-    DTT_ITEM_TABLE,     // <- item guids                    // item_instance_artifact, item_instance_artifact_powers, item_instance_azerite
-                                                            // item_instance_azerite_empowered, item_instance_azerite_milestone_power,
-                                                            // item_instance_azerite_unlocked_essence, item_instance_gems, item_instance_modifiers,
+    DTT_ITEM_TABLE,     // <- item guids                    // item_instance_gems, item_instance_modifiers,
                                                             // item_instance_transmog
 
     DTT_PET,            //    -> pet guids collection       // character_pet
@@ -77,22 +75,18 @@ class StringTransaction;
 class TC_GAME_API PlayerDump
 {
     public:
-        PlayerDump(PlayerDump const&) = delete;
-        PlayerDump(PlayerDump&&) = delete;
-        PlayerDump& operator=(PlayerDump const&) = delete;
-        PlayerDump& operator=(PlayerDump&&) = delete;
-
         static void InitializeTables();
 
+        static void InitializeColumnDefinition();
+
     protected:
-        PlayerDump() = default;
-        ~PlayerDump() = default;
+        PlayerDump() { }
 };
 
-class TC_GAME_API PlayerDumpWriter final : public PlayerDump
+class TC_GAME_API PlayerDumpWriter : public PlayerDump
 {
     public:
-        PlayerDumpWriter();
+        PlayerDumpWriter() { }
 
         bool GetDump(ObjectGuid::LowType guid, std::string& dump);
         DumpReturn WriteDumpToFile(std::string const& file, ObjectGuid::LowType guid);
@@ -109,10 +103,10 @@ class TC_GAME_API PlayerDumpWriter final : public PlayerDump
         std::set<uint64> _itemSets;
 };
 
-class TC_GAME_API PlayerDumpReader final : public PlayerDump
+class TC_GAME_API PlayerDumpReader : public PlayerDump
 {
     public:
-        PlayerDumpReader() = default;
+        PlayerDumpReader() { }
 
         DumpReturn LoadDumpFromFile(std::string const& file, uint32 account, std::string name, ObjectGuid::LowType guid);
         DumpReturn LoadDumpFromString(std::string const& dump, uint32 account, std::string name, ObjectGuid::LowType guid);

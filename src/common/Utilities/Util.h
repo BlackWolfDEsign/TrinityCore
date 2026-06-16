@@ -99,6 +99,9 @@ inline T RoundToInterval(T& num, T floor, T ceil)
     return num = std::min(std::max(num, floor), ceil);
 }
 
+template <class T>
+inline T square(T x) { return x*x; }
+
 // UTF8 handling
 TC_COMMON_API bool Utf8toWStr(std::string_view utf8str, std::wstring& wstr);
 
@@ -369,37 +372,6 @@ TC_COMMON_API void wstrToLower(std::wstring& str);
 TC_COMMON_API void strToUpper(std::string& str);
 TC_COMMON_API void strToLower(std::string& str);
 
-/**
- * End sentinel for std::ranges algorithms to use a char const* as begin iterator where end bound is known (for example std::array storage)
- */
-template <typename Iterator>
-struct CStringBoundedSentinel
-{
-    Iterator End;
-    constexpr bool operator==(Iterator itr) const;
-};
-
-/**
- * End sentinel for std::ranges algorithms to use a char const* as begin iterator
- */
-struct CStringSentinel_T
-{
-    template <typename Iterator>
-    inline constexpr bool operator==(Iterator itr) const { return *itr == static_cast<std::iter_value_t<Iterator>>(0); }
-
-    /**
-     * End sentinel for std::ranges algorithms to use a char const* as begin iterator where end of valid memory is known (for example std::array partially filled by the string)
-     */
-    template <typename Iterator>
-    inline constexpr CStringBoundedSentinel<Iterator> Checked(Iterator end) const { return { .End = end }; }
-} inline constexpr CStringSentinel;
-
-template <typename Iterator>
-inline constexpr bool CStringBoundedSentinel<Iterator>::operator==(Iterator itr) const
-{
-    return itr == End || itr == CStringSentinel;
-}
-
 TC_COMMON_API std::wstring wstrCaseAccentInsensitiveParse(std::wstring_view wstr, LocaleConstant locale);
 
 TC_COMMON_API std::wstring GetMainPartOfName(std::wstring const& wname, uint32 declension);
@@ -458,16 +430,14 @@ inline std::vector<uint8> HexStrToByteVector(std::string_view str, bool reverse 
 TC_COMMON_API float DegToRad(float degrees);
 
 TC_COMMON_API bool StringEqualI(std::string_view str1, std::string_view str2);
-inline bool StringStartsWith(std::string_view haystack, std::string_view needle) { return haystack.starts_with(needle); }
+inline bool StringStartsWith(std::string_view haystack, std::string_view needle) { return (haystack.substr(0, needle.length()) == needle); }
 inline bool StringStartsWithI(std::string_view haystack, std::string_view needle) { return StringEqualI(haystack.substr(0, needle.length()), needle); }
-
 TC_COMMON_API bool StringContainsStringI(std::string_view haystack, std::string_view needle);
-
-struct StringContainsStringI_T
+template <typename T>
+inline bool ValueContainsStringI(std::pair<T, std::string_view> const& haystack, std::string_view needle)
 {
-    bool operator()(std::string_view haystack, std::string_view needle) const { return StringContainsStringI(haystack, needle); }
-};
-
+    return StringContainsStringI(haystack.second, needle);
+}
 TC_COMMON_API bool StringCompareLessI(std::string_view a, std::string_view b);
 
 struct StringCompareLessI_T
@@ -475,18 +445,9 @@ struct StringCompareLessI_T
     bool operator()(std::string_view a, std::string_view b) const { return StringCompareLessI(a, b); }
 };
 
-TC_COMMON_API void StringReplaceAll(std::string* str, std::string_view text, std::string_view replacement);
-
-[[nodiscard]] inline std::string StringReplaceAll(std::string_view str, std::string_view text, std::string_view replacement)
-{
-    std::string result(str);
-    StringReplaceAll(&result, text, replacement);
-    return result;
-}
-
 // simple class for not-modifyable list
 template <typename T>
-class HookList
+class HookList final
 {
     private:
         typedef std::vector<T> ContainerType;
@@ -499,7 +460,7 @@ class HookList
 
         HookList<T>& operator+=(T&& t)
         {
-            _container.emplace_back(std::move(t));
+            _container.push_back(std::move(t));
             return *this;
         }
 
@@ -589,7 +550,7 @@ std::string GetTypeName() { return Impl::GetTypeName(typeid(T)); }
 template <typename T>
 std::string GetTypeName(T&& v)
 {
-    if constexpr (std::is_same_v<std::remove_cvref_t<T>, std::type_info>)
+    if constexpr (std::is_same_v<std::remove_cv_t<T>, std::type_info>)
         return Impl::GetTypeName(v);
     else
         return Impl::GetTypeName(typeid(v));

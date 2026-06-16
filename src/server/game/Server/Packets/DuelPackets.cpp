@@ -16,68 +16,64 @@
  */
 
 #include "DuelPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::Duel
-{
-void CanDuel::Read()
+void WorldPackets::Duel::CanDuel::Read()
 {
     _worldPacket >> TargetGUID;
-    _worldPacket >> Bits<1>(ToTheDeath);
+    ToTheDeath = _worldPacket.ReadBit();
 }
 
-WorldPacket const* CanDuelResult::Write()
+WorldPacket const* WorldPackets::Duel::CanDuelResult::Write()
 {
     _worldPacket << TargetGUID;
-    _worldPacket << Bits<1>(Result);
+    _worldPacket.WriteBit(Result);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* DuelComplete::Write()
+WorldPacket const* WorldPackets::Duel::DuelComplete::Write()
 {
-    _worldPacket << Bits<1>(Started);
+    _worldPacket.WriteBit(Started);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* DuelCountdown::Write()
+WorldPacket const* WorldPackets::Duel::DuelCountdown::Write()
 {
     _worldPacket << uint32(Countdown);
 
     return &_worldPacket;
 }
 
-WorldPacket const* DuelRequested::Write()
+WorldPacket const* WorldPackets::Duel::DuelRequested::Write()
 {
     _worldPacket << ArbiterGUID;
     _worldPacket << RequestedByGUID;
     _worldPacket << RequestedByWowAccount;
-    _worldPacket << Bits<1>(ToTheDeath);
+    _worldPacket.WriteBit(ToTheDeath);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-void DuelResponse::Read()
+void WorldPackets::Duel::DuelResponse::Read()
 {
     _worldPacket >> ArbiterGUID;
-    _worldPacket >> Bits<1>(Accepted);
-    _worldPacket >> Bits<1>(Forfeited);
+    Accepted = _worldPacket.ReadBit();
+    Forfeited = _worldPacket.ReadBit();
 }
 
-WorldPacket const* DuelWinner::Write()
+WorldPacket const* WorldPackets::Duel::DuelWinner::Write()
 {
-    _worldPacket << SizedString::BitsSize<6>(BeatenName);
-    _worldPacket << SizedString::BitsSize<6>(WinnerName);
-    _worldPacket << Bits<1>(Fled);
+    _worldPacket.WriteBits(BeatenName.size(), 6);
+    _worldPacket.WriteBits(WinnerName.size(), 6);
+    _worldPacket.WriteBit(Fled);
     _worldPacket << uint32(BeatenVirtualRealmAddress);
     _worldPacket << uint32(WinnerVirtualRealmAddress);
-    _worldPacket << SizedString::Data(BeatenName);
-    _worldPacket << SizedString::Data(WinnerName);
+    _worldPacket.WriteString(BeatenName);
+    _worldPacket.WriteString(WinnerName);
 
     return &_worldPacket;
-}
 }

@@ -50,12 +50,8 @@ class TC_GAME_API GameObjectAI
         GameObject* const me;
 
     public:
-        explicit GameObjectAI(GameObject* go, uint32 scriptId = {}) noexcept;
-        GameObjectAI(GameObjectAI const&) = delete;
-        GameObjectAI(GameObjectAI&&) = delete;
-        GameObjectAI& operator=(GameObjectAI const&) = delete;
-        GameObjectAI& operator=(GameObjectAI&&) = delete;
-        virtual ~GameObjectAI();
+        explicit GameObjectAI(GameObject* go, uint32 scriptId = {});
+        virtual ~GameObjectAI() { }
 
         // Gets the id of the AI (script id)
         uint32 GetId() const { return _scriptId; }

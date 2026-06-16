@@ -16,46 +16,42 @@
  */
 
 #include "ToyPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::Toy
-{
-void AddToy::Read()
+void WorldPackets::Toy::AddToy::Read()
 {
     _worldPacket >> Guid;
 }
 
-void UseToy::Read()
+void WorldPackets::Toy::UseToy::Read()
 {
     _worldPacket >> Cast;
 }
 
-WorldPacket const* AccountToyUpdate::Write()
+WorldPacket const* WorldPackets::Toy::AccountToyUpdate::Write()
 {
-    _worldPacket << Bits<1>(IsFullUpdate);
+    _worldPacket.WriteBit(IsFullUpdate);
     _worldPacket.FlushBits();
 
     // all lists have to have the same size
-    _worldPacket << Size<uint32>(*Toys); // ids
-    _worldPacket << Size<uint32>(*Toys); // favorites
-    _worldPacket << Size<uint32>(*Toys); // fanfare
+    _worldPacket << int32(Toys->size()); // ids
+    _worldPacket << int32(Toys->size()); // favorites
+    _worldPacket << int32(Toys->size()); // fanfare
 
-    for (auto const& [itemId, _] : *Toys)
-        _worldPacket << uint32(itemId);
+    for (auto const& toy : *Toys)
+        _worldPacket << uint32(toy.first);
 
-    for (auto const& [_, flags] : *Toys)
-        _worldPacket << Bits<1>(flags.HasFlag(ToyFlags::Favorite));
+    for (auto const& toy : *Toys)
+        _worldPacket.WriteBit(toy.second.HasFlag(ToyFlags::Favorite));
 
-    for (auto const& [_, flags] : *Toys)
-        _worldPacket << Bits<1>(flags.HasFlag(ToyFlags::HasFanfare));
+    for (auto const& toy : *Toys)
+        _worldPacket.WriteBit(toy.second.HasFlag(ToyFlags::HasFanfare));
 
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-void ToyClearFanfare::Read()
+void WorldPackets::Toy::ToyClearFanfare::Read()
 {
     _worldPacket >> ItemID;
-}
 }

@@ -339,7 +339,7 @@ struct battleground_isle_of_conquest : BattlegroundScript
     {
         BattlegroundScript::OnStart();
 
-        auto gameobjectAction = [&]<std::invocable<GameObject*> Action>(GuidVector const& guids, Action const& action) -> void
+        auto gameobjectAction = [&](GuidVector const& guids, std::function<void(GameObject*)> const& action) -> void
         {
             for (ObjectGuid const& guid : guids)
                 if (GameObject* gameObject = battlegroundMap->GetGameObject(guid))
@@ -367,7 +367,7 @@ struct battleground_isle_of_conquest : BattlegroundScript
             gameobject->SetGoState(GO_STATE_ACTIVE);
         });
 
-        _scheduler.Schedule(20s, [&](TaskContext const&)
+        _scheduler.Schedule(20s, [&](TaskContext)
         {
             for (ObjectGuid const& guid : _wallGUIDs)
                 if (GameObject* gameobject = battlegroundMap->GetGameObject(guid))

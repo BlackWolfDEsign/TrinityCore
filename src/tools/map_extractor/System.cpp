@@ -25,18 +25,17 @@
 #include "IteratorPair.h"
 #include "Locales.h"
 #include "MapDefines.h"
-#include "MapUtils.h"
-#include "Memory.h"
 #include "StringFormat.h"
 #include "Util.h"
 #include "adt.h"
 #include "wdt.h"
-#include "advstd.h"
 #include <CascLib.h>
 #include <boost/filesystem/directory.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
 #include <bitset>
+#include <deque>
+#include <fstream>
 #include <set>
 #include <unordered_map>
 #include <cstdio>
@@ -53,14 +52,12 @@ std::shared_ptr<CASC::Storage> CascStorage;
 struct MapEntry
 {
     uint32 Id = 0;
-    int32 WdtFileDataId = 0;
     std::string Name;
     std::string Directory;
 };
 
 struct LiquidMaterialEntry
 {
-    EnumFlag<LiquidMaterialFlags> Flags = { { } };
     int8 LVF = 0;
 };
 
@@ -113,7 +110,7 @@ float CONF_flat_liquid_delta_limit = 0.001f; // If max - min less this value - l
 
 uint32 CONF_Locale = 0;
 
-char const* CONF_Product = "wow";
+char const* CONF_Product = "wow_classic";
 char const* CONF_Region = "eu";
 bool CONF_UseRemoteCasc = false;
 
@@ -290,7 +287,6 @@ void ReadMapDBC()
 
         MapEntry map;
         map.Id = record.GetId();
-        map.WdtFileDataId = record.GetInt32("WdtFileDataID");
         map.Name = record.GetString("MapName");
         map.Directory = record.GetString("Directory");
         idToIndex[map.Id] = map_ids.size();
@@ -305,14 +301,11 @@ void ReadMapDBC()
         {
             MapEntry map;
             map.Id = copy.NewRowId;
-            map.WdtFileDataId = map_ids[itr->second].WdtFileDataId;
             map.Name = map_ids[itr->second].Name;
             map.Directory = map_ids[itr->second].Directory;
             map_ids.push_back(map);
         }
     }
-
-    std::erase_if(map_ids, [](MapEntry const& map) { return !map.WdtFileDataId; });
 
     printf("Done! (" SZFMTD " maps loaded)\n", map_ids.size());
 }
@@ -332,7 +325,6 @@ void ReadLiquidMaterialTable()
             continue;
 
         LiquidMaterialEntry& liquidType = LiquidMaterials[record.GetId()];
-        liquidType.Flags = static_cast<LiquidMaterialFlags>(record.GetUInt32("Flags"));
         liquidType.LVF = record.GetUInt8("LVF");
     }
 
@@ -426,6 +418,24 @@ float selectUInt16StepStore(float maxDiff)
 {
     return 65535 / maxDiff;
 }
+// Temporary grid data store
+uint16 area_ids[ADT_CELLS_PER_GRID][ADT_CELLS_PER_GRID];
+
+float V8[ADT_GRID_SIZE][ADT_GRID_SIZE];
+float V9[ADT_GRID_SIZE+1][ADT_GRID_SIZE+1];
+uint16 uint16_V8[ADT_GRID_SIZE][ADT_GRID_SIZE];
+uint16 uint16_V9[ADT_GRID_SIZE+1][ADT_GRID_SIZE+1];
+uint8  uint8_V8[ADT_GRID_SIZE][ADT_GRID_SIZE];
+uint8  uint8_V9[ADT_GRID_SIZE+1][ADT_GRID_SIZE+1];
+
+uint16 liquid_entry[ADT_CELLS_PER_GRID][ADT_CELLS_PER_GRID];
+map_liquidHeaderTypeFlags liquid_flags[ADT_CELLS_PER_GRID][ADT_CELLS_PER_GRID];
+bool  liquid_show[ADT_GRID_SIZE][ADT_GRID_SIZE];
+float liquid_height[ADT_GRID_SIZE+1][ADT_GRID_SIZE+1];
+uint8 holes[ADT_CELLS_PER_GRID][ADT_CELLS_PER_GRID][8];
+
+int16 flight_box_max[3][3];
+int16 flight_box_min[3][3];
 
 LiquidVertexFormatType adt_MH2O::GetLiquidVertexFormat(adt_liquid_instance const* liquidInstance) const
 {
@@ -446,11 +456,11 @@ LiquidVertexFormatType adt_MH2O::GetLiquidVertexFormat(adt_liquid_instance const
     return static_cast<LiquidVertexFormatType>(-1);
 }
 
-bool TransformToHighRes(uint16 lowResHoles, uint8(& hiResHoles)[8])
+bool TransformToHighRes(uint16 lowResHoles, uint8 hiResHoles[8])
 {
-    for (int32 i = 0; i < 8; i++)
+    for (uint8 i = 0; i < 8; i++)
     {
-        for (int32 j = 0; j < 8; j++)
+        for (uint8 j = 0; j < 8; j++)
         {
             int32 holeIdxL = (i / 2) * 4 + (j / 2);
             if (((lowResHoles >> holeIdxL) & 1) == 1)
@@ -458,16 +468,7 @@ bool TransformToHighRes(uint16 lowResHoles, uint8(& hiResHoles)[8])
         }
     }
 
-    return advstd::bit_cast<uint64>(hiResHoles) != 0;
-}
-
-template <typename T, std::size_t N>
-using Array2D = T[N][N];
-
-template <typename T, std::size_t N>
-inline static void WriteArray2D(Array2D<T, N> const& data, FILE* f)
-{
-    (void)::fwrite(&data[0][0], sizeof(T), N * N, f);
+    return *((uint64*)hiResHoles) != 0;
 }
 
 bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const& outputPath, int gx, int gy, uint32 build, bool ignoreDeepWater)
@@ -479,31 +480,22 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
     map.buildMagic = build;
 
     // Get area flags data
-    Array2D<uint16, ADT_CELLS_PER_GRID> area_ids = { };
+    memset(area_ids, 0, sizeof(area_ids));
+    memset(V9, 0, sizeof(V9));
+    memset(V8, 0, sizeof(V8));
 
-    Array2D<float, ADT_GRID_SIZE + 1> V9 = { };
-    Array2D<float, ADT_GRID_SIZE> V8 = { };
-    Array2D<uint16, ADT_GRID_SIZE + 1> uint16_V9 = { };
-    Array2D<uint16, ADT_GRID_SIZE> uint16_V8 = { };
-    Array2D<uint8, ADT_GRID_SIZE + 1> uint8_V9 = { };
-    Array2D<uint8, ADT_GRID_SIZE> uint8_V8 = { };
+    memset(liquid_show, 0, sizeof(liquid_show));
+    memset(liquid_flags, 0, sizeof(liquid_flags));
+    memset(liquid_entry, 0, sizeof(liquid_entry));
 
-    Array2D<bool, ADT_GRID_SIZE> liquid_show = { };
-    Array2D<map_liquidHeaderTypeFlags, ADT_CELLS_PER_GRID> liquid_flags = { };
-    Array2D<uint16, ADT_CELLS_PER_GRID> liquid_entry = { };
-    Array2D<float, ADT_GRID_SIZE + 1> liquid_height = { };
-
-    Array2D<uint8[8], ADT_CELLS_PER_GRID> holes = { };
-
-    Array2D<int16, 3> flight_box_max = { };
-    Array2D<int16, 3> flight_box_min = { };
+    memset(holes, 0, sizeof(holes));
 
     bool hasHoles = false;
     bool hasFlightBox = false;
 
     for (auto const& [_, rawChunk] : Trinity::Containers::MapEqualRange(adt.chunks, "MCNK"))
     {
-        adt_MCNK* mcnk = rawChunk.As<adt_MCNK>();
+        adt_MCNK* mcnk = rawChunk->As<adt_MCNK>();
 
         // Area data
         area_ids[mcnk->iy][mcnk->ix] = mcnk->areaid;
@@ -548,7 +540,7 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
         }
 
         // Get custom height
-        if (FileChunk const* chunk = rawChunk.GetSubChunk("MCVT"))
+        if (FileChunk* chunk = rawChunk->GetSubChunk("MCVT"))
         {
             adt_MCVT* mcvt = chunk->As<adt_MCVT>();
             // get V9 height map
@@ -577,7 +569,7 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
         // Liquid data
         if (mcnk->sizeMCLQ > 8)
         {
-            if (FileChunk const* chunk = rawChunk.GetSubChunk("MCLQ"))
+            if (FileChunk* chunk = rawChunk->GetSubChunk("MCLQ"))
             {
                 adt_MCLQ* liquid = chunk->As<adt_MCLQ>();
                 int count = 0;
@@ -639,13 +631,13 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
         else
         {
             memcpy(holes[mcnk->iy][mcnk->ix], mcnk->union_5_3_0.HighResHoles, sizeof(uint64));
-            if (advstd::bit_cast<uint64>(holes[mcnk->iy][mcnk->ix]) != 0)
+            if (*((uint64*)holes[mcnk->iy][mcnk->ix]) != 0)
                 hasHoles = true;
         }
     }
 
     // Get liquid map for grid (in WOTLK used MH2O chunk)
-    if (FileChunk const* chunk = adt.GetChunk("MH2O"))
+    if (FileChunk* chunk = adt.GetChunk("MH2O"))
     {
         adt_MH2O* h2o = chunk->As<adt_MH2O>();
         for (int32 i = 0; i < ADT_CELLS_PER_GRID; i++)
@@ -655,15 +647,6 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
                 adt_liquid_instance const* h = h2o->GetLiquidInstance(i, j);
                 if (!h)
                     continue;
-
-                liquid_entry[i][j] = h2o->GetLiquidType(h);
-                auto liquidTypeEntry = LiquidTypes.find(liquid_entry[i][j]);
-                if (liquidTypeEntry == LiquidTypes.end())
-                    continue;
-
-                if (LiquidMaterialEntry const* liquidMaterial = Trinity::Containers::MapGetValuePtr(LiquidMaterials, liquidTypeEntry->second.MaterialID))
-                    if (liquidMaterial->Flags.HasFlag(LiquidMaterialFlags::VisualOnly))
-                        continue;
 
                 adt_liquid_attributes attrs = h2o->GetLiquidAttributes(i, j);
 
@@ -684,7 +667,8 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
                     }
                 }
 
-                switch (liquidTypeEntry->second.SoundBank)
+                liquid_entry[i][j] = h2o->GetLiquidType(h);
+                switch (LiquidTypes.at(liquid_entry[i][j]).SoundBank)
                 {
                     case LIQUID_TYPE_WATER: liquid_flags[i][j] |= map_liquidHeaderTypeFlags::Water; break;
                     case LIQUID_TYPE_OCEAN: liquid_flags[i][j] |= map_liquidHeaderTypeFlags::Ocean; if (!ignoreDeepWater && attrs.Deep) liquid_flags[i][j] |= map_liquidHeaderTypeFlags::DarkWater; break;
@@ -713,7 +697,7 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
         }
     }
 
-    if (FileChunk const* chunk = adt.GetChunk("MFBO"))
+    if (FileChunk* chunk = adt.GetChunk("MFBO"))
     {
         adt_MFBO* mfbo = chunk->As<adt_MFBO>();
         memcpy(flight_box_max, &mfbo->max, sizeof(flight_box_max));
@@ -724,8 +708,8 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
     //============================================
     // Try pack area data
     //============================================
-    uint16 areaId = area_ids[0][0];
     bool fullAreaData = false;
+    uint32 areaId = area_ids[0][0];
     for (int y = 0; y < ADT_CELLS_PER_GRID; ++y)
     {
         for (int x = 0; x < ADT_CELLS_PER_GRID; ++x)
@@ -733,7 +717,6 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
             if (area_ids[y][x] != areaId)
             {
                 fullAreaData = true;
-                y = ADT_CELLS_PER_GRID;
                 break;
             }
         }
@@ -753,7 +736,7 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
     else
     {
         areaHeader.flags |= map_areaHeaderFlags::NoArea;
-        areaHeader.gridArea = areaId;
+        areaHeader.gridArea = static_cast<uint16>(areaId);
     }
 
     //============================================
@@ -894,7 +877,7 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
     }
     else
     {
-        int minX = ADT_GRID_SIZE, minY = ADT_GRID_SIZE;
+        int minX = 255, minY = 255;
         int maxX = 0, maxY = 0;
         maxHeight = -20000;
         minHeight = 20000;
@@ -929,9 +912,6 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
         liquidHeader.width   = maxX - minX + 1 + 1;
         liquidHeader.height  = maxY - minY + 1 + 1;
         liquidHeader.liquidLevel = minHeight;
-
-        if (minY > maxY || minX > maxX)
-            liquidHeader.flags |= map_liquidHeaderFlags::NoHeight;
 
         if (maxHeight == minHeight)
             liquidHeader.flags |= map_liquidHeaderFlags::NoHeight;
@@ -971,64 +951,68 @@ bool ConvertADT(ChunkedFile& adt, std::string const& mapName, std::string const&
     }
 
     // Ok all data prepared - store it
-    auto outFile = Trinity::make_unique_ptr_with_deleter<&::fclose>(fopen(outputPath.c_str(), "wb"));
+    std::ofstream outFile(outputPath, std::ofstream::out | std::ofstream::binary);
     if (!outFile)
     {
         printf("Can't create the output file '%s'\n", outputPath.c_str());
         return false;
     }
 
-    fwrite(&map, sizeof(map), 1, outFile.get());
+    outFile.write(reinterpret_cast<char const*>(&map), sizeof(map));
     // Store area data
-    fwrite(&areaHeader, sizeof(areaHeader), 1, outFile.get());
+    outFile.write(reinterpret_cast<char const*>(&areaHeader), sizeof(areaHeader));
     if (!areaHeader.flags.HasFlag(map_areaHeaderFlags::NoArea))
-        WriteArray2D(area_ids, outFile.get());
+        outFile.write(reinterpret_cast<char const*>(area_ids), sizeof(area_ids));
 
     // Store height data
-    fwrite(&heightHeader, sizeof(heightHeader), 1, outFile.get());
+    outFile.write(reinterpret_cast<char const*>(&heightHeader), sizeof(heightHeader));
     if (!heightHeader.flags.HasFlag(map_heightHeaderFlags::NoHeight))
     {
         if (heightHeader.flags.HasFlag(map_heightHeaderFlags::HeightAsInt16))
         {
-            WriteArray2D(uint16_V9, outFile.get());
-            WriteArray2D(uint16_V8, outFile.get());
+            outFile.write(reinterpret_cast<char const*>(uint16_V9), sizeof(uint16_V9));
+            outFile.write(reinterpret_cast<char const*>(uint16_V8), sizeof(uint16_V8));
         }
         else if (heightHeader.flags.HasFlag(map_heightHeaderFlags::HeightAsInt8))
         {
-            WriteArray2D(uint8_V9, outFile.get());
-            WriteArray2D(uint8_V8, outFile.get());
+            outFile.write(reinterpret_cast<char const*>(uint8_V9), sizeof(uint8_V9));
+            outFile.write(reinterpret_cast<char const*>(uint8_V8), sizeof(uint8_V8));
         }
         else
         {
-            WriteArray2D(V9, outFile.get());
-            WriteArray2D(V8, outFile.get());
+            outFile.write(reinterpret_cast<char const*>(V9), sizeof(V9));
+            outFile.write(reinterpret_cast<char const*>(V8), sizeof(V8));
         }
     }
 
     if (heightHeader.flags.HasFlag(map_heightHeaderFlags::HasFlightBounds))
     {
-        WriteArray2D(flight_box_max, outFile.get());
-        WriteArray2D(flight_box_min, outFile.get());
+        outFile.write(reinterpret_cast<char*>(flight_box_max), sizeof(flight_box_max));
+        outFile.write(reinterpret_cast<char*>(flight_box_min), sizeof(flight_box_min));
     }
 
     // Store liquid data if need
     if (map.liquidMapOffset)
     {
-        fwrite(&liquidHeader, sizeof(liquidHeader), 1, outFile.get());
+        outFile.write(reinterpret_cast<char const*>(&liquidHeader), sizeof(liquidHeader));
         if (!liquidHeader.flags.HasFlag(map_liquidHeaderFlags::NoType))
         {
-            WriteArray2D(liquid_entry, outFile.get());
-            WriteArray2D(liquid_flags, outFile.get());
+            outFile.write(reinterpret_cast<char const*>(liquid_entry), sizeof(liquid_entry));
+            outFile.write(reinterpret_cast<char const*>(liquid_flags), sizeof(liquid_flags));
         }
 
         if (!liquidHeader.flags.HasFlag(map_liquidHeaderFlags::NoHeight))
+        {
             for (int y = 0; y < liquidHeader.height; y++)
-                fwrite(&liquid_height[y + liquidHeader.offsetY][liquidHeader.offsetX], sizeof(float), liquidHeader.width, outFile.get());
+                outFile.write(reinterpret_cast<char const*>(&liquid_height[y + liquidHeader.offsetY][liquidHeader.offsetX]), sizeof(float) * liquidHeader.width);
+        }
     }
 
     // store hole data
     if (hasHoles)
-        WriteArray2D(holes, outFile.get());
+        outFile.write(reinterpret_cast<char const*>(holes), map.holesSize);
+
+    outFile.close();
 
     return true;
 }
@@ -1101,11 +1085,12 @@ void ExtractMaps(uint32 build)
         // Loadup map grid data
         ChunkedFile wdt;
         std::bitset<(WDT_MAP_SIZE) * (WDT_MAP_SIZE)> existingTiles;
-        if (wdt.loadFile(CascStorage, map_ids[z].WdtFileDataId, Trinity::StringFormat("WDT for map {}", map_ids[z].Id), false))
+        std::string fileName = Trinity::StringFormat("World\\Maps\\{}\\{}.wdt", map_ids[z].Directory.c_str(), map_ids[z].Directory.c_str());
+        if (wdt.loadFile(CascStorage, fileName, false))
         {
-            FileChunk const* mphd = wdt.GetChunk("MPHD");
-            FileChunk const* main = wdt.GetChunk("MAIN");
-            FileChunk const* maid = wdt.GetChunk("MAID");
+            FileChunk* mphd = wdt.GetChunk("MPHD");
+            FileChunk* main = wdt.GetChunk("MAIN");
+            FileChunk* maid = wdt.GetChunk("MAID");
             for (uint32 y = 0; y < WDT_MAP_SIZE; ++y)
             {
                 for (uint32 x = 0; x < WDT_MAP_SIZE; ++x)
@@ -1121,7 +1106,7 @@ void ExtractMaps(uint32 build)
                     }
                     else
                     {
-                        std::string storagePath = Trinity::StringFormat(R"(World\Maps\{}\{}_{}_{}.adt)", map_ids[z].Directory, map_ids[z].Directory, x, y);
+                        std::string storagePath = Trinity::StringFormat("World\\Maps\\{}\\{}_{}_{}.adt", map_ids[z].Directory, map_ids[z].Directory, x, y);
                         existingTiles[y * WDT_MAP_SIZE + x] = ConvertADT(storagePath, map_ids[z].Name, outputFileName, y, x, build, ignoreDeepWater);
                     }
                 }
@@ -1132,12 +1117,13 @@ void ExtractMaps(uint32 build)
             }
         }
 
-        if (auto tileList = Trinity::make_unique_ptr_with_deleter<&::fclose>(fopen(Trinity::StringFormat("{}/maps/{:04}.tilelist", output_path.string(), map_ids[z].Id).c_str(), "wb")))
+        if (FILE* tileList = fopen(Trinity::StringFormat("{}/maps/{:04}.tilelist", output_path.string(), map_ids[z].Id).c_str(), "wb"))
         {
-            fwrite(MapMagic.data(), 1, MapMagic.size(), tileList.get());
-            fwrite(&MapVersionMagic, 1, sizeof(MapVersionMagic), tileList.get());
-            fwrite(&build, sizeof(build), 1, tileList.get());
-            fwrite(existingTiles.to_string().c_str(), 1, existingTiles.size(), tileList.get());
+            fwrite(MapMagic.data(), 1, MapMagic.size(), tileList);
+            fwrite(&MapVersionMagic, 1, sizeof(MapVersionMagic), tileList);
+            fwrite(&build, sizeof(build), 1, tileList);
+            fwrite(existingTiles.to_string().c_str(), 1, existingTiles.size(), tileList);
+            fclose(tileList);
         }
     }
 
@@ -1153,7 +1139,7 @@ bool ExtractFile(CASC::File* fileInArchive, std::string const& filename)
         return false;
     }
 
-    auto output = Trinity::make_unique_ptr_with_deleter<&::fclose>(fopen(filename.c_str(), "wb"));
+    FILE* output = fopen(filename.c_str(), "wb");
     if (!output)
     {
         printf("Can't create the output file '%s'\n", filename.c_str());
@@ -1169,7 +1155,7 @@ bool ExtractFile(CASC::File* fileInArchive, std::string const& filename)
         if (!fileInArchive->ReadFile(buffer, std::min<uint32>(fileSize, sizeof(buffer)), &readBytes))
         {
             printf("Can't read file '%s'\n", filename.c_str());
-            output = nullptr;
+            fclose(output);
             boost::filesystem::remove(filename);
             return false;
         }
@@ -1177,13 +1163,14 @@ bool ExtractFile(CASC::File* fileInArchive, std::string const& filename)
         if (!readBytes)
             break;
 
-        fwrite(buffer, 1, readBytes, output.get());
+        fwrite(buffer, 1, readBytes, output);
         fileSize -= readBytes;
         if (!fileSize) // now we have read entire file
             break;
 
     } while (true);
 
+    fclose(output);
     return true;
 }
 
@@ -1215,7 +1202,7 @@ bool ExtractDB2File(uint32 fileDataId, char const* cascFileName, int locale, boo
     }
 
     std::string outputFileName = outputPath.string();
-    auto output = Trinity::make_unique_ptr_with_deleter<&::fclose>(fopen(outputFileName.c_str(), "wb"));
+    FILE* output = fopen(outputFileName.c_str(), "wb");
     if (!output)
     {
         printf("Can't create the output file '%s'\n", outputFileName.c_str());
@@ -1225,7 +1212,7 @@ bool ExtractDB2File(uint32 fileDataId, char const* cascFileName, int locale, boo
     DB2Header header = db2.GetHeader();
 
     int64 posAfterHeaders = 0;
-    posAfterHeaders += fwrite(&header, 1, sizeof(header), output.get());
+    posAfterHeaders += fwrite(&header, 1, sizeof(header), output);
 
     // erase TactId from header if key is known
     for (uint32 i = 0; i < header.SectionCount; ++i)
@@ -1234,7 +1221,7 @@ bool ExtractDB2File(uint32 fileDataId, char const* cascFileName, int locale, boo
         if (sectionHeader.TactId && CascStorage->HasTactKey(sectionHeader.TactId))
             sectionHeader.TactId = DUMMY_KNOWN_TACT_ID;
 
-        posAfterHeaders += fwrite(&sectionHeader, 1, sizeof(sectionHeader), output.get());
+        posAfterHeaders += fwrite(&sectionHeader, 1, sizeof(sectionHeader), output);
     }
 
     char buffer[0x10000];
@@ -1248,7 +1235,7 @@ bool ExtractDB2File(uint32 fileDataId, char const* cascFileName, int locale, boo
         if (!source.GetNativeHandle()->ReadFile(buffer, std::min<uint32>(fileSize, readBatchSize), &readBytes))
         {
             printf("Can't read file '%s'\n", outputFileName.c_str());
-            output = nullptr;
+            fclose(output);
             boost::filesystem::remove(outputPath);
             return false;
         }
@@ -1256,7 +1243,7 @@ bool ExtractDB2File(uint32 fileDataId, char const* cascFileName, int locale, boo
         if (!readBytes)
             break;
 
-        fwrite(buffer, 1, readBytes, output.get());
+        fwrite(buffer, 1, readBytes, output);
         fileSize -= readBytes;
         readBatchSize = 0x10000;
         if (!fileSize) // now we have read entire file
@@ -1264,6 +1251,7 @@ bool ExtractDB2File(uint32 fileDataId, char const* cascFileName, int locale, boo
 
     } while (true);
 
+    fclose(output);
     return true;
 }
 
@@ -1343,28 +1331,37 @@ void ExtractGameTables()
 
     printf("output path %s\n", outputPath.string().c_str());
 
-    static constexpr DB2FileInfo GameTables[] =
+    DB2FileInfo GameTables[] =
     {
-        { .FileDataId = 1582086, .Name = "ArtifactKnowledgeMultiplier.txt" },
-        { .FileDataId = 1391662, .Name = "ArtifactLevelXP.txt" },
-        { .FileDataId = 1391663, .Name = "BarberShopCostBase.txt" },
-        { .FileDataId = 1391664, .Name = "BaseMp.txt" },
-        { .FileDataId = 4494528, .Name = "BaseProfessionRatings.txt" },
-        { .FileDataId = 1391665, .Name = "BattlePetTypeDamageMod.txt" },
-        { .FileDataId = 1391666, .Name = "BattlePetXP.txt" },
-        { .FileDataId = 1391669, .Name = "CombatRatings.txt" },
-        { .FileDataId = 1391670, .Name = "CombatRatingsMultByILvl.txt" },
-        { .FileDataId = 1391671, .Name = "HonorLevel.txt" },
-        { .FileDataId = 1391642, .Name = "HpPerSta.txt" },
-        { .FileDataId = 2012881, .Name = "ItemLevelByLevel.txt" },
-        { .FileDataId = 1726830, .Name = "ItemLevelSquish.txt" },
-        { .FileDataId = 1391643, .Name = "ItemSocketCostPerLevel.txt" },
-        { .FileDataId = 1391651, .Name = "NPCManaCostScaler.txt" },
-        { .FileDataId = 4492239, .Name = "ProfessionRatings.txt" },
-        { .FileDataId = 1391659, .Name = "SandboxScaling.txt" },
-        { .FileDataId = 1391660, .Name = "SpellScaling.txt" },
-        { .FileDataId = 1980632, .Name = "StaminaMultByILvl.txt" },
-        { .FileDataId = 1391661, .Name = "xp.txt" }
+        { 1391663, "BarberShopCostBase.txt" },
+        { 1391667, "ChallengeModeDamage.txt" },
+        { 1391668, "ChallengeModeHealth.txt" },
+        { 3999262, "ChanceToMeleeCrit.txt" },
+        { 3999263, "ChanceToMeleeCritBase.txt" },
+        { 3999265, "ChanceToSpellCrit.txt" },
+        { 3999264, "ChanceToSpellCritBase.txt" },
+        { 1391669, "CombatRatings.txt" },
+        { 1391651, "NPCManaCostScaler.txt" },
+        // These are not complete and missing data
+        // { 1391644, "NpcDamageByClass.txt" },
+        // { 1391645, "NpcDamageByClassExp1.txt" },
+        // { 1391646, "NpcDamageByClassExp2.txt" },
+        // { 1391647, "NpcDamageByClassExp3.txt" },
+        // { 1391652, "NpcTotalHp.txt" },
+        // { 1391653, "NpcTotalHpExp1.txt" },
+        // { 1391654, "NpcTotalHpExp2.txt" },
+        // { 1391655, "NpcTotalHpExp3.txt" },
+        // { 5464960, "OCTBaseHPByClass.txt" },
+        { 4049853, "OCTBaseMPByClass.txt" },
+        { 4526467, "OCTClassCombatRatingScalar.txt" },
+        //{ 5464961, "OCTHPPerStamina.txt" },
+        { 3953485, "OCTRegenHP.txt" },
+        { 2238239, "OCTRegenMP.txt" },
+        { 3953486, "RegenHPPerSpt.txt" },
+        { 2238240, "RegenMPPerSpt.txt" },
+        { 2200979, "ShieldBlockRegular.txt" },
+        { 1391660, "SpellScaling.txt" },
+        { 4640503, "TeamContributionPoints.txt" }
     };
 
     uint32 count = 0;
@@ -1460,9 +1457,10 @@ static bool RetardCheck()
             if (itr->path().extension() == ".MPQ")
             {
                 printf("MPQ files found in Data directory!\n");
-                printf("This tool works only with World of Warcraft: Battle for Azeroth\n");
+                printf("This tool works only with World of Warcraft: Cataclysm Classic (4.4.x, NOT 4.3.4.15595)\n");
                 printf("\n");
                 printf("To extract maps for Wrath of the Lich King, rebuild tools using 3.3.5 branch!\n");
+                printf("To extract maps for the current retail version, rebuild tools using master branch!\n");
                 printf("\n");
                 printf("Press ENTER to exit...\n");
                 getchar();
@@ -1576,7 +1574,7 @@ int main(int argc, char * arg[])
     return 0;
 }
 
-#if TRINITY_COMPILER_IS_MICROSOFT
+#if TRINITY_PLATFORM == TRINITY_PLATFORM_WINDOWS
 #include "WheatyExceptionReport.h"
 // must be at end of file because of init_seg pragma
 INIT_CRASH_HANDLER();

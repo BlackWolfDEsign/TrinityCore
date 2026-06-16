@@ -35,11 +35,9 @@ EndScriptData */
 #include "World.h"
 #include "WorldSession.h"
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
-
-using namespace Trinity::ChatCommands;
 
 class ticket_commandscript : public CommandScript
 {
@@ -104,7 +102,7 @@ public:
         return true;
     }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override;
+    std::vector<ChatCommand> GetCommands() const override;
 };
 
 template<typename T>
@@ -366,13 +364,13 @@ bool ticket_commandscript::HandleTicketGetByIdCommand(ChatHandler* handler, char
         return true;
     }
 
-    handler->SendSysMessage(ticket->FormatViewMessageString(*handler, true));
+    handler->SendSysMessage(ticket->FormatViewMessageString(*handler, true).c_str());
     return true;
 }
 
-std::span<ChatCommandBuilder const> ticket_commandscript::GetCommands() const
+std::vector<ChatCommand> ticket_commandscript::GetCommands() const
 {
-    static ChatCommandTable ticketBugCommandTable =
+    static std::vector<ChatCommand> ticketBugCommandTable =
     {
         { "assign",     rbac::RBAC_PERM_COMMAND_TICKET_BUG_ASSIGN,      true, &HandleTicketAssignToCommand<BugTicket>,      "" },
         { "close",      rbac::RBAC_PERM_COMMAND_TICKET_BUG_CLOSE,       true, &HandleTicketCloseByIdCommand<BugTicket>,     "" },
@@ -383,7 +381,7 @@ std::span<ChatCommandBuilder const> ticket_commandscript::GetCommands() const
         { "unassign",   rbac::RBAC_PERM_COMMAND_TICKET_BUG_UNASSIGN,    true, &HandleTicketUnAssignCommand<BugTicket>,      "" },
         { "view",       rbac::RBAC_PERM_COMMAND_TICKET_BUG_VIEW,        true, &HandleTicketGetByIdCommand<BugTicket>,       "" },
     };
-    static ChatCommandTable ticketComplaintCommandTable =
+    static std::vector<ChatCommand> ticketComplaintCommandTable =
     {
         { "assign",     rbac::RBAC_PERM_COMMAND_TICKET_COMPLAINT_ASSIGN,        true, &HandleTicketAssignToCommand<ComplaintTicket>,    "" },
         { "close",      rbac::RBAC_PERM_COMMAND_TICKET_COMPLAINT_CLOSE,         true, &HandleTicketCloseByIdCommand<ComplaintTicket>,   "" },
@@ -394,7 +392,7 @@ std::span<ChatCommandBuilder const> ticket_commandscript::GetCommands() const
         { "unassign",   rbac::RBAC_PERM_COMMAND_TICKET_COMPLAINT_UNASSIGN,      true, &HandleTicketUnAssignCommand<ComplaintTicket>,    "" },
         { "view",       rbac::RBAC_PERM_COMMAND_TICKET_COMPLAINT_VIEW,          true, &HandleTicketGetByIdCommand<ComplaintTicket>,     "" },
     };
-    static ChatCommandTable ticketSuggestionCommandTable =
+    static std::vector<ChatCommand> ticketSuggestionCommandTable =
     {
         { "assign",     rbac::RBAC_PERM_COMMAND_TICKET_SUGGESTION_ASSIGN,       true, &HandleTicketAssignToCommand<SuggestionTicket>,   "" },
         { "close",      rbac::RBAC_PERM_COMMAND_TICKET_SUGGESTION_CLOSE,        true, &HandleTicketCloseByIdCommand<SuggestionTicket>,  "" },
@@ -405,14 +403,14 @@ std::span<ChatCommandBuilder const> ticket_commandscript::GetCommands() const
         { "unassign",   rbac::RBAC_PERM_COMMAND_TICKET_SUGGESTION_UNASSIGN,     true, &HandleTicketUnAssignCommand<SuggestionTicket>,   "" },
         { "view",       rbac::RBAC_PERM_COMMAND_TICKET_SUGGESTION_VIEW,         true, &HandleTicketGetByIdCommand<SuggestionTicket>,    "" },
     };
-    static ChatCommandTable ticketResetCommandTable =
+    static std::vector<ChatCommand> ticketResetCommandTable =
     {
         { "all",        rbac::RBAC_PERM_COMMAND_TICKET_RESET_ALL,           true, &HandleTicketResetAllCommand,                 "" },
         { "bug",        rbac::RBAC_PERM_COMMAND_TICKET_RESET_BUG,           true, &HandleTicketResetCommand<BugTicket>,         "" },
         { "complaint",  rbac::RBAC_PERM_COMMAND_TICKET_RESET_COMPLAINT,     true, &HandleTicketResetCommand<ComplaintTicket>,   "" },
         { "suggestion", rbac::RBAC_PERM_COMMAND_TICKET_RESET_SUGGESTION,    true, &HandleTicketResetCommand<SuggestionTicket>,  "" },
     };
-    static ChatCommandTable ticketCommandTable =
+    static std::vector<ChatCommand> ticketCommandTable =
     {
         { "bug",            rbac::RBAC_PERM_COMMAND_TICKET_BUG,             true, nullptr, "", ticketBugCommandTable },
         { "complaint",      rbac::RBAC_PERM_COMMAND_TICKET_COMPLAINT,       true, nullptr,              "", ticketComplaintCommandTable },
@@ -420,7 +418,7 @@ std::span<ChatCommandBuilder const> ticket_commandscript::GetCommands() const
         { "suggestion",     rbac::RBAC_PERM_COMMAND_TICKET_SUGGESTION,      true, nullptr,             "", ticketSuggestionCommandTable },
         { "togglesystem",   rbac::RBAC_PERM_COMMAND_TICKET_TOGGLESYSTEM,    true, &HandleToggleGMTicketSystem,              "" },
     };
-    static ChatCommandTable commandTable =
+    static std::vector<ChatCommand> commandTable =
     {
         { "ticket", rbac::RBAC_PERM_COMMAND_TICKET, false, nullptr, "", ticketCommandTable },
     };

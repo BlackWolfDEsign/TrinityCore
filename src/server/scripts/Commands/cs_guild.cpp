@@ -33,10 +33,9 @@ EndScriptData */
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "RBAC.h"
-#include "Util.h"
 #include <iomanip>
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
@@ -46,9 +45,9 @@ class guild_commandscript : public CommandScript
 public:
     guild_commandscript() : CommandScript("guild_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommandTable guildCommandTable =
+        static std::vector<ChatCommand> guildCommandTable =
         {
             { "create",   rbac::RBAC_PERM_COMMAND_GUILD_CREATE,   true, &HandleGuildCreateCommand,           "" },
             { "delete",   rbac::RBAC_PERM_COMMAND_GUILD_DELETE,   true, &HandleGuildDeleteCommand,           "" },
@@ -57,9 +56,8 @@ public:
             { "rank",     rbac::RBAC_PERM_COMMAND_GUILD_RANK,     true, &HandleGuildRankCommand,             "" },
             { "rename",   rbac::RBAC_PERM_COMMAND_GUILD_RENAME,   true, &HandleGuildRenameCommand,           "" },
             { "info",     rbac::RBAC_PERM_COMMAND_GUILD_INFO,     true, &HandleGuildInfoCommand,             "" },
-            { "list",     rbac::RBAC_PERM_COMMAND_GUILD_INFO,     true, &HandleGuildListCommand,             "" },
         };
-        static ChatCommandTable commandTable =
+        static std::vector<ChatCommand> commandTable =
         {
             { "guild", rbac::RBAC_PERM_COMMAND_GUILD,  true, nullptr, "", guildCommandTable },
         };
@@ -299,37 +297,6 @@ public:
         handler->PSendSysMessage(LANG_GUILD_INFO_LEVEL, guild->GetLevel()); // Level
         handler->PSendSysMessage(LANG_GUILD_INFO_MOTD, guild->GetMOTD().c_str()); // Message of the Day
         handler->PSendSysMessage(LANG_GUILD_INFO_EXTRA_INFO, guild->GetInfo().c_str()); // Extra Information
-        return true;
-    }
-
-    static bool HandleGuildListCommand(ChatHandler* handler)
-    {
-        std::string_view titleAndSummaryColor = handler->IsConsole() ? ""sv : "|cff00ff00"sv;
-        std::string_view tableHeaderColor = handler->IsConsole() ? ""sv : "|cff00ffff"sv;
-        std::string_view resetColor = handler->IsConsole() ? ""sv : "|r"sv;
-
-        handler->PSendSysMessage(LANG_GUILD_LIST_TITLE, titleAndSummaryColor, resetColor);
-        handler->PSendSysMessage(LANG_GUILD_LIST_HEADER, tableHeaderColor, resetColor);
-
-        GuildMgr::GuildContainer const& guildStore = sGuildMgr->GetGuildStore();
-
-        for (auto const& [id, g] : guildStore)
-        {
-            std::string gmName;
-            if (!sCharacterCache->GetCharacterNameByGuid(g->GetLeaderGUID(), gmName))
-                gmName = "---";
-
-            handler->PSendSysMessage(LANG_GUILD_LIST_ROW,
-                id,
-                g->GetName().c_str(),
-                gmName.c_str(),
-                TimeToTimestampStr(g->GetCreatedDate()).c_str(),
-                g->GetMembersCount(),
-                g->GetBankMoney() / GOLD
-            );
-        }
-
-        handler->PSendSysMessage(LANG_GUILD_LIST_TOTAL, titleAndSummaryColor, guildStore.size(), resetColor);
         return true;
     }
 };

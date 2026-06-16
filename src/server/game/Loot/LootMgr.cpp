@@ -110,11 +110,6 @@ class LootTemplate::LootGroup                               // A set of loot def
         LootStoreItem const* Roll(uint16 lootMode, Player const* personalLooter = nullptr) const;
 };
 
-LootStore::LootStore(char const* name, char const* entryName, bool ratesAllowed)
-    : m_name(name), m_entryName(entryName), m_ratesAllowed(ratesAllowed)
-{
-}
-
 LootStore::LootStore(LootStore&&) noexcept = default;
 LootStore& LootStore::operator=(LootStore&&) noexcept = default;
 LootStore::~LootStore() = default;
@@ -236,6 +231,11 @@ void LootStore::ReportUnusedIds(LootIdSet const& lootIdSet) const
         TC_LOG_ERROR("sql.sql", "Table '{}' Entry {} isn't {} and not referenced from loot, and thus useless.", GetName(), lootId, GetEntryName());
 }
 
+void LootStore::ReportNonExistingId(uint32 lootId) const
+{
+    TC_LOG_ERROR("sql.sql", "Table '{}' Entry {} does not exist", GetName(), lootId);
+}
+
 void LootStore::ReportNonExistingId(uint32 lootId, char const* ownerType, uint32 ownerId) const
 {
     TC_LOG_ERROR("sql.sql", "Table '{}' Entry {} does not exist but it is used by {} {}", GetName(), lootId, ownerType, ownerId);
@@ -260,20 +260,20 @@ bool LootStoreItem::Roll(bool rate) const
 
             float qualityModifier = pProto && rate && QualityToRate[pProto->GetQuality()] != MAX_RATES ? sWorld->getRate(QualityToRate[pProto->GetQuality()]) : 1.0f;
 
-            return roll_chance(chance * qualityModifier);
+            return roll_chance_f(chance * qualityModifier);
         }
         case Type::Reference:
-            return roll_chance(chance * (rate ? sWorld->getRate(RATE_DROP_ITEM_REFERENCED) : 1.0f));
+            return roll_chance_f(chance * (rate ? sWorld->getRate(RATE_DROP_ITEM_REFERENCED) : 1.0f));
         case Type::Currency:
         {
             CurrencyTypesEntry const* currency = sCurrencyTypesStore.AssertEntry(itemid);
 
             float qualityModifier = currency && rate && QualityToRate[currency->Quality] != MAX_RATES ? sWorld->getRate(QualityToRate[currency->Quality]) : 1.0f;
 
-            return roll_chance(chance * qualityModifier);
+            return roll_chance_f(chance * qualityModifier);
         }
         case Type::TrackingQuest:
-            return roll_chance(chance);
+            return roll_chance_f(chance);
         default:
             break;
     }
@@ -697,13 +697,14 @@ void LootTemplate::Process(Loot& loot, bool rate, uint16 lootMode, uint8 groupId
 
 void LootTemplate::ProcessPersonalLoot(std::unordered_map<Player*, std::unique_ptr<Loot>>& personalLoot, bool rate, uint16 lootMode) const
 {
-    auto getLootersForItem = [&personalLoot](auto&& predicate) -> std::vector<Player*>
+    auto getLootersForItem = [&personalLoot](auto&& predicate)
     {
         std::vector<Player*> lootersForItem;
         for (auto&& [looter, loot] : personalLoot)
+        {
             if (predicate(looter))
                 lootersForItem.push_back(looter);
-
+        }
         return lootersForItem;
     };
 
@@ -1121,19 +1122,7 @@ void LoadLootTemplates_Disenchant()
     {
         uint32 lootid = disenchant->ID;
         if (!lootIdSet.contains(lootid))
-            LootTemplates_Disenchant.ReportNonExistingId(lootid, "ItemDisenchantLoot", lootid);
-        else
-            lootIdSetUsed.insert(lootid);
-    }
-
-    for (ItemBonusEntry const* itemBonus : sItemBonusStore)
-    {
-        if (itemBonus->Type != ITEM_BONUS_DISENCHANT_LOOT_ID)
-            continue;
-
-        uint32 lootid = itemBonus->Value[0];
-        if (!lootIdSet.contains(lootid))
-            LootTemplates_Disenchant.ReportNonExistingId(lootid, "ItemBonusList", itemBonus->ParentItemBonusListID);
+            LootTemplates_Disenchant.ReportNonExistingId(lootid);
         else
             lootIdSetUsed.insert(lootid);
     }

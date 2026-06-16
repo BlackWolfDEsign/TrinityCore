@@ -15,12 +15,12 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_ACHIEVEMENT_PACKETS_H
-#define TRINITYCORE_ACHIEVEMENT_PACKETS_H
+#ifndef game_AchievementPackets_h__
+#define game_AchievementPackets_h__
 
+#include "Packet.h"
 #include "ObjectGuid.h"
 #include "Optional.h"
-#include "Packet.h"
 #include "PacketUtilities.h"
 #include "WowTime.h"
 
@@ -42,12 +42,12 @@ namespace WorldPackets
             uint32 Id = 0;
             uint64 Quantity = 0;
             ObjectGuid Player;
-            uint32 StateFlags = 0;
+            uint32 Unused_10_1_5 = 0;
             uint32 Flags = 0;
             WowTime Date;
             Duration<Seconds> TimeFromStart;
             Duration<Seconds> TimeFromCreate;
-            Optional<uint64> DynamicID;
+            Optional<uint64> RafAcceptanceID;
         };
 
         struct AllAchievements
@@ -59,7 +59,7 @@ namespace WorldPackets
         class AllAchievementData final : public ServerPacket
         {
         public:
-            explicit AllAchievementData() : ServerPacket(SMSG_ALL_ACHIEVEMENT_DATA) { }
+            AllAchievementData() : ServerPacket(SMSG_ALL_ACHIEVEMENT_DATA) { }
 
             WorldPacket const* Write() override;
 
@@ -69,7 +69,7 @@ namespace WorldPackets
         class AllAccountCriteria final : public ServerPacket
         {
         public:
-            explicit AllAccountCriteria() : ServerPacket(SMSG_ALL_ACCOUNT_CRITERIA) { }
+            AllAccountCriteria() : ServerPacket(SMSG_ALL_ACCOUNT_CRITERIA) { }
 
             WorldPacket const* Write() override;
 
@@ -79,7 +79,7 @@ namespace WorldPackets
         class RespondInspectAchievements final : public ServerPacket
         {
         public:
-            explicit RespondInspectAchievements() : ServerPacket(SMSG_RESPOND_INSPECT_ACHIEVEMENTS) { }
+            RespondInspectAchievements() : ServerPacket(SMSG_RESPOND_INSPECT_ACHIEVEMENTS) { }
 
             WorldPacket const* Write() override;
 
@@ -90,25 +90,25 @@ namespace WorldPackets
         class CriteriaUpdate final : public ServerPacket
         {
         public:
-            explicit CriteriaUpdate() : ServerPacket(SMSG_CRITERIA_UPDATE, 4 + 8 + 16 + 4 + 4 + 4 + 4) { }
+            CriteriaUpdate() : ServerPacket(SMSG_CRITERIA_UPDATE, 4 + 8 + 16 + 4 + 4 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
             uint32 CriteriaID = 0;
             uint64 Quantity = 0;
             ObjectGuid PlayerGUID;
-            uint32 StateFlags = 0;
+            uint32 Unused_10_1_5 = 0;
             uint32 Flags = 0;
             WowTime CurrentTime;
             Duration<Seconds> ElapsedTime;
             Timestamp<> CreationTime;
-            Optional<uint64> DynamicID;
+            Optional<uint64> RafAcceptanceID;
         };
 
         class AccountCriteriaUpdate final : public ServerPacket
         {
         public:
-            explicit AccountCriteriaUpdate() : ServerPacket(SMSG_ACCOUNT_CRITERIA_UPDATE) { }
+            AccountCriteriaUpdate() : ServerPacket(SMSG_ACCOUNT_CRITERIA_UPDATE) { }
 
             WorldPacket const* Write() override;
 
@@ -118,7 +118,7 @@ namespace WorldPackets
         class CriteriaDeleted final : public ServerPacket
         {
         public:
-            explicit CriteriaDeleted() : ServerPacket(SMSG_CRITERIA_DELETED, 4) { }
+            CriteriaDeleted() : ServerPacket(SMSG_CRITERIA_DELETED, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -128,7 +128,7 @@ namespace WorldPackets
         class AchievementDeleted final : public ServerPacket
         {
         public:
-            explicit AchievementDeleted() : ServerPacket(SMSG_ACHIEVEMENT_DELETED, 8) { }
+            AchievementDeleted() : ServerPacket(SMSG_ACHIEVEMENT_DELETED, 8) { }
 
             WorldPacket const* Write() override;
 
@@ -139,7 +139,7 @@ namespace WorldPackets
         class AchievementEarned final : public ServerPacket
         {
         public:
-            explicit AchievementEarned() : ServerPacket(SMSG_ACHIEVEMENT_EARNED, 16 + 4 + 4 + 4 + 4 + 1 + 16) { }
+            AchievementEarned() : ServerPacket(SMSG_ACHIEVEMENT_EARNED, 16 + 4 + 4 + 4 + 4 + 1 + 16) { }
 
             WorldPacket const* Write() override;
 
@@ -155,7 +155,7 @@ namespace WorldPackets
         class BroadcastAchievement final : public ServerPacket
         {
         public:
-            explicit BroadcastAchievement() : ServerPacket(SMSG_BROADCAST_ACHIEVEMENT) { }
+            BroadcastAchievement() : ServerPacket(SMSG_BROADCAST_ACHIEVEMENT) { }
 
             WorldPacket const* Write() override;
 
@@ -173,14 +173,14 @@ namespace WorldPackets
             WowTime DateUpdated;
             uint64 Quantity = 0;
             ObjectGuid PlayerGUID;
+            int32 Unused_10_1_5 = 0;
             int32 Flags = 0;
-            int32 StateFlags = 0;
         };
 
         class GuildCriteriaUpdate final : public ServerPacket
         {
         public:
-            explicit GuildCriteriaUpdate() : ServerPacket(SMSG_GUILD_CRITERIA_UPDATE) { }
+            GuildCriteriaUpdate() : ServerPacket(SMSG_GUILD_CRITERIA_UPDATE) { }
 
             WorldPacket const* Write() override;
 
@@ -190,7 +190,7 @@ namespace WorldPackets
         class GuildCriteriaDeleted final : public ServerPacket
         {
         public:
-            explicit GuildCriteriaDeleted() : ServerPacket(SMSG_GUILD_CRITERIA_DELETED, 16 + 4) { }
+            GuildCriteriaDeleted() : ServerPacket(SMSG_GUILD_CRITERIA_DELETED, 16 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -201,7 +201,7 @@ namespace WorldPackets
         class GuildSetFocusedAchievement final : public ClientPacket
         {
         public:
-            explicit GuildSetFocusedAchievement(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_FOCUSED_ACHIEVEMENT, std::move(packet)) { }
+            GuildSetFocusedAchievement(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_FOCUSED_ACHIEVEMENT, std::move(packet)) { }
 
             void Read() override;
 
@@ -211,7 +211,7 @@ namespace WorldPackets
         class GuildAchievementDeleted final : public ServerPacket
         {
         public:
-            explicit GuildAchievementDeleted() : ServerPacket(SMSG_GUILD_ACHIEVEMENT_DELETED, 16 + 4 + 4) { }
+            GuildAchievementDeleted() : ServerPacket(SMSG_GUILD_ACHIEVEMENT_DELETED, 16 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -223,7 +223,7 @@ namespace WorldPackets
         class GuildAchievementEarned final : public ServerPacket
         {
         public:
-            explicit GuildAchievementEarned() : ServerPacket(SMSG_GUILD_ACHIEVEMENT_EARNED, 16 + 4 + 4) { }
+            GuildAchievementEarned() : ServerPacket(SMSG_GUILD_ACHIEVEMENT_EARNED, 16 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -235,7 +235,7 @@ namespace WorldPackets
         class AllGuildAchievements final : public ServerPacket
         {
         public:
-            explicit AllGuildAchievements() : ServerPacket(SMSG_ALL_GUILD_ACHIEVEMENTS) { }
+            AllGuildAchievements() : ServerPacket(SMSG_ALL_GUILD_ACHIEVEMENTS) { }
 
             WorldPacket const* Write() override;
 
@@ -245,7 +245,7 @@ namespace WorldPackets
         class GuildGetAchievementMembers final : public ClientPacket
         {
         public:
-            explicit GuildGetAchievementMembers(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_GET_ACHIEVEMENT_MEMBERS, std::move(packet)) { }
+            GuildGetAchievementMembers(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_GET_ACHIEVEMENT_MEMBERS, std::move(packet)) { }
 
             void Read() override;
 
@@ -265,7 +265,7 @@ namespace WorldPackets
         class GuildAchievementMembers final : public ServerPacket
         {
         public:
-            explicit GuildAchievementMembers() : ServerPacket(SMSG_GUILD_ACHIEVEMENT_MEMBERS) { }
+            GuildAchievementMembers() : ServerPacket(SMSG_GUILD_ACHIEVEMENT_MEMBERS) { }
 
             WorldPacket const* Write() override;
 
@@ -278,4 +278,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_ACHIEVEMENT_PACKETS_H
+#endif // game_AchievementPackets_h__

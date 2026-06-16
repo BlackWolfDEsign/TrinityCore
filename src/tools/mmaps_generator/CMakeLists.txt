@@ -8,19 +8,29 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_executable(mmaps_generator)
+CollectSourceFiles(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE_SOURCES)
 
-CollectAndAddSourceFiles(
-  mmaps_generator
-  ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(mmaps_generator ${PRIVATE_SOURCES})
 
 target_link_libraries(mmaps_generator
   PRIVATE
     trinity-core-interface
+  PUBLIC
+    common
     extractor_common
-    mmaps_common)
+    Recast
+    Detour
+    zlib)
+
+CollectIncludeDirectories(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PUBLIC_INCLUDES)
 
 target_include_directories(mmaps_generator
+  PUBLIC
+    ${PUBLIC_INCLUDES}
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})
 

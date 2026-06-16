@@ -45,7 +45,7 @@ static BossBoundaryData const boundaries =
     { DATA_YOGG_SARON, new CircleBoundary(Position(1980.42f, -27.68f), 105.0f) }
 };
 
-static constexpr DoorData doorData[] =
+static DoorData const doorData[] =
 {
     { GO_LEVIATHAN_DOOR,                DATA_FLAME_LEVIATHAN,   EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_XT_002_DOOR,                   DATA_XT002,             EncounterDoorBehavior::OpenWhenNotInProgress },
@@ -69,16 +69,18 @@ static constexpr DoorData doorData[] =
     { GO_DOODAD_UL_UNIVERSEFLOOR_02,    DATA_ALGALON,           EncounterDoorBehavior::OpenWhenInProgress },
     { GO_DOODAD_UL_UNIVERSEGLOBE01,     DATA_ALGALON,           EncounterDoorBehavior::OpenWhenInProgress },
     { GO_DOODAD_UL_ULDUAR_TRAPDOOR_03,  DATA_ALGALON,           EncounterDoorBehavior::OpenWhenInProgress },
+    { 0,                                0,                      EncounterDoorBehavior::OpenWhenNotInProgress },
 };
 
-static constexpr MinionData minionData[] =
+MinionData const minionData[] =
 {
     { NPC_STEELBREAKER,   DATA_ASSEMBLY_OF_IRON },
     { NPC_MOLGEIM,        DATA_ASSEMBLY_OF_IRON },
     { NPC_BRUNDIR,        DATA_ASSEMBLY_OF_IRON },
+    { 0,                  0                     } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_FLAME_LEVIATHAN,          DATA_FLAME_LEVIATHAN          },
     { NPC_IGNIS,                    DATA_IGNIS                    },
@@ -112,9 +114,10 @@ static constexpr ObjectData creatureData[] =
     { NPC_BRONZEBEARD_RADIO,        DATA_BRONZEBEARD_RADIO        },
     { NPC_HEART_OF_DECONSTRUCTOR,   DATA_XT002_HEART              },
     { NPC_AZEROTH,                  DATA_AZEROTH                  },
+    { 0,                            0,                            }
 };
 
-static constexpr ObjectData objectData[] =
+ObjectData const objectData[] =
 {
     { GO_MIMIRON_ELEVATOR,             DATA_MIMIRON_ELEVATOR     },
     { GO_MIMIRON_BUTTON,               DATA_MIMIRON_BUTTON       },
@@ -134,9 +137,10 @@ static constexpr ObjectData objectData[] =
     { GO_DOODAD_UL_UNIVERSEFLOOR_02,   DATA_UNIVERSE_FLOOR_02    },
     { GO_GIFT_OF_THE_OBSERVER_10,      DATA_GIFT_OF_THE_OBSERVER },
     { GO_GIFT_OF_THE_OBSERVER_25,      DATA_GIFT_OF_THE_OBSERVER },
+    { 0,                               0                         }
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_FLAME_LEVIATHAN, {{ 1132 }} },
     { DATA_IGNIS, {{ 1136 }} },
@@ -682,7 +686,7 @@ class instance_ulduar : public InstanceMapScript
                             Map::PlayerList const& players = instance->GetPlayers();
                             for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
                                 if (Player* player = itr->GetSource())
-                                    for (uint8 slot = EQUIPMENT_SLOT_MAINHAND; slot <= EQUIPMENT_SLOT_OFFHAND; ++slot)
+                                    for (uint8 slot = EQUIPMENT_SLOT_MAINHAND; slot <= EQUIPMENT_SLOT_RANGED; ++slot)
                                         if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
                                             if (item->GetItemLevel(player) > _maxWeaponItemLevel)
                                                 _maxWeaponItemLevel = item->GetItemLevel(player);
@@ -703,7 +707,7 @@ class instance_ulduar : public InstanceMapScript
 
                                         if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
                                         {
-                                            if (slot >= EQUIPMENT_SLOT_MAINHAND && slot <= EQUIPMENT_SLOT_OFFHAND)
+                                            if (slot >= EQUIPMENT_SLOT_MAINHAND && slot <= EQUIPMENT_SLOT_RANGED)
                                             {
                                                 if (item->GetItemLevel(player) > _maxWeaponItemLevel)
                                                     _maxWeaponItemLevel = item->GetItemLevel(player);

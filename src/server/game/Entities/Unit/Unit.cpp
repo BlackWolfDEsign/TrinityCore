@@ -53,7 +53,6 @@
 #include "Loot.h"
 #include "LootMgr.h"
 #include "LootPackets.h"
-#include "MapUtils.h"
 #include "MiscPackets.h"
 #include "MotionMaster.h"
 #include "MovementGenerator.h"
@@ -130,7 +129,7 @@ DispelableAura::~DispelableAura() = default;
 
 bool DispelableAura::RollDispel() const
 {
-    return roll_chance(_chance);
+    return roll_chance_i(_chance);
 }
 
 DamageInfo::DamageInfo(Unit* attacker, Unit* victim, uint32 damage, SpellInfo const* spellInfo, SpellSchoolMask schoolMask, DamageEffectType damageType, WeaponAttackType attackType)
@@ -267,12 +266,12 @@ uint32 HealInfo::GetHitMask() const
     return _hitMask;
 }
 
-ProcEventInfo::ProcEventInfo(Unit* actor, Unit* actionTarget,
+ProcEventInfo::ProcEventInfo(Unit* actor, Unit* actionTarget, Unit* procTarget,
                              ProcFlagsInit const& typeMask, ProcFlagsSpellType spellTypeMask,
                              ProcFlagsSpellPhase spellPhaseMask, ProcFlagsHit hitMask,
                              Spell* spell, DamageInfo* damageInfo,
                              HealInfo* healInfo) :
-    _actor(actor), _actionTarget(actionTarget),
+    _actor(actor), _actionTarget(actionTarget), _procTarget(procTarget),
     _typeMask(typeMask), _spellTypeMask(spellTypeMask),
     _spellPhaseMask(spellPhaseMask), _hitMask(hitMask), _spell(spell),
     _damageInfo(damageInfo), _healInfo(healInfo)
@@ -302,7 +301,7 @@ SpellSchoolMask ProcEventInfo::GetSchoolMask() const
 
 SpellNonMeleeDamage::SpellNonMeleeDamage(Unit* _attacker, Unit* _target, SpellInfo const* _spellInfo, SpellCastVisual spellVisual, uint32 _schoolMask, ObjectGuid _castId)
     : target(_target), attacker(_attacker), castId(_castId), Spell(_spellInfo), SpellVisual(spellVisual), damage(0), originalDamage(0),
-    schoolMask(_schoolMask), absorb(0), resist(0), periodicLog(false), blocked(0), reflectingSpellId(0), HitInfo(0), cleanDamage(0), fullBlock(false), preHitHealth(_target->GetHealth())
+    schoolMask(_schoolMask), absorb(0), resist(0), periodicLog(false), blocked(0), HitInfo(0), fullBlock(false), preHitHealth(_target->GetHealth())
 {
 }
 
@@ -311,11 +310,12 @@ Unit::Unit(bool isWorldObject) :
     m_ControlledByPlayer(false), m_procDeep(0), m_procChainLength(0), m_transformSpell(0),
     m_removedAurasCount(0), m_interruptMask(SpellAuraInterruptFlags::None), m_interruptMask2(SpellAuraInterruptFlags2::None),
     m_unitMovedByMe(nullptr), m_playerMovingMe(nullptr), m_charmer(nullptr), m_charmed(nullptr),
-    i_motionMaster(std::make_unique<MotionMaster>(this)), m_regenTimer(0), m_vehicle(nullptr),
+    i_motionMaster(std::make_unique<MotionMaster>(this)), m_vehicle(nullptr),
     m_unitTypeMask(UNIT_MASK_NONE), m_Diminishing(), m_combatManager(this),
-    m_threatManager(this), m_aiLocked(false), _aiAnimKitId(0), _movementAnimKitId(0), _meleeAnimKitId(0),
+    m_threatManager(this), m_aiLocked(false), _playHoverAnim(false), _aiAnimKitId(0), _movementAnimKitId(0), _meleeAnimKitId(0),
     _spellHistory(std::make_unique<SpellHistory>(this))
 {
+    m_objectType |= TYPEMASK_UNIT;
     m_objectTypeId = TYPEID_UNIT;
 
     m_updateFlag.MovementUpdate = true;
@@ -367,7 +367,6 @@ Unit::Unit(bool isWorldObject) :
     m_baseSpellCritChance = 5.0f;
 
     m_speed_rate.fill(1.0f);
-    SetFlightCapabilityID(0, false);
 
     // remove aurastates allowing special moves
     m_reactiveTimer = { };
@@ -385,6 +384,12 @@ Unit::Unit(bool isWorldObject) :
     _isCombatDisallowed = false;
 
     _lastExtraAttackSpell = 0;
+
+    _regenInterruptTimestamp = GameTime::Now();
+    _powerRegenUpdateTimer = 0;
+    _healthRegenerationTimer = 0;
+    _powerFraction.fill(0.0f);
+    _usedPowerTypes.fill(MAX_POWERS);
 }
 
 ////////////////////////////////////////////////////////////
@@ -473,6 +478,8 @@ void Unit::Update(uint32 p_time)
 
     if (IsAlive())
     {
+        RegenerateAll(p_time);
+
         ModifyAuraState(AURA_STATE_WOUNDED_20_PERCENT, HealthBelowPct(20));
         ModifyAuraState(AURA_STATE_WOUNDED_25_PERCENT, HealthBelowPct(25));
         ModifyAuraState(AURA_STATE_WOUNDED_35_PERCENT, HealthBelowPct(35));
@@ -581,14 +588,8 @@ void Unit::AtEndOfEncounter(EncounterType type)
     GetSpellHistory()->ResetCooldowns([](SpellHistory::CooldownEntry const& cooldown)
     {
         SpellInfo const* spellInfo = sSpellMgr->AssertSpellInfo(cooldown.SpellId, DIFFICULTY_NONE);
-        if (spellInfo->HasAttribute(SPELL_ATTR10_RESET_COOLDOWN_ON_ENCOUNTER_END))
-            return true;
 
-        if (SpellCategoryEntry const* category = sSpellCategoryStore.LookupEntry(spellInfo->CategoryId))
-            if (category->GetFlags().HasFlag(SpellCategoryFlags::ResetCooldownUponEndingEncounter))
-                return true;
-
-        return false;
+        return spellInfo->HasAttribute(SPELL_ATTR10_RESET_COOLDOWN_ON_ENCOUNTER_END);
     }, true);
 }
 
@@ -624,7 +625,7 @@ void Unit::UpdateSplinePosition()
         pos.SetOrientation(loc.orientation);
 
         if (TransportBase* transport = GetDirectTransport())
-            transport->GetPositionWithOffset(pos).GetPosition(loc.x, loc.y, loc.z, loc.orientation);
+            transport->CalculatePassengerPosition(loc.x, loc.y, loc.z, &loc.orientation);
         else
             return;
     }
@@ -728,16 +729,6 @@ void Unit::RemoveVisibleAura(AuraApplication* aurApp)
     UpdateAuraForGroup();
 }
 
-void Unit::SetVisibleAuraUpdate(AuraApplication* aurApp)
-{
-    m_visibleAurasToUpdate.insert(aurApp);
-}
-
-void Unit::RemoveVisibleAuraUpdate(AuraApplication* aurApp)
-{
-    m_visibleAurasToUpdate.erase(aurApp);
-}
-
 void Unit::UpdateInterruptMask()
 {
     m_interruptMask = SpellAuraInterruptFlags::None;
@@ -768,32 +759,26 @@ bool Unit::HasAuraTypeWithFamilyFlags(AuraType auraType, uint32 familyName, flag
 
 bool Unit::HasBreakableByDamageAuraType(AuraType type, uint32 excludeAura) const
 {
-    for (AuraEffect const* aura : GetAuraEffectsByType(type))
-        if ((!excludeAura || excludeAura != aura->GetSpellInfo()->Id) && //Avoid self interrupt of channeled Crowd Control spells like Seduction
-            aura->GetSpellInfo()->HasAuraInterruptFlag(SpellAuraInterruptFlags::AnyDamageMask))
+    AuraEffectList const& auras = GetAuraEffectsByType(type);
+    for (AuraEffectList::const_iterator itr = auras.begin(); itr != auras.end(); ++itr)
+        if ((!excludeAura || excludeAura != (*itr)->GetSpellInfo()->Id) && //Avoid self interrupt of channeled Crowd Control spells like Seduction
+            (*itr)->GetSpellInfo()->HasAuraInterruptFlag(SpellAuraInterruptFlags::Damage))
             return true;
     return false;
 }
 
-bool Unit::HasBreakableByDamageCrowdControlAura(Unit const* excludeCasterChannel) const
+bool Unit::HasBreakableByDamageCrowdControlAura(Unit* excludeCasterChannel) const
 {
-    if (!HasInterruptFlag(SpellAuraInterruptFlags::AnyDamageMask))
-        return false;
-
     uint32 excludeAura = 0;
-    if (excludeCasterChannel)
-        if (Spell const* currentChanneledSpell = excludeCasterChannel->GetCurrentSpell(CURRENT_CHANNELED_SPELL))
-            excludeAura = currentChanneledSpell->GetSpellInfo()->Id; //Avoid self interrupt of channeled Crowd Control spells like Seduction
+    if (Spell* currentChanneledSpell = excludeCasterChannel ? excludeCasterChannel->GetCurrentSpell(CURRENT_CHANNELED_SPELL) : nullptr)
+        excludeAura = currentChanneledSpell->GetSpellInfo()->Id; //Avoid self interrupt of channeled Crowd Control spells like Seduction
 
-    // This function is named after spell attribute it is meant for - SPELL_ATTR6_DO_NOT_CHAIN_TO_CROWD_CONTROLLED_TARGETS
-    // Not checking aura type is not a mistake here
-    for (AuraApplication const* aurApp : m_interruptableAuras)
-        if (!aurApp->IsPositive()
-            && (!excludeAura || excludeAura != aurApp->GetBase()->GetId())
-            && aurApp->GetBase()->GetSpellInfo()->HasAuraInterruptFlag(SpellAuraInterruptFlags::AnyDamageMask))
-            return true;
-
-    return false;
+    return (   HasBreakableByDamageAuraType(SPELL_AURA_MOD_CONFUSE, excludeAura)
+            || HasBreakableByDamageAuraType(SPELL_AURA_MOD_FEAR, excludeAura)
+            || HasBreakableByDamageAuraType(SPELL_AURA_MOD_STUN, excludeAura)
+            || HasBreakableByDamageAuraType(SPELL_AURA_MOD_ROOT, excludeAura)
+            || HasBreakableByDamageAuraType(SPELL_AURA_MOD_ROOT_2, excludeAura)
+            || HasBreakableByDamageAuraType(SPELL_AURA_TRANSFORM, excludeAura));
 }
 
 /*static*/ void Unit::DealDamageMods(Unit const* attacker, Unit const* victim, uint32& damage, uint32* absorb)
@@ -998,7 +983,6 @@ bool Unit::HasBreakableByDamageCrowdControlAura(Unit const* excludeCasterChannel
         if (damagetype != NODAMAGE && damagetype != SELF_DAMAGE && victim->HasAuraType(SPELL_AURA_SCHOOL_ABSORB_OVERKILL))
         {
             AuraEffectVector vAbsorbOverkill = CopyAuraEffectList(victim->GetAuraEffectsByType(SPELL_AURA_SCHOOL_ABSORB_OVERKILL));
-            std::ranges::stable_sort(vAbsorbOverkill, Trinity::AbsorbAuraOrderPred());
             DamageInfo damageInfo = DamageInfo(attacker, victim, damageTaken, spellProto, damageSchoolMask, damagetype,
                 cleanDamage ? cleanDamage->attackType : BASE_ATTACK);
             for (AuraEffect* absorbAurEff : vAbsorbOverkill)
@@ -1012,12 +996,7 @@ bool Unit::HasBreakableByDamageCrowdControlAura(Unit const* excludeCasterChannel
                     continue;
 
                 // cannot absorb over limit
-                if (absorbAurEff->GetAmount() > 0)
-                {
-                    if (damageTaken > absorbAurEff->GetAmount())
-                        continue;
-                }
-                else if (damageTaken >= victim->GetMaxHealth() * 2)
+                if (damageTaken >= victim->CountPctFromMaxHealth(100 + absorbAurEff->GetMiscValueB()))
                     continue;
 
                 // absorb all damage by default
@@ -1089,17 +1068,24 @@ bool Unit::HasBreakableByDamageCrowdControlAura(Unit const* excludeCasterChannel
         else                                                // victim is a player
         {
             // random durability for items (HIT TAKEN)
-            if (durabilityLoss && roll_chance(sWorld->getRate(RATE_DURABILITY_LOSS_DAMAGE)))
+            if (durabilityLoss && roll_chance_f(sWorld->getRate(RATE_DURABILITY_LOSS_DAMAGE)))
             {
                 EquipmentSlots slot = EquipmentSlots(urand(0, EQUIPMENT_SLOT_END-1));
                 victim->ToPlayer()->DurabilityPointLossForEquipSlot(slot);
             }
         }
 
+        // Rage from damage received
+        if (attacker != victim && victim->GetPowerType() == POWER_RAGE)
+        {
+            uint32 rageBaseReward = CalcDamageTakenRageGain(victim, std::max(damage, cleanDamage->original_damage));
+            victim->RewardRage(rageBaseReward, false);
+        }
+
         if (attacker && attacker->GetTypeId() == TYPEID_PLAYER)
         {
             // random durability for items (HIT DONE)
-            if (durabilityLoss && roll_chance(sWorld->getRate(RATE_DURABILITY_LOSS_DAMAGE)))
+            if (durabilityLoss && roll_chance_f(sWorld->getRate(RATE_DURABILITY_LOSS_DAMAGE)))
             {
                 EquipmentSlots slot = EquipmentSlots(urand(0, EQUIPMENT_SLOT_END-1));
                 attacker->ToPlayer()->DurabilityPointLossForEquipSlot(slot);
@@ -1177,7 +1163,7 @@ bool Unit::HasBreakableByDamageCrowdControlAura(Unit const* excludeCasterChannel
     }
 
     // make player victims stand up automatically
-    if (victim->GetStandState() && victim->IsPlayer() && damagetype != NODAMAGE && damagetype != DOT)
+    if (victim->GetStandState() && victim->IsPlayer())
         victim->SetStandState(UNIT_STAND_STATE_STAND);
 
     return damageTaken;
@@ -1200,6 +1186,8 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage* damageInfo, int32 dama
         return;
 
     SpellSchoolMask damageSchoolMask = SpellSchoolMask(damageInfo->schoolMask);
+
+    damageInfo->originalDamage = damage;
 
     // Spells with SPELL_ATTR4_IGNORE_DAMAGE_TAKEN_MODIFIERS ignore resilience because their damage is based off another spell's damage.
     if (!spellInfo->HasAttribute(SPELL_ATTR4_IGNORE_DAMAGE_TAKEN_MODIFIERS))
@@ -1236,13 +1224,9 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage* damageInfo, int32 dama
                 if (blocked)
                 {
                     // double blocked amount if block is critical
-                    uint32 value = victim->GetBlockPercent(GetLevel());
+                    uint32 value = victim->GetBlockPercent();
                     if (victim->IsBlockCritical())
-                    {
                         value *= 2; // double blocked percent
-                        value *= GetTotalAuraMultiplier(SPELL_AURA_MOD_CRITICAL_BLOCK_AMOUNT);
-                    }
-
                     damageInfo->blocked = CalculatePct(damage, value);
                     if (damage <= int32(damageInfo->blocked))
                     {
@@ -1285,7 +1269,6 @@ void Unit::CalculateSpellDamageTaken(SpellNonMeleeDamage* damageInfo, int32 dama
         damage = 0;
 
     damageInfo->damage = damage;
-    damageInfo->originalDamage = damage;
     DamageInfo dmgInfo(*damageInfo, SPELL_DIRECT_DAMAGE, BASE_ATTACK, PROC_HIT_NONE);
     Unit::CalcAbsorbResist(dmgInfo, spell);
     damageInfo->absorb = dmgInfo.GetAbsorb();
@@ -1319,8 +1302,41 @@ void Unit::DealSpellDamage(SpellNonMeleeDamage const* damageInfo, bool durabilit
     }
 
     // Call default DealDamage
-    CleanDamage cleanDamage(damageInfo->cleanDamage, damageInfo->absorb, BASE_ATTACK, MELEE_HIT_NORMAL);
+    CleanDamage cleanDamage(damageInfo->originalDamage, damageInfo->absorb, BASE_ATTACK, MELEE_HIT_NORMAL);
     Unit::DealDamage(this, victim, damageInfo->damage, &cleanDamage, SPELL_DIRECT_DAMAGE, SpellSchoolMask(damageInfo->schoolMask), damageInfo->Spell, durabilityLoss);
+}
+
+// Calculates the normalized rage amount per weapon swing
+/*static*/ uint32 Unit::CalcMeleeAttackRageGain(Unit const* attacker, WeaponAttackType attType)
+{
+    if (!attacker || (attType != BASE_ATTACK && attType != OFF_ATTACK))
+        return 0;
+
+    uint32 rage = uint32(attacker->GetBaseAttackTime(attType) / 1000.f * 6.5f);
+    if (attType == OFF_ATTACK)
+        rage /= 2;
+
+    // Players below level 10 start with a 50% rage gain reduction that slowly diminishes
+    if (attacker->IsPlayer() && attacker->GetLevel() < 10)
+        rage -= (rage / 2.f) * (1.0f - (attacker->GetLevel() / 10.f));
+
+    return uint32(rage * 10);
+}
+
+// The minimum amount a damaging hit should award
+constexpr uint32 MIN_RAGE_AMOUNT = 10;
+
+// Calculates the amount of rage gained from taking damage
+/*static*/ uint32 Unit::CalcDamageTakenRageGain(Unit const* victim, uint32 damage)
+{
+    if (!victim || damage == 0)
+        return 0;
+
+    double multiplier = static_cast<double>(damage) / victim->GetMaxHealth();
+
+    // This formula is based on sampling multiple sniff data at multiple level ranges
+    // There has never been any leak and the only info we have is that the amount is based on max HP and damage taken and that there is a hidden constant
+    return uint32(std::max<uint32>(MIN_RAGE_AMOUNT, std::ceil(400 * multiplier)));
 }
 
 /// @todo for melee need create structure as in
@@ -1343,7 +1359,6 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
     damageInfo->AttackType       = attackType;
     damageInfo->ProcAttacker     = PROC_FLAG_NONE;
     damageInfo->ProcVictim       = PROC_FLAG_NONE;
-    damageInfo->CleanDamage      = 0;
     damageInfo->HitOutCome       = MELEE_HIT_EVADE;
 
     if (!victim)
@@ -1375,7 +1390,6 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
        damageInfo->TargetState    = VICTIMSTATE_IS_IMMUNE;
 
        damageInfo->Damage         = 0;
-       damageInfo->CleanDamage    = 0;
        return;
     }
 
@@ -1390,10 +1404,7 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
 
     // Calculate armor reduction
     if (Unit::IsDamageReducedByArmor(SpellSchoolMask(damageInfo->DamageSchoolMask)))
-    {
         damageInfo->Damage = Unit::CalcArmorReducedDamage(damageInfo->Attacker, damageInfo->Target, damage, nullptr, damageInfo->AttackType);
-        damageInfo->CleanDamage += damage - damageInfo->Damage;
-    }
     else
         damageInfo->Damage = damage;
 
@@ -1407,7 +1418,6 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
             damageInfo->OriginalDamage = damageInfo->Damage;
 
             damageInfo->Damage = 0;
-            damageInfo->CleanDamage = 0;
             return;
         case MELEE_HIT_MISS:
             damageInfo->HitInfo        |= HITINFO_MISS;
@@ -1415,7 +1425,6 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
             damageInfo->OriginalDamage = damageInfo->Damage;
 
             damageInfo->Damage          = 0;
-            damageInfo->CleanDamage     = 0;
             break;
         case MELEE_HIT_NORMAL:
             damageInfo->TargetState     = VICTIMSTATE_HIT;
@@ -1434,20 +1443,16 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
 
             if (mod != 0)
                 AddPct(damageInfo->Damage, mod);
-
-            damageInfo->OriginalDamage = damageInfo->Damage;
             break;
         }
         case MELEE_HIT_PARRY:
             damageInfo->TargetState  = VICTIMSTATE_PARRY;
-            damageInfo->CleanDamage += damageInfo->Damage;
 
             damageInfo->OriginalDamage = damageInfo->Damage;
             damageInfo->Damage = 0;
             break;
         case MELEE_HIT_DODGE:
             damageInfo->TargetState  = VICTIMSTATE_DODGE;
-            damageInfo->CleanDamage += damageInfo->Damage;
 
             damageInfo->OriginalDamage = damageInfo->Damage;
             damageInfo->Damage = 0;
@@ -1456,16 +1461,12 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
             damageInfo->TargetState = VICTIMSTATE_HIT;
             damageInfo->HitInfo    |= HITINFO_BLOCK;
             // 30% damage blocked, double blocked amount if block is critical
-            damageInfo->Blocked = CalculatePct(damageInfo->Damage, damageInfo->Target->GetBlockPercent(GetLevel()));
+            damageInfo->Blocked = CalculatePct(damageInfo->Damage, damageInfo->Target->GetBlockPercent());
             if (damageInfo->Target->IsBlockCritical())
-            {
                 damageInfo->Blocked *= 2;
-                damageInfo->Blocked *= GetTotalAuraMultiplier(SPELL_AURA_MOD_CRITICAL_BLOCK_AMOUNT);
-            }
 
             damageInfo->OriginalDamage = damageInfo->Damage;
             damageInfo->Damage      -= damageInfo->Blocked;
-            damageInfo->CleanDamage += damageInfo->Blocked;
             break;
         case MELEE_HIT_GLANCING:
         {
@@ -1477,7 +1478,6 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
 
             damageInfo->OriginalDamage = damageInfo->Damage;
             float reducePercent = 1.f - leveldif * 0.1f;
-            damageInfo->CleanDamage += damageInfo->Damage - uint32(reducePercent * damageInfo->Damage);
             damageInfo->Damage = uint32(reducePercent * damageInfo->Damage);
             break;
         }
@@ -1501,7 +1501,6 @@ void Unit::CalculateMeleeDamage(Unit* victim, CalcDamageInfo* damageInfo, Weapon
         Unit::ApplyResilience(victim, &resilienceReduction);
     resilienceReduction = damageInfo->Damage - resilienceReduction;
     damageInfo->Damage      -= resilienceReduction;
-    damageInfo->CleanDamage += resilienceReduction;
     damageInfo->OriginalDamage -= resilienceReduction;
 
     // Calculate absorb resist
@@ -1567,7 +1566,7 @@ void Unit::DealMeleeDamage(CalcDamageInfo* damageInfo, bool durabilityLoss)
     }
 
     // Call default DealDamage
-    CleanDamage cleanDamage(damageInfo->CleanDamage, damageInfo->Absorb, damageInfo->AttackType, damageInfo->HitOutCome);
+    CleanDamage cleanDamage(damageInfo->OriginalDamage, damageInfo->Absorb, damageInfo->AttackType, damageInfo->HitOutCome);
     Unit::DealDamage(this, victim, damageInfo->Damage, &cleanDamage, DIRECT_DAMAGE, SpellSchoolMask(damageInfo->DamageSchoolMask), nullptr, durabilityLoss);
 
     // If this is a creature and it attacks from behind it has a probability to daze it's victim
@@ -1589,8 +1588,8 @@ void Unit::DealMeleeDamage(CalcDamageInfo* damageInfo, bool durabilityLoss)
 
         // -probability is between 0% and 40%
         RoundToInterval(chance, 0.0f, 40.0f);
-        if (roll_chance(chance))
-            CastSpell(victim, SPELL_DAZED, true);
+        if (roll_chance_f(chance))
+            CastSpell(victim, 1604 /*SPELL_DAZED*/, true);
     }
 
     if (GetTypeId() == TYPEID_PLAYER)
@@ -1610,7 +1609,7 @@ void Unit::DealMeleeDamage(CalcDamageInfo* damageInfo, bool durabilityLoss)
             SpellInfo const* spellInfo = aurEff->GetSpellInfo();
 
             // Damage shield can be resisted...
-            SpellMissInfo missInfo = victim->SpellHitResult(this, spellInfo, false, true);
+            SpellMissInfo missInfo = victim->SpellHitResult(this, spellInfo, false);
             if (missInfo != SPELL_MISS_NONE)
             {
                 victim->SendSpellMiss(this, spellInfo->Id, missInfo);
@@ -1624,7 +1623,7 @@ void Unit::DealMeleeDamage(CalcDamageInfo* damageInfo, bool durabilityLoss)
                 continue;
             }
 
-            uint32 damage = aurEff->GetAmountAsInt();
+            uint32 damage = aurEff->GetAmount();
             if (Unit* caster = aurEff->GetCaster())
             {
                 damage = caster->SpellDamageBonusDone(this, spellInfo, damage, SPELL_DIRECT_DAMAGE, aurEff->GetSpellEffectInfo());
@@ -1681,7 +1680,7 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
     return !spellInfo || !spellInfo->HasAttribute(SPELL_ATTR0_CU_IGNORE_ARMOR);
 }
 
-/*static*/ uint32 Unit::CalcArmorReducedDamage(Unit const* attacker, Unit* victim, uint32 damage, SpellInfo const* spellInfo, WeaponAttackType attackType /*= MAX_ATTACK*/, uint8 attackerLevel /*= 0*/)
+/*static*/ uint32 Unit::CalcArmorReducedDamage(Unit const* attacker, Unit* victim, uint32 damage, SpellInfo const* spellInfo, WeaponAttackType /*attackType*/ /*= MAX_ATTACK*/, uint8 attackerLevel /*= 0*/)
 {
     float armor = float(victim->GetArmor());
 
@@ -1690,12 +1689,12 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
         armor *= victim->GetArmorMultiplierForTarget(attacker);
 
         // bypass enemy armor by SPELL_AURA_BYPASS_ARMOR_FOR_CASTER
-        SpellEffectValue armorBypassPct = 0;
+        int32 armorBypassPct = 0;
         AuraEffectList const & reductionAuras = victim->GetAuraEffectsByType(SPELL_AURA_BYPASS_ARMOR_FOR_CASTER);
         for (AuraEffectList::const_iterator i = reductionAuras.begin(); i != reductionAuras.end(); ++i)
             if ((*i)->GetCasterGUID() == attacker->GetGUID())
                 armorBypassPct += (*i)->GetAmount();
-        armor = CalculatePct(armor, 100 - std::min(armorBypassPct, 100.0));
+        armor = CalculatePct(armor, 100 - std::min(armorBypassPct, 100));
 
         // Ignore enemy armor by SPELL_AURA_MOD_TARGET_RESISTANCE aura
         armor += attacker->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_TARGET_RESISTANCE, SPELL_SCHOOL_MASK_NORMAL);
@@ -1710,66 +1709,22 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             if (aurEff->GetMiscValue() & SPELL_SCHOOL_MASK_NORMAL && aurEff->IsAffectingSpell(spellInfo))
                 armor = std::floor(AddPct(armor, -aurEff->GetAmount()));
         }
-
-        // Apply Player CR_ARMOR_PENETRATION rating and buffs from stances\specializations etc.
-        if (attacker->GetTypeId() == TYPEID_PLAYER)
-        {
-            float arpPct = attacker->ToPlayer()->GetRatingBonusValue(CR_ARMOR_PENETRATION);
-
-            Item const* weapon = attacker->ToPlayer()->GetWeaponForAttack(attackType, true);
-            arpPct += attacker->GetTotalAuraModifier(SPELL_AURA_MOD_ARMOR_PENETRATION_PCT, [weapon](AuraEffect const* aurEff) -> bool
-            {
-                return aurEff->GetSpellInfo()->IsItemFitToSpellRequirements(weapon);
-            });
-
-            // no more than 100%
-            RoundToInterval(arpPct, 0.f, 100.f);
-
-            float maxArmorPen = 0.f;
-            if (victim->GetLevelForTarget(attacker) < 60)
-                maxArmorPen = float(400 + 85 * victim->GetLevelForTarget(attacker));
-            else
-                maxArmorPen = 400 + 85 * victim->GetLevelForTarget(attacker) + 4.5f * 85 * (victim->GetLevelForTarget(attacker) - 59);
-
-            // Cap armor penetration to this number
-            maxArmorPen = std::min((armor + maxArmorPen) / 3.f, armor);
-            // Figure out how much armor do we ignore
-            armor -= CalculatePct(maxArmorPen, arpPct);
-        }
     }
 
-    if (G3D::fuzzyLe(armor, 0.0f))
-        return damage;
+    if (armor < 0.0f)
+        armor = 0.0f;
 
-    Classes attackerClass = CLASS_NONE;
-    Optional<float> attackerItemLevel;
-    if (attacker)
-    {
-        attackerLevel = attacker->GetLevelForTarget(victim);
-        if (Player const* ownerPlayer = attacker->GetCharmerOrOwnerPlayerOrPlayerItself())
-            attackerItemLevel = ownerPlayer->m_playerData->AvgItemLevel[AsUnderlyingType(AvgItemLevelCategory::EquippedBase)];
-        else
-            attackerClass = Classes(attacker->GetClass());
-    }
+    float levelModifier = attacker ? attacker->GetLevel() : attackerLevel;
+    if (levelModifier > 80)
+        levelModifier = levelModifier + (4.5f * (levelModifier - 59.f)) + (20 * (levelModifier - 80));
+    else if (levelModifier > 59.f)
+        levelModifier = levelModifier + 4.5f * (levelModifier - 59.f);
 
-    // Expansion and ContentTuningID necessary? Does Player get a ContentTuningID too ?
-    float armorConstant = sDB2Manager.EvaluateExpectedStat(ExpectedStatType::ArmorConstant, attackerLevel, -2, 0, attackerClass, 0);
-    if (attackerItemLevel)
-    {
-        uint32 maxLevelForExpansion = GetMaxLevelForExpansion(sWorld->getIntConfig(CONFIG_EXPANSION));
-        if (attackerLevel == maxLevelForExpansion)
-        {
-            float itemLevelDelta = *attackerItemLevel - ASSERT_NOTNULL(sItemLevelByLevelTable.GetRow(maxLevelForExpansion))->ItemLevel;
-            if (uint32 curveId = sDB2Manager.GetGlobalCurveId(GlobalCurve::ArmorItemLevelDiminishing))
-                armorConstant *= sDB2Manager.GetCurveValueAt(curveId, itemLevelDelta);
-        }
-    }
+    float damageReduction = 0.1f * armor / (8.5f * levelModifier + 40.f);
+    damageReduction /= (1.0f + damageReduction);
 
-    if (!(armor + armorConstant))
-        return damage;
-
-    float mitigation = std::min(armor / (armor + armorConstant), 0.85f);
-    return uint32(std::max(damage * (1.0f - mitigation), 0.0f));
+    RoundToInterval(damageReduction, 0.f, 0.75f);
+    return uint32(std::ceil(std::max(damage * (1.0f - damageReduction), 0.0f)));
 }
 
 /*static*/ uint32 Unit::CalcSpellResistedDamage(Unit const* attacker, Unit* victim, uint32 damage, SpellSchoolMask schoolMask, SpellInfo const* spellInfo)
@@ -1807,13 +1762,13 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
     float damageResisted = damage * resistance / 10.f;
     if (damageResisted > 0.0f) // if any damage was resisted
     {
-        float ignoredResistance = 0.0f;
+        int32 ignoredResistance = 0;
 
         if (attacker)
             ignoredResistance += attacker->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_IGNORE_TARGET_RESIST, schoolMask);
 
-        ignoredResistance = std::min(ignoredResistance, 100.0f);
-        ApplyPct(damageResisted, 100.0f - ignoredResistance);
+        ignoredResistance = std::min<int32>(ignoredResistance, 100);
+        ApplyPct(damageResisted, 100 - ignoredResistance);
 
         // Spells with melee and magic school mask, decide whether resistance or armor absorb is higher
         if (spellInfo && spellInfo->HasAttribute(SPELL_ATTR0_CU_SCHOOLMASK_NORMAL_WITH_MAGIC))
@@ -1897,7 +1852,7 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
     // We're going to call functions which can modify content of the list during iteration over it's elements
     // Let's copy the list so we can prevent iterator invalidation
     AuraEffectVector vSchoolAbsorbCopy = CopyAuraEffectList(damageInfo.GetVictim()->GetAuraEffectsByType(SPELL_AURA_SCHOOL_ABSORB));
-    std::ranges::stable_sort(vSchoolAbsorbCopy, Trinity::AbsorbAuraOrderPred());
+    std::sort(vSchoolAbsorbCopy.begin(), vSchoolAbsorbCopy.end(), Trinity::AbsorbAuraOrderPred());
 
     // absorb without mana cost
     for (auto itr = vSchoolAbsorbCopy.begin(); (itr != vSchoolAbsorbCopy.end()) && (damageInfo.GetDamage() > 0); ++itr)
@@ -1911,7 +1866,7 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             continue;
 
         // get amount which can be still absorbed by the aura
-        int32 currentAbsorb = absorbAurEff->GetAmountAsInt();
+        int32 currentAbsorb = absorbAurEff->GetAmount();
         // aura with infinite absorb amount - let the scripts handle absorbtion amount, set here to 0 for safety
         if (currentAbsorb < 0)
             currentAbsorb = 0;
@@ -1979,7 +1934,7 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             continue;
 
         // get amount which can be still absorbed by the aura
-        int32 currentAbsorb = absorbAurEff->GetAmountAsInt();
+        int32 currentAbsorb = absorbAurEff->GetAmount();
         // aura with infinite absorb amount - let the scripts handle absorbtion amount, set here to 0 for safety
         if (currentAbsorb < 0)
             currentAbsorb = 0;
@@ -2096,8 +2051,6 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             log.damage = splitDamage;
             log.originalDamage = splitDamage;
             log.absorb = split_absorb;
-            log.periodicLog = damageInfo.GetDamageType() == DOT;
-            log.HitInfo |= SPELL_HIT_TYPE_SPLIT;
             caster->SendSpellNonMeleeDamageLog(&log);
 
             // break 'Fear' and similar auras
@@ -2112,7 +2065,6 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
         return;
 
     AuraEffectVector vHealAbsorb = CopyAuraEffectList(healInfo.GetTarget()->GetAuraEffectsByType(SPELL_AURA_SCHOOL_HEAL_ABSORB));
-    std::ranges::stable_sort(vHealAbsorb, Trinity::AbsorbAuraOrderPred());
     for (auto i = vHealAbsorb.begin(); i != vHealAbsorb.end() && healInfo.GetHeal() > 0; ++i)
     {
         AuraEffect* absorbAurEff = *i;
@@ -2124,7 +2076,7 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             continue;
 
         // get amount which can be still absorbed by the aura
-        int32 currentAbsorb = absorbAurEff->GetAmountAsInt();
+        int32 currentAbsorb = absorbAurEff->GetAmount();
         // aura with infinite absorb amount - let the scripts handle absorbtion amount, set here to 0 for safety
         if (currentAbsorb < 0)
             currentAbsorb = 0;
@@ -2167,8 +2119,7 @@ void Unit::HandleEmoteCommand(Emote emoteId, Player* target /*=nullptr*/, Trinit
             absorbLog.AbsorbSpellID = absorbAurEff->GetId();
             absorbLog.Absorbed = currentAbsorb;
             absorbLog.OriginalHeal = healInfo.GetOriginalHeal();
-            absorbLog.LogData.Initialize(healInfo.GetTarget());
-            healInfo.GetTarget()->SendCombatLogMessage(&absorbLog);
+            healInfo.GetTarget()->SendMessageToSet(absorbLog.Write(), true);
         }
     }
 }
@@ -2246,19 +2197,6 @@ void Unit::DoMeleeAttackIfReady()
     }
 }
 
-// Calculates the normalized rage amount per weapon swing
-static uint32 CalcMeleeAttackRageGain(Unit const* attacker, WeaponAttackType attType)
-{
-    if (!attacker || (attType != BASE_ATTACK && attType != OFF_ATTACK))
-        return 0;
-
-    uint32 rage = uint32(attacker->GetBaseAttackTime(attType) / 1000.f * 1.75f);
-    if (attType == OFF_ATTACK)
-        rage /= 2;
-
-    return rage;
-}
-
 void Unit::AttackerStateUpdate(Unit* victim, WeaponAttackType attType, bool extra)
 {
     if (HasUnitFlag(UNIT_FLAG_PACIFIED))
@@ -2268,9 +2206,6 @@ void Unit::AttackerStateUpdate(Unit* victim, WeaponAttackType attType, bool extr
         return;
 
     if (HasAuraType(SPELL_AURA_DISABLE_ATTACKING_EXCEPT_ABILITIES))
-        return;
-
-    if (HasAuraType(SPELL_AURA_DISABLE_AUTOATTACK))
         return;
 
     if (!victim->IsAlive())
@@ -2333,7 +2268,7 @@ void Unit::AttackerStateUpdate(Unit* victim, WeaponAttackType attType, bool extr
                 if (uint32 rageReward = CalcMeleeAttackRageGain(this, attType))
                 {
                     damageInfo.HitInfo |= HITINFO_RAGE_GAIN;
-                    damageInfo.RageGained = RewardRage(rageReward);
+                    damageInfo.RageGained = RewardRage(rageReward, true);
                 }
             }
 
@@ -2560,15 +2495,7 @@ void Unit::SendMeleeAttackStart(Unit* victim)
 
 void Unit::SendMeleeAttackStop(Unit* victim)
 {
-    WorldPackets::Combat::SAttackStop attackStop;
-    attackStop.Attacker = GetGUID();
-    if (victim)
-    {
-        attackStop.Victim = victim->GetGUID();
-        attackStop.NowDead = !victim->IsAlive();
-    }
-
-    SendMessageToSet(attackStop.Write(), true);
+    SendMessageToSet(WorldPackets::Combat::SAttackStop(this, victim).Write(), true);
 
     if (victim)
         TC_LOG_DEBUG("entities.unit", "{} stopped attacking {}", GetGUID().ToString(), victim->GetGUID().ToString());
@@ -2578,17 +2505,17 @@ void Unit::SendMeleeAttackStop(Unit* victim)
 
 bool Unit::IsBlockCritical() const
 {
-    if (roll_chance(GetTotalAuraModifier(SPELL_AURA_MOD_BLOCK_CRIT_CHANCE)))
+    if (roll_chance_i(GetTotalAuraModifier(SPELL_AURA_MOD_BLOCK_CRIT_CHANCE)))
         return true;
     return false;
 }
 
-float Unit::GetMechanicResistChance(SpellInfo const* spellInfo) const
+int32 Unit::GetMechanicResistChance(SpellInfo const* spellInfo) const
 {
     if (!spellInfo)
         return 0;
 
-    float resistMech = 0;
+    int32 resistMech = 0;
     for (SpellEffectInfo const& effect : spellInfo->GetEffects())
     {
         if (!effect.IsEffect())
@@ -2597,13 +2524,13 @@ float Unit::GetMechanicResistChance(SpellInfo const* spellInfo) const
         int32 effectMech = spellInfo->GetEffectMechanic(effect.EffectIndex);
         if (effectMech)
         {
-            float temp = GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_MECHANIC_RESISTANCE, effectMech);
+            int32 temp = GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_MECHANIC_RESISTANCE, effectMech);
             if (resistMech < temp)
                 resistMech = temp;
         }
     }
 
-    return std::max(resistMech, 0.0f);
+    return std::max(resistMech, 0);
 }
 
 bool Unit::CanUseAttackType(uint8 attacktype) const
@@ -2644,7 +2571,7 @@ SpellMissInfo Unit::MeleeSpellHitResult(Unit* victim, SpellInfo const* spellInfo
         return SPELL_MISS_MISS;
 
     // Chance resist mechanic
-    int32 resist_chance = victim->GetMechanicResistChance(spellInfo) * 100.0f;
+    int32 resist_chance = victim->GetMechanicResistChance(spellInfo) * 100;
     tmp += resist_chance;
     if (roll < tmp)
         return SPELL_MISS_RESIST;
@@ -2674,7 +2601,7 @@ SpellMissInfo Unit::MeleeSpellHitResult(Unit* victim, SpellInfo const* spellInfo
         // only if in front
         if (!victim->HasUnitState(UNIT_STATE_CONTROLLED) && (victim->HasInArc(float(M_PI), this) || victim->HasAuraType(SPELL_AURA_IGNORE_HIT_DIRECTION)))
         {
-            int32 deflect_chance = victim->GetTotalAuraModifier(SPELL_AURA_DEFLECT_SPELLS) * 100.0f;
+            int32 deflect_chance = victim->GetTotalAuraModifier(SPELL_AURA_DEFLECT_SPELLS) * 100;
             tmp += deflect_chance;
             if (roll < tmp)
                 return SPELL_MISS_DEFLECT;
@@ -3024,9 +2951,6 @@ void Unit::_UpdateAutoRepeatSpell()
 {
     SpellInfo const* autoRepeatSpellInfo = m_currentSpells[CURRENT_AUTOREPEAT_SPELL]->m_spellInfo;
 
-    if (HasAuraType(SPELL_AURA_DISABLE_AUTOATTACK))
-        return;
-
     // check "realtime" interrupts
     // don't cancel spells which are affected by a SPELL_AURA_CAST_WHILE_WALKING effect
     if ((isMoving() && m_currentSpells[CURRENT_AUTOREPEAT_SPELL]->CheckMovement() != SPELL_CAST_OK) || IsNonMeleeSpellCast(false, false, true, autoRepeatSpellInfo->Id == 75))
@@ -3056,28 +2980,6 @@ void Unit::_UpdateAutoRepeatSpell()
         Spell* spell = new Spell(this, autoRepeatSpellInfo, TRIGGERED_IGNORE_GCD);
         spell->prepare(m_currentSpells[CURRENT_AUTOREPEAT_SPELL]->m_targets);
     }
-}
-
-void Unit::AddChannelObject(ObjectGuid guid)
-{
-    AddDynamicUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ChannelObjects)) = guid;
-}
-
-void Unit::SetChannelObject(uint32 slot, ObjectGuid guid)
-{
-    SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ChannelObjects, slot), guid);
-}
-
-void Unit::RemoveChannelObject(ObjectGuid guid)
-{
-    int32 index = m_unitData->ChannelObjects.FindIndex(guid);
-    if (index >= 0)
-        RemoveDynamicUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ChannelObjects), index);
-}
-
-void Unit::ClearChannelObjects()
-{
-    ClearDynamicUpdateFieldValues(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ChannelObjects));
 }
 
 void Unit::SetCurrentCastSpell(Spell* pSpell)
@@ -3158,8 +3060,7 @@ void Unit::SetCurrentCastSpell(Spell* pSpell)
     pSpell->m_selfContainer = &(m_currentSpells[pSpell->GetCurrentContainer()]);
 }
 
-void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool withInstant,
-    SpellCastResult result, Optional<SpellCastResult> resultOther /*= {}*/, ObjectGuid const& interrupter /*= ObjectGuid::Empty*/)
+void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool withInstant)
 {
     //TC_LOG_DEBUG("entities.unit", "Interrupt spell for unit {}.", GetEntry());
     Spell* spell = m_currentSpells[spellType];
@@ -3177,7 +3078,7 @@ void Unit::InterruptSpell(CurrentSpellTypes spellType, bool withDelayed, bool wi
                 ToPlayer()->SendAutoRepeatCancel(this);
 
         if (spell->getState() != SPELL_STATE_FINISHED)
-            spell->cancel(result, resultOther, interrupter);
+            spell->cancel();
         else
         {
             m_currentSpells[spellType] = nullptr;
@@ -3196,7 +3097,7 @@ void Unit::FinishSpell(CurrentSpellTypes spellType, SpellCastResult result /*= S
         return;
 
     if (spellType == CURRENT_CHANNELED_SPELL)
-        spell->SendChannelUpdate(0, result);
+        spell->SendChannelUpdate(0);
 
     spell->finish(result);
 }
@@ -3348,12 +3249,13 @@ bool Unit::IsOnOceanFloor() const
 
 void Unit::ProcessPositionDataChanged(PositionFullTerrainStatus const& data)
 {
+    ZLiquidStatus oldLiquidStatus = GetLiquidStatus();
     WorldObject::ProcessPositionDataChanged(data);
-    UpdateLiquidStatusOnPositionChange(data.liquidInfo);
+    ProcessTerrainStatusUpdate(oldLiquidStatus, data.liquidInfo);
     SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::CurrentAreaID), data.areaId);
 }
 
-void Unit::UpdateLiquidStatusOnPositionChange(Optional<LiquidData> const& newLiquidData)
+void Unit::ProcessTerrainStatusUpdate(ZLiquidStatus oldLiquidStatus, Optional<LiquidData> const& newLiquidData)
 {
     if (!IsControlledByPlayer())
         return;
@@ -3372,14 +3274,18 @@ void Unit::UpdateLiquidStatusOnPositionChange(Optional<LiquidData> const& newLiq
     {
         if (_lastLiquid && _lastLiquid->SpellID)
             RemoveAurasDueToSpell(_lastLiquid->SpellID);
+        Player* player = GetCharmerOrOwnerPlayerOrPlayerItself();
 
         // Set _lastLiquid before casting liquid spell to avoid infinite loops
         _lastLiquid = curLiquid;
 
-        Player* player = GetCharmerOrOwnerPlayerOrPlayerItself();
         if (curLiquid && curLiquid->SpellID && (!player || !player->IsGameMaster()))
             CastSpell(this, curLiquid->SpellID, true);
     }
+
+    // mount capability depends on liquid state change
+    if (oldLiquidStatus != GetLiquidStatus())
+        UpdateMountCapability();
 }
 
 void Unit::DeMorph()
@@ -3417,13 +3323,13 @@ Aura* Unit::_TryStackingOrRefreshingExistingAura(AuraCreateInfo& createInfo)
                 if (!auraEff)
                     continue;
 
-                SpellEffectValue bp;
+                int32 bp;
                 if (createInfo.BaseAmount)
                     bp = *(createInfo.BaseAmount + spellEffectInfo.EffectIndex);
                 else
-                    bp = spellEffectInfo.BasePoints;
+                    bp = int32(spellEffectInfo.BasePoints);
 
-                SpellEffectValue* oldBP = const_cast<SpellEffectValue*>(&(auraEff->m_baseAmount));
+                int32* oldBP = const_cast<int32*>(&(auraEff->m_baseAmount));
                 if (spellEffectInfo.EffectAttributes.HasFlag(SpellEffectAttributes::AuraPointsStack))
                     *oldBP += bp;
                 else
@@ -3569,7 +3475,7 @@ void Unit::_ApplyAura(AuraApplication* aurApp, uint32 effMask)
         return;
 
     // Sitdown on apply aura req seated
-    if (aura->GetSpellInfo()->HasAuraInterruptFlag(SpellAuraInterruptFlags::Standing) && GetStandState() == UNIT_STAND_STATE_STAND)
+    if (aura->GetSpellInfo()->HasAuraInterruptFlag(SpellAuraInterruptFlags::Standing) && !IsSitState())
         SetStandState(UNIT_STAND_STATE_SIT);
 
     Unit* caster = aura->GetCaster();
@@ -3580,24 +3486,20 @@ void Unit::_ApplyAura(AuraApplication* aurApp, uint32 effMask)
     aura->HandleAuraSpecificMods(aurApp, caster, true, false);
 
     // apply effects of the aura
-    for (AuraEffect const* aurEff : aura->GetAuraEffects())
+    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
     {
-        if (effMask & 1 << aurEff->GetEffIndex())
-        {
-            aurApp->_HandleEffect(aurEff->GetEffIndex(), true);
-            if (aurApp->GetRemoveMode())
-                break;
-        }
+        if (effMask & 1 << i && (!aurApp->GetRemoveMode()))
+            aurApp->_HandleEffect(i, true);
     }
 
     if (Player* player = ToPlayer())
     {
-        if (sConditionMgr->IsSpellUsedInSpellClickConditions(aura->GetId()))
+        if (sConditionMgr->IsSpellUsedInSpellClickConditions(aurApp->GetBase()->GetId()))
             player->UpdateVisibleObjectInteractions(false, true, false, false);
 
-        player->FailCriteria(CriteriaFailEvent::GainAura, aura->GetId());
-        player->StartCriteria(CriteriaStartEvent::GainAura, aura->GetId());
-        player->UpdateCriteria(CriteriaType::GainAura, aura->GetId(), 0, 0, caster);
+        player->FailCriteria(CriteriaFailEvent::GainAura, aurApp->GetBase()->GetId());
+        player->StartCriteria(CriteriaStartEvent::GainAura, aurApp->GetBase()->GetId());
+        player->UpdateCriteria(CriteriaType::GainAura, aurApp->GetBase()->GetId());
     }
 }
 
@@ -3653,9 +3555,11 @@ void Unit::_UnapplyAura(AuraApplicationMap::iterator& i, AuraRemoveMode removeMo
     aura->_UnapplyForTarget(this, caster, aurApp);
 
     // remove effects of the spell - needs to be done after removing aura from lists
-    for (AuraEffect const* aurEff : aura->GetAuraEffects())
-        if (aurApp->HasEffect(aurEff->GetEffIndex()))
-            aurApp->_HandleEffect(aurEff->GetEffIndex(), false);
+    for (uint8 itr = 0; itr < MAX_SPELL_EFFECTS; ++itr)
+    {
+        if (aurApp->HasEffect(itr))
+            aurApp->_HandleEffect(itr, false);
+    }
 
     // all effect mustn't be applied
     ASSERT(!aurApp->GetEffectMask());
@@ -3742,8 +3646,8 @@ void Unit::_RegisterAuraEffect(AuraEffect* aurEff, bool apply)
         m_modAuras[aurEff->GetAuraType()].push_front(aurEff);
         if (Player* player = ToPlayer())
         {
-            player->FailCriteria(CriteriaFailEvent::GainAuraEffect, aurEff->GetAuraType());
             player->StartCriteria(CriteriaStartEvent::GainAuraEffect, aurEff->GetAuraType());
+            player->FailCriteria(CriteriaFailEvent::GainAuraEffect, aurEff->GetAuraType());
         }
     }
     else
@@ -3867,10 +3771,10 @@ void Unit::RemoveAura(AuraApplication * aurApp, AuraRemoveMode mode)
     if (aurApp->GetRemoveMode())
     {
         // remove remaining effects of an aura
-        for (AuraEffect const* aurEff : aurApp->GetBase()->GetAuraEffects())
+        for (uint8 itr = 0; itr < MAX_SPELL_EFFECTS; ++itr)
         {
-            if (aurApp->HasEffect(aurEff->GetEffIndex()))
-                aurApp->_HandleEffect(aurEff->GetEffIndex(), false);
+            if (aurApp->HasEffect(itr))
+                aurApp->_HandleEffect(itr, false);
         }
         return;
     }
@@ -4043,19 +3947,26 @@ void Unit::RemoveAurasDueToSpellBySteal(uint32 spellId, ObjectGuid casterGUID, W
         Aura* aura = iter->second;
         if (aura->GetCasterGUID() == casterGUID)
         {
-            std::array<SpellEffectValue, MAX_SPELL_EFFECTS> damage = { };
-            std::array<SpellEffectValue, MAX_SPELL_EFFECTS> baseDamage = { };
-            std::bitset<MAX_SPELL_EFFECTS> effMask;
-            std::bitset<MAX_SPELL_EFFECTS> recalculateMask;
+            int32 damage[MAX_SPELL_EFFECTS];
+            int32 baseDamage[MAX_SPELL_EFFECTS];
+            uint32 effMask = 0;
+            uint32 recalculateMask = 0;
             Unit* caster = aura->GetCaster();
-            for (AuraEffect const* aurEff : aura->GetAuraEffects())
+            for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
             {
-                SpellEffIndex i = aurEff->GetEffIndex();
-                baseDamage[i] = aurEff->GetBaseAmount();
-                damage[i] = aurEff->GetAmount();
-                effMask[i] = true;
-                if (aurEff->CanBeRecalculated())
-                    recalculateMask[i] = true;
+                if (aura->GetEffect(i))
+                {
+                    baseDamage[i] = aura->GetEffect(i)->GetBaseAmount();
+                    damage[i] = aura->GetEffect(i)->GetAmount();
+                    effMask |= 1 << i;
+                    if (aura->GetEffect(i)->CanBeRecalculated())
+                        recalculateMask |= 1 << i;
+                }
+                else
+                {
+                    baseDamage[i] = 0;
+                    damage[i] = 0;
+                }
             }
 
             bool stealCharge = aura->GetSpellInfo()->HasAttribute(SPELL_ATTR7_DISPEL_REMOVES_CHARGES);
@@ -4078,10 +3989,10 @@ void Unit::RemoveAurasDueToSpellBySteal(uint32 spellId, ObjectGuid casterGUID, W
                     if (aura->IsSingleTarget())
                         aura->UnregisterSingleTarget();
 
-                    AuraCreateInfo createInfo(aura->GetCastId(), aura->GetSpellInfo(), aura->GetCastDifficulty(), effMask.to_ulong(), unitStealer);
+                    AuraCreateInfo createInfo(aura->GetCastId(), aura->GetSpellInfo(), aura->GetCastDifficulty(), effMask, unitStealer);
                     createInfo
                         .SetCasterGUID(aura->GetCasterGUID())
-                        .SetBaseAmount(baseDamage.data())
+                        .SetBaseAmount(baseDamage)
                         .SetStackAmount(stolenCharges);
 
                     if (Aura* newAura = Aura::TryRefreshStackOrCreate(createInfo))
@@ -4095,7 +4006,7 @@ void Unit::RemoveAurasDueToSpellBySteal(uint32 spellId, ObjectGuid casterGUID, W
                             caster->GetSingleCastAuras().push_front(aura);
                         }
                         // FIXME: using aura->GetMaxDuration() maybe not blizzlike but it fixes stealing of spells like Innervate
-                        newAura->SetLoadedState(aura->GetMaxDuration(), int32(dur), stealCharge ? stolenCharges : aura->GetCharges(), recalculateMask.to_ulong(), damage.data());
+                        newAura->SetLoadedState(aura->GetMaxDuration(), int32(dur), stealCharge ? stolenCharges : aura->GetCharges(), recalculateMask, &damage[0]);
                         newAura->ApplyForTargets();
                     }
                 }
@@ -4849,7 +4760,7 @@ bool Unit::HasAuraTypeWithValue(AuraType auraType, int32 value) const
 {
     AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
     for (AuraEffectList::const_iterator i = mTotalAuraList.begin(); i != mTotalAuraList.end(); ++i)
-        if (value == (*i)->GetAmountAsInt())
+        if (value == (*i)->GetAmount())
             return true;
     return false;
 }
@@ -4983,14 +4894,14 @@ uint32 Unit::GetDoTsByCaster(ObjectGuid casterGUID) const
     return dots;
 }
 
-float Unit::GetTotalAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
+int32 Unit::GetTotalAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
     AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
     if (mTotalAuraList.empty())
-        return 0.0f;
+        return 0;
 
-    std::map<SpellGroup, SpellEffectValue> sameEffectSpellGroup;
-    SpellEffectValue modifier = 0;
+    std::map<SpellGroup, int32> sameEffectSpellGroup;
+    int32 modifier = 0;
 
     for (AuraEffect const* aurEff : mTotalAuraList)
     {
@@ -4998,7 +4909,7 @@ float Unit::GetTotalAuraModifier(AuraType auraType, std::function<bool(AuraEffec
         {
             // Check if the Aura Effect has a the Same Effect Stack Rule and if so, use the highest amount of that SpellGroup
             // If the Aura Effect does not have this Stack Rule, it returns false so we can add to the multiplier as usual
-            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), auraType, aurEff->GetAmount(), sameEffectSpellGroup))
+            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), static_cast<uint32>(auraType), aurEff->GetAmount(), sameEffectSpellGroup))
                 modifier += aurEff->GetAmount();
         }
     }
@@ -5007,7 +4918,7 @@ float Unit::GetTotalAuraModifier(AuraType auraType, std::function<bool(AuraEffec
     for (auto itr = sameEffectSpellGroup.begin(); itr != sameEffectSpellGroup.end(); ++itr)
         modifier += itr->second;
 
-    return static_cast<float>(modifier);
+    return modifier;
 }
 
 float Unit::GetTotalAuraMultiplier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
@@ -5016,8 +4927,8 @@ float Unit::GetTotalAuraMultiplier(AuraType auraType, std::function<bool(AuraEff
     if (mTotalAuraList.empty())
         return 1.0f;
 
-    std::map<SpellGroup, SpellEffectValue> sameEffectSpellGroup;
-    SpellEffectValue multiplier = 1.0;
+    std::map<SpellGroup, int32> sameEffectSpellGroup;
+    float multiplier = 1.0f;
 
     for (AuraEffect const* aurEff : mTotalAuraList)
     {
@@ -5025,7 +4936,7 @@ float Unit::GetTotalAuraMultiplier(AuraType auraType, std::function<bool(AuraEff
         {
             // Check if the Aura Effect has a the Same Effect Stack Rule and if so, use the highest amount of that SpellGroup
             // If the Aura Effect does not have this Stack Rule, it returns false so we can add to the multiplier as usual
-            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), auraType, aurEff->GetAmount(), sameEffectSpellGroup))
+            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), static_cast<uint32>(auraType), aurEff->GetAmount(), sameEffectSpellGroup))
                 AddPct(multiplier, aurEff->GetAmount());
         }
     }
@@ -5034,42 +4945,42 @@ float Unit::GetTotalAuraMultiplier(AuraType auraType, std::function<bool(AuraEff
     for (auto itr = sameEffectSpellGroup.begin(); itr != sameEffectSpellGroup.end(); ++itr)
         AddPct(multiplier, itr->second);
 
-    return static_cast<float>(multiplier);
+    return multiplier;
 }
 
-float Unit::GetMaxPositiveAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
+int32 Unit::GetMaxPositiveAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
     AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
     if (mTotalAuraList.empty())
-        return 0.0f;
+        return 0;
 
-    SpellEffectValue modifier = 0;
+    int32 modifier = 0;
     for (AuraEffect const* aurEff : mTotalAuraList)
     {
         if (predicate(aurEff))
             modifier = std::max(modifier, aurEff->GetAmount());
     }
 
-    return static_cast<float>(modifier);
+    return modifier;
 }
 
-float Unit::GetMaxNegativeAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
+int32 Unit::GetMaxNegativeAuraModifier(AuraType auraType, std::function<bool(AuraEffect const*)> const& predicate) const
 {
     AuraEffectList const& mTotalAuraList = GetAuraEffectsByType(auraType);
     if (mTotalAuraList.empty())
-        return 0.0f;
+        return 0;
 
-    SpellEffectValue modifier = 0;
+    int32 modifier = 0;
     for (AuraEffect const* aurEff : mTotalAuraList)
     {
         if (predicate(aurEff))
             modifier = std::min(modifier, aurEff->GetAmount());
     }
 
-    return static_cast<float>(modifier);
+    return modifier;
 }
 
-float Unit::GetTotalAuraModifier(AuraType auraType) const
+int32 Unit::GetTotalAuraModifier(AuraType auraType) const
 {
     return GetTotalAuraModifier(auraType, [](AuraEffect const* /*aurEff*/) { return true; });
 }
@@ -5079,17 +4990,17 @@ float Unit::GetTotalAuraMultiplier(AuraType auraType) const
     return GetTotalAuraMultiplier(auraType, [](AuraEffect const* /*aurEff*/) { return true; });
 }
 
-float Unit::GetMaxPositiveAuraModifier(AuraType auraType) const
+int32 Unit::GetMaxPositiveAuraModifier(AuraType auraType) const
 {
     return GetMaxPositiveAuraModifier(auraType, [](AuraEffect const* /*aurEff*/) { return true; });
 }
 
-float Unit::GetMaxNegativeAuraModifier(AuraType auraType) const
+int32 Unit::GetMaxNegativeAuraModifier(AuraType auraType) const
 {
     return GetMaxNegativeAuraModifier(auraType, [](AuraEffect const* /*aurEff*/) { return true; });
 }
 
-float Unit::GetTotalAuraModifierByMiscMask(AuraType auraType, uint32 miscMask) const
+int32 Unit::GetTotalAuraModifierByMiscMask(AuraType auraType, uint32 miscMask) const
 {
     return GetTotalAuraModifier(auraType, [miscMask](AuraEffect const* aurEff) -> bool
     {
@@ -5109,7 +5020,7 @@ float Unit::GetTotalAuraMultiplierByMiscMask(AuraType auraType, uint32 miscMask)
     });
 }
 
-float Unit::GetMaxPositiveAuraModifierByMiscMask(AuraType auraType, uint32 miscMask, AuraEffect const* except /*= nullptr*/) const
+int32 Unit::GetMaxPositiveAuraModifierByMiscMask(AuraType auraType, uint32 miscMask, AuraEffect const* except /*= nullptr*/) const
 {
     return GetMaxPositiveAuraModifier(auraType, [miscMask, except](AuraEffect const* aurEff) -> bool
     {
@@ -5119,7 +5030,7 @@ float Unit::GetMaxPositiveAuraModifierByMiscMask(AuraType auraType, uint32 miscM
     });
 }
 
-float Unit::GetMaxNegativeAuraModifierByMiscMask(AuraType auraType, uint32 miscMask) const
+int32 Unit::GetMaxNegativeAuraModifierByMiscMask(AuraType auraType, uint32 miscMask) const
 {
     return GetMaxNegativeAuraModifier(auraType, [miscMask](AuraEffect const* aurEff) -> bool
     {
@@ -5129,7 +5040,7 @@ float Unit::GetMaxNegativeAuraModifierByMiscMask(AuraType auraType, uint32 miscM
     });
 }
 
-float Unit::GetTotalAuraModifierByMiscValue(AuraType auraType, int32 miscValue) const
+int32 Unit::GetTotalAuraModifierByMiscValue(AuraType auraType, int32 miscValue) const
 {
     return GetTotalAuraModifier(auraType, [miscValue](AuraEffect const* aurEff) -> bool
     {
@@ -5149,7 +5060,7 @@ float Unit::GetTotalAuraMultiplierByMiscValue(AuraType auraType, int32 miscValue
     });
 }
 
-float Unit::GetMaxPositiveAuraModifierByMiscValue(AuraType auraType, int32 miscValue) const
+int32 Unit::GetMaxPositiveAuraModifierByMiscValue(AuraType auraType, int32 miscValue) const
 {
     return GetMaxPositiveAuraModifier(auraType, [miscValue](AuraEffect const* aurEff) -> bool
     {
@@ -5159,7 +5070,7 @@ float Unit::GetMaxPositiveAuraModifierByMiscValue(AuraType auraType, int32 miscV
     });
 }
 
-float Unit::GetMaxNegativeAuraModifierByMiscValue(AuraType auraType, int32 miscValue) const
+int32 Unit::GetMaxNegativeAuraModifierByMiscValue(AuraType auraType, int32 miscValue) const
 {
     return GetMaxNegativeAuraModifier(auraType, [miscValue](AuraEffect const* aurEff) -> bool
     {
@@ -5169,7 +5080,7 @@ float Unit::GetMaxNegativeAuraModifierByMiscValue(AuraType auraType, int32 miscV
     });
 }
 
-float Unit::GetTotalAuraModifierByAffectMask(AuraType auraType, SpellInfo const* affectedSpell) const
+int32 Unit::GetTotalAuraModifierByAffectMask(AuraType auraType, SpellInfo const* affectedSpell) const
 {
     return GetTotalAuraModifier(auraType, [affectedSpell](AuraEffect const* aurEff) -> bool
     {
@@ -5189,7 +5100,7 @@ float Unit::GetTotalAuraMultiplierByAffectMask(AuraType auraType, SpellInfo cons
     });
 }
 
-float Unit::GetMaxPositiveAuraModifierByAffectMask(AuraType auraType, SpellInfo const* affectedSpell) const
+int32 Unit::GetMaxPositiveAuraModifierByAffectMask(AuraType auraType, SpellInfo const* affectedSpell) const
 {
     return GetMaxPositiveAuraModifier(auraType, [affectedSpell](AuraEffect const* aurEff) -> bool
     {
@@ -5199,7 +5110,7 @@ float Unit::GetMaxPositiveAuraModifierByAffectMask(AuraType auraType, SpellInfo 
     });
 }
 
-float Unit::GetMaxNegativeAuraModifierByAffectMask(AuraType auraType, SpellInfo const* affectedSpell) const
+int32 Unit::GetMaxNegativeAuraModifierByAffectMask(AuraType auraType, SpellInfo const* affectedSpell) const
 {
     return GetMaxNegativeAuraModifier(auraType, [affectedSpell](AuraEffect const* aurEff) -> bool
     {
@@ -5223,60 +5134,72 @@ void Unit::UpdateStatBuffMod(Stats stat)
 {
     float modPos = 0.0f;
     float modNeg = 0.0f;
-    float factor = 0.0f;
+    float currentValue = 0.0f;
+    float previousValue = 0.0f;
 
     UnitMods const unitMod = static_cast<UnitMods>(UNIT_MOD_STAT_START + AsUnderlyingType(stat));
 
     // includes value from items and enchantments
-    float modValue = GetFlatModifierValue(unitMod, BASE_VALUE);
-    if (modValue > 0.f)
-        modPos += modValue;
-    else
-        modNeg += modValue;
-
+    float baseModValue = GetFlatModifierValue(unitMod, BASE_VALUE);
     if (IsGuardian())
-    {
-        modValue = static_cast<Guardian*>(this)->GetBonusStatFromOwner(stat);
-        if (modValue > 0.f)
-            modPos += modValue;
-        else
-            modNeg += modValue;
-    }
+        baseModValue = static_cast<Guardian*>(this)->GetBonusStatFromOwner(stat);
+
+    if (baseModValue >= 0.0f)
+        modPos = baseModValue;
+    else
+        modNeg = baseModValue;
+
+    previousValue = baseModValue;
 
     // SPELL_AURA_MOD_STAT_BONUS_PCT only affects BASE_VALUE
-    modPos = CalculatePct(modPos, std::max(GetFlatModifierValue(unitMod, BASE_PCT_EXCLUDE_CREATE), -100.0f));
-    modNeg = CalculatePct(modNeg, std::max(GetFlatModifierValue(unitMod, BASE_PCT_EXCLUDE_CREATE), -100.0f));
+    currentValue = CalculatePct(baseModValue, std::max(GetFlatModifierValue(unitMod, BASE_PCT_EXCLUDE_CREATE), -100.0f));
+    if (G3D::fuzzyGe(currentValue, previousValue))
+        modPos += currentValue - previousValue;
+    else
+        modNeg -= previousValue - currentValue;
 
-    modPos += GetTotalAuraModifier(SPELL_AURA_MOD_STAT, [stat](AuraEffect const* aurEff) -> bool
-        {
-            if ((aurEff->GetMiscValue() < 0 || aurEff->GetMiscValue() == stat) && aurEff->GetAmount() > 0)
-                return true;
-            return false;
-        });
-
-    modNeg += GetTotalAuraModifier(SPELL_AURA_MOD_STAT, [stat](AuraEffect const* aurEff) -> bool
-        {
-            if ((aurEff->GetMiscValue() < 0 || aurEff->GetMiscValue() == stat) && aurEff->GetAmount() < 0)
-                return true;
-            return false;
-        });
-
-    factor = GetTotalAuraMultiplier(SPELL_AURA_MOD_PERCENT_STAT, [stat](AuraEffect const* aurEff) -> bool
+    // SPELL_AURA_MOD_PERCENT_STAT affects the base_value as well as the create stat
+    previousValue += GetCreateStat(stat);
+    float multiplier = GetTotalAuraMultiplier(SPELL_AURA_MOD_PERCENT_STAT, [stat](AuraEffect const* aurEff) -> bool
         {
             if (aurEff->GetMiscValue() == -1 || aurEff->GetMiscValue() == stat)
                 return true;
             return false;
         });
 
-    factor *= GetTotalAuraMultiplier(SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, [stat](AuraEffect const* aurEff) -> bool
+    currentValue = previousValue * multiplier;
+    if (G3D::fuzzyGe(currentValue, previousValue))
+        modPos += currentValue - previousValue;
+    else
+        modNeg -= previousValue - currentValue;
+
+    // total_value offsets
+    previousValue += GetTotalAuraModifier(SPELL_AURA_MOD_STAT, [&](AuraEffect const* aurEff) -> bool
         {
-            if (aurEff->GetMiscValue() == -1 || aurEff->GetMiscValue() == stat)
+            if (aurEff->GetMiscValue() < 0 || aurEff->GetMiscValue() == stat)
+            {
+                if (aurEff->GetAmount() > 0)
+                    modPos += aurEff->GetAmount();
+                else
+                    modNeg += aurEff->GetAmount();
+                return true;
+            }
+            return false;
+        });
+
+    // total_pct multiplier
+    multiplier = GetTotalAuraMultiplier(SPELL_AURA_MOD_TOTAL_STAT_PERCENTAGE, [stat](AuraEffect const* aurEff) -> bool
+        {
+            if (!aurEff->GetMiscValueB() || aurEff->GetMiscValueB() & (1 << stat))
                 return true;
             return false;
         });
 
-    modPos *= factor;
-    modNeg *= factor;
+    currentValue = previousValue * multiplier;
+    if (G3D::fuzzyGe(currentValue, previousValue))
+        modPos += currentValue - previousValue;
+    else
+        modNeg -= previousValue - currentValue;
 
     m_floatStatPosBuff[stat] = modPos;
     m_floatStatNegBuff[stat] = modNeg;
@@ -5523,23 +5446,6 @@ void Unit::RemoveAllAreaTriggers(AreaTriggerRemoveReason reason /*= AreaTriggerR
     }
 }
 
-void Unit::EnterAreaTrigger(AreaTrigger* areaTrigger)
-{
-    m_insideAreaTriggers.push_back(areaTrigger);
-}
-
-void Unit::ExitAreaTrigger(AreaTrigger* areaTrigger)
-{
-    std::erase(m_insideAreaTriggers, areaTrigger);
-}
-
-void Unit::ExitAllAreaTriggers()
-{
-    AreaTriggerList atList = std::move(m_insideAreaTriggers);
-    for (AreaTrigger* at : atList)
-        at->HandleUnitExit(this);
-}
-
 void Unit::SendSpellNonMeleeDamageLog(SpellNonMeleeDamage const* log)
 {
     WorldPackets::CombatLog::SpellNonMeleeDamageLog packet;
@@ -5559,7 +5465,6 @@ void Unit::SendSpellNonMeleeDamageLog(SpellNonMeleeDamage const* log)
     packet.Absorbed = log->absorb;
     packet.Resisted = log->resist;
     packet.ShieldBlock = log->blocked;
-    packet.ReflectingSpellID = log->reflectingSpellId;
     packet.Periodic = log->periodicLog;
     packet.Flags = log->HitInfo;
 
@@ -5611,7 +5516,7 @@ void Unit::SendPeriodicAuraLog(SpellPeriodicAuraLogInfo* info)
     data.SpellID = aura->GetId();
     data.LogData.Initialize(this);
 
-    WorldPackets::CombatLog::PeriodicAuraLogEffect& spellLogEffect = data.Effects.emplace_back();
+    WorldPackets::CombatLog::SpellPeriodicAuraLog::SpellLogEffect spellLogEffect;
     spellLogEffect.Effect = aura->GetAuraType();
     spellLogEffect.Amount = info->damage;
     spellLogEffect.OriginalDamage = info->originalDamage;
@@ -5626,6 +5531,8 @@ void Unit::SendPeriodicAuraLog(SpellPeriodicAuraLogInfo* info)
     if (Unit* caster = ObjectAccessor::GetUnit(*this, aura->GetCasterGUID()))
         if (contentTuningParams.GenerateDataForUnits(caster, this))
             spellLogEffect.ContentTuning = contentTuningParams;
+
+    data.Effects.push_back(spellLogEffect);
 
     SendCombatLogMessage(&data);
 }
@@ -5652,7 +5559,7 @@ void Unit::SendSpellDamageImmune(Unit* target, uint32 spellId, bool isPeriodic)
 void Unit::SendAttackStateUpdate(CalcDamageInfo* damageInfo)
 {
     WorldPackets::CombatLog::AttackerStateUpdate packet;
-    packet.Flags = damageInfo->HitInfo;
+    packet.HitInfo = damageInfo->HitInfo;
     packet.AttackerGUID = damageInfo->Attacker->GetGUID();
     packet.VictimGUID = damageInfo->Target->GetGUID();
     packet.Damage = damageInfo->Damage;
@@ -5710,6 +5617,13 @@ void Unit::SetPowerType(Powers power, bool sendUpdate/* = true*/, bool onInit /*
         return;
 
     SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::DisplayPower), power);
+
+    // Creatures can swap out their power type at index 0 so we do keep track of the new power type here
+    if (IsCreature())
+    {
+        _usedPowerTypes[GetPowerIndex(power)] = power;
+        UpdatePowerRegen(power);
+    }
 
     // Update max power
     UpdateMaxPower(power);
@@ -5921,7 +5835,6 @@ bool Unit::Attack(Unit* victim, bool meleeAttack)
 
     m_attacking = victim;
     m_attacking->_addAttacker(this);
-    m_updateFlag.CombatVictim = true;
 
     // Set our target
     SetTarget(victim->GetGUID());
@@ -5972,7 +5885,6 @@ bool Unit::AttackStop()
 
     Unit* victim = m_attacking;
 
-    m_updateFlag.CombatVictim = false;
     m_attacking->_removeAttacker(this);
     m_attacking = nullptr;
 
@@ -6688,18 +6600,18 @@ Unit* Unit::GetNextRandomRaidMemberOrPet(float radius)
     // reserve place for players and pets because resizing vector every unit push is unefficient (vector is reallocated then)
     nearMembers.reserve(group->GetMembersCount() * 2);
 
-    for (GroupReference const& itr : group->GetMembers())
-    {
-        Player* Target = itr.GetSource();
-        // IsHostileTo check duel and controlled by enemy
-        if (Target != this && IsWithinDistInMap(Target, radius) && Target->IsAlive() && !IsHostileTo(Target))
-            nearMembers.push_back(Target);
+    for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
+        if (Player* Target = itr->GetSource())
+        {
+            // IsHostileTo check duel and controlled by enemy
+            if (Target != this && IsWithinDistInMap(Target, radius) && Target->IsAlive() && !IsHostileTo(Target))
+                nearMembers.push_back(Target);
 
         // Push player's pet to vector
         if (Unit* pet = Target->GetGuardianPet())
             if (pet != this && IsWithinDistInMap(pet, radius) && pet->IsAlive() && !IsHostileTo(pet))
                 nearMembers.push_back(pet);
-    }
+        }
 
     if (nearMembers.empty())
         return nullptr;
@@ -6800,13 +6712,44 @@ void Unit::SendEnergizeSpellLog(Unit* victim, uint32 spellID, int32 damage, int3
 
 void Unit::EnergizeBySpell(Unit* victim, SpellInfo const* spellInfo, int32 damage, Powers powerType)
 {
-    if (Player* player = victim->ToPlayer())
-        if (PowerTypeEntry const* powerTypeEntry = sDB2Manager.GetPowerTypeEntry(powerType))
-            if (powerTypeEntry->GetFlags().HasFlag(PowerTypeFlags::UseRegenInterrupt))
-                player->InterruptPowerRegen(powerType);
+    if (PowerTypeEntry const* powerTypeEntry = sDB2Manager.GetPowerTypeEntry(powerType))
+        if (powerTypeEntry->GetFlags().HasFlag(PowerTypeFlags::UseRegenInterrupt))
+            victim->InterruptPowerRegen(powerType);
 
-    int32 gain = victim->ModifyPower(powerType, damage, false);
-    int32 overEnergize = damage - gain;
+    int32 gain = 0;
+    int32 overEnergize = 0;
+
+    if (powerType != POWER_RUNE_BLOOD && powerType != POWER_RUNE_FROST && powerType != POWER_RUNE_UNHOLY)
+    {
+        gain = victim->ModifyPower(powerType, damage, false);
+        overEnergize = damage - gain;
+    }
+
+    if (Player* player = ToPlayer())
+    {
+        // Runes behave a bit differently than regular power. While they do have a legit power type and value, they never are set or changed so we have to use the runes api instead
+        if (player->GetClass() == CLASS_DEATH_KNIGHT)
+        {
+            uint8 runesState = player->GetRunesState();
+            int32 runesToEnergize = damage;
+            for (uint32 i = 0; i < MAX_RUNES && runesToEnergize > 0; ++i)
+            {
+                if (player->GetPowerTypeForBaseRune(i) == powerType && G3D::fuzzyNe(player->GetRuneCooldown(i), 0.0f))
+                {
+                    player->SetRuneCooldown(i, 0.0f);
+                    --runesToEnergize;
+                }
+            }
+
+            // Send rune state diff
+            if (uint8 changeMask = player->GetRunesState() & ~runesState)
+                player->AddRunePower(changeMask);
+
+            gain = damage - runesToEnergize;
+            overEnergize = runesToEnergize;
+        }
+    }
+
     victim->GetThreatManager().ForwardThreatForAssistingMe(this, float(damage) / 2, spellInfo, true);
     SendEnergizeSpellLog(victim, spellInfo->Id, gain, overEnergize, powerType);
 }
@@ -6842,7 +6785,7 @@ int32 Unit::SpellDamageBonusDone(Unit* victim, SpellInfo const* spellProto, int3
     DoneTotalMod = SpellDamagePctDone(victim, spellProto, damagetype, spellEffectInfo);
 
     // Done fixed damage bonus auras
-    int32 DoneAdvertisedBenefit  = SpellBaseDamageBonusDone(spellProto->GetSchoolMask());
+    int32 DoneAdvertisedBenefit  = SpellBaseDamageBonusDone(spellProto->GetSchoolMask(), true);
     // modify spell power by victim's SPELL_AURA_MOD_DAMAGE_TAKEN auras (eg Amplify/Dampen Magic)
     DoneAdvertisedBenefit += victim->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_DAMAGE_TAKEN, spellProto->GetSchoolMask());
 
@@ -6854,12 +6797,12 @@ int32 Unit::SpellDamageBonusDone(Unit* victim, SpellInfo const* spellProto, int3
     // Check for table values
     if (spellEffectInfo.BonusCoefficientFromAP > 0.0f)
     {
-        float attackPowerCoeff = spellEffectInfo.BonusCoefficientFromAP;
+        float ApCoeffMod = spellEffectInfo.BonusCoefficientFromAP;
         if (Player* modOwner = GetSpellModOwner())
         {
-            attackPowerCoeff *= 100.0f;
-            modOwner->ApplySpellMod(spellProto, SpellModOp::BonusCoefficient, attackPowerCoeff);
-            attackPowerCoeff /= 100.0f;
+            ApCoeffMod *= 100.0f;
+            modOwner->ApplySpellMod(spellProto, SpellModOp::BonusCoefficient, ApCoeffMod);
+            ApCoeffMod /= 100.0f;
         }
 
         WeaponAttackType const attType = [&]()
@@ -6872,15 +6815,15 @@ int32 Unit::SpellDamageBonusDone(Unit* victim, SpellInfo const* spellProto, int3
 
             return BASE_ATTACK;
         }();
-        float attackPowerBonus = float(victim->GetTotalAuraModifier(attType != RANGED_ATTACK ? SPELL_AURA_MELEE_ATTACK_POWER_ATTACKER_BONUS : SPELL_AURA_RANGED_ATTACK_POWER_ATTACKER_BONUS));
-        attackPowerBonus += GetTotalAttackPowerValue(attType);
-        DoneTotal += int32(stack * attackPowerCoeff * attackPowerBonus);
+        float APbonus = float(victim->GetTotalAuraModifier(attType != RANGED_ATTACK ? SPELL_AURA_MELEE_ATTACK_POWER_ATTACKER_BONUS : SPELL_AURA_RANGED_ATTACK_POWER_ATTACKER_BONUS));
+        APbonus += GetTotalAttackPowerValue(attType);
+        DoneTotal += int32(stack * ApCoeffMod * APbonus);
     }
 
     // Default calculation
     if (DoneAdvertisedBenefit)
     {
-        float coeff = spellEffectInfo.BonusCoefficient;
+        float coeff = spellEffectInfo.BonusCoefficient * spellProto->GetSpellScalingMultiplier(GetLevel(), false);
         if (Player* modOwner = GetSpellModOwner())
         {
             coeff *= 100.0f;
@@ -6928,8 +6871,8 @@ float Unit::SpellDamagePctDone(Unit* victim, SpellInfo const* spellProto, Damage
         DoneTotalMod *= ToCreature()->GetSpellDamageMod(ToCreature()->GetCreatureTemplate()->Classification);
 
     // Versatility
-    if (Player* modOwner = GetSpellModOwner())
-        AddPct(DoneTotalMod, modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_DONE) + modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY));
+    //if (Player* modOwner = GetSpellModOwner())
+    //    AddPct(DoneTotalMod, modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_DONE) + modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY));
 
     float maxModDamagePercentSchool = 0.0f;
     if (Player const* thisPlayer = ToPlayer())
@@ -6968,6 +6911,13 @@ float Unit::SpellDamagePctDone(Unit* victim, SpellInfo const* spellProto, Damage
         AddPct(DoneTotalMod, GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_DAMAGE_DONE_FOR_MECHANIC, spellEffectInfo.Mechanic));
     else if (spellProto->Mechanic)
         AddPct(DoneTotalMod, GetTotalAuraModifierByMiscValue(SPELL_AURA_MOD_DAMAGE_DONE_FOR_MECHANIC, spellProto->Mechanic));
+
+    // Add SPELL_AURA_MOD_DAMAGE_FROM_MANA percent bonus
+    if (HasAuraType(SPELL_AURA_MOD_DAMAGE_FROM_MANA) && GetMaxPower(POWER_MANA))
+    {
+        float damageFromManaBonus = GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_DAMAGE_FROM_MANA, spellProto->GetSchoolMask());
+        AddPct(DoneTotalMod, ((float)GetPower(POWER_MANA) / GetMaxPower(POWER_MANA)) * damageFromManaBonus);
+    }
 
     // Custom scripted damage
     switch (spellProto->SpellFamilyName)
@@ -7020,12 +6970,12 @@ int32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const* spellProto, int
     if (!spellProto->HasAttribute(SPELL_ATTR4_IGNORE_DAMAGE_TAKEN_MODIFIERS))
     {
         // Versatility
-        if (Player* modOwner = GetSpellModOwner())
-        {
-            // only 50% of SPELL_AURA_MOD_VERSATILITY for damage reduction
-            float versaBonus = modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY) / 2.0f;
-            AddPct(TakenTotalMod, -(modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_TAKEN) + versaBonus));
-        }
+        //if (Player* modOwner = GetSpellModOwner())
+        //{
+        //    // only 50% of SPELL_AURA_MOD_VERSATILITY for damage reduction
+        //    float versaBonus = modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY) / 2.0f;
+        //    AddPct(TakenTotalMod, -(modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_TAKEN) + versaBonus));
+        //}
 
         // from positive and negative SPELL_AURA_MOD_DAMAGE_PERCENT_TAKEN
         // multiplicative bonus, for example Dispersion + Shadowform (0.10*0.85=0.085)
@@ -7084,10 +7034,9 @@ int32 Unit::SpellDamageBonusTaken(Unit* caster, SpellInfo const* spellProto, int
     return int32(std::max(tmpDamage, 0.0f));
 }
 
-int32 Unit::SpellBaseDamageBonusDone(SpellSchoolMask schoolMask) const
+int32 Unit::SpellBaseDamageBonusDone(SpellSchoolMask schoolMask, bool withModSpellPowerPct /*= false*/) const
 {
-    Player const* thisPlayer = ToPlayer();
-    if (thisPlayer)
+    if (Player const* thisPlayer = ToPlayer())
     {
         float overrideSP = thisPlayer->m_activePlayerData->OverrideSpellPowerByAPPercent;
         if (overrideSP > 0.0f)
@@ -7096,13 +7045,14 @@ int32 Unit::SpellBaseDamageBonusDone(SpellSchoolMask schoolMask) const
 
     int32 DoneAdvertisedBenefit = GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_DAMAGE_DONE, schoolMask);
 
-    if (thisPlayer)
+    if (GetTypeId() == TYPEID_PLAYER)
     {
         // Base value
-        DoneAdvertisedBenefit += thisPlayer->GetBaseSpellPowerBonus();
+        DoneAdvertisedBenefit += ToPlayer()->GetBaseSpellPowerBonus();
 
-        if (thisPlayer->GetPrimaryStat() == STAT_INTELLECT)
-            DoneAdvertisedBenefit += std::max(0, int32(GetStat(STAT_INTELLECT)));  // spellpower from intellect
+        // Check if we are ever using mana - PaperDollFrame.lua
+        if (GetPowerIndex(POWER_MANA) != MAX_POWERS)
+            DoneAdvertisedBenefit += std::max(0, int32(GetStat(STAT_INTELLECT)) - 10);  // spellpower from intellect
 
         // Damage bonus from stats
         AuraEffectList const& mDamageDoneOfStatPercent = GetAuraEffectsByType(SPELL_AURA_MOD_SPELL_DAMAGE_OF_STAT_PERCENT);
@@ -7116,6 +7066,9 @@ int32 Unit::SpellBaseDamageBonusDone(SpellSchoolMask schoolMask) const
             }
         }
 
+        // We are going to include SPELL_AURA_MOD_SPELL_POWER_PCT in here because it's only suposed to affect spell power, no other source of damage buffs
+        if (withModSpellPowerPct)
+            DoneAdvertisedBenefit *= ToPlayer()->m_activePlayerData->ModSpellPowerPercent;
     }
 
     return DoneAdvertisedBenefit;
@@ -7138,24 +7091,13 @@ float Unit::SpellCritChanceDone(Spell* spell, AuraEffect const* aurEff, SpellSch
         case SPELL_DAMAGE_CLASS_NONE:
         case SPELL_DAMAGE_CLASS_MAGIC:
         {
-            auto getPhysicalCritChance = [&]
-            {
-                return GetUnitCriticalChanceDone(attackType);
-            };
-
-            auto getMagicCritChance = [&]
-            {
-                if (Player const* thisPlayer = ToPlayer())
-                    return *thisPlayer->m_activePlayerData->SpellCritPercentage;
-
-                return m_baseSpellCritChance;
-            };
-
             if (schoolMask & SPELL_SCHOOL_MASK_NORMAL)
-                crit_chance = std::max(crit_chance, getPhysicalCritChance());
-
-            if (schoolMask & ~SPELL_SCHOOL_MASK_NORMAL)
-                crit_chance = std::max(crit_chance, getMagicCritChance());
+                crit_chance = 0.0f;
+            // For other schools
+            else if (Player const* thisPlayer = ToPlayer())
+                crit_chance = thisPlayer->m_activePlayerData->SpellCritPercentage[AsUnderlyingType(GetFirstSchoolInMask(schoolMask))];
+            else
+                crit_chance = (float)m_baseSpellCritChance;
             break;
         }
         case SPELL_DAMAGE_CLASS_MELEE:
@@ -7231,7 +7173,8 @@ float Unit::SpellCritChanceTaken(Unit const* caster, Spell* spell, AuraEffect co
                 if (GetTypeId() == TYPEID_UNIT)
                 {
                     int32 const levelDiff = static_cast<int32>(GetLevelForTarget(caster)) - caster->GetLevel();
-                    crit_chance -= levelDiff * 1.0f;
+                    if (levelDiff > 0)
+                        crit_chance -= levelDiff * 1.0f;
                 }
             }
             break;
@@ -7283,8 +7226,20 @@ float Unit::SpellCritChanceTaken(Unit const* caster, Spell* spell, AuraEffect co
 /*static*/ uint32 Unit::SpellCriticalDamageBonus(Unit const* caster, SpellInfo const* spellProto, uint32 damage, Unit* victim)
 {
     // Calculate critical bonus
-    int32 crit_bonus = damage * 2;
+    int32 crit_bonus = damage;
     float crit_mod = 0.0f;
+
+    switch (spellProto->DmgClass)
+    {
+        case SPELL_DAMAGE_CLASS_MELEE:                      // for melee based spells is 100%
+        case SPELL_DAMAGE_CLASS_RANGED:
+            /// @todo write here full calculation for melee/ranged spells
+            crit_bonus += damage;
+            break;
+        default:
+            crit_bonus += damage / 2;                       // for spells is 50%
+            break;
+    }
 
     if (caster)
     {
@@ -7361,7 +7316,7 @@ int32 Unit::SpellHealingBonusDone(Unit* victim, SpellInfo const* spellProto, int
     }
 
     // Done fixed damage bonus auras
-    int32 DoneAdvertisedBenefit = SpellBaseHealingBonusDone(spellProto->GetSchoolMask());
+    int32 DoneAdvertisedBenefit = SpellBaseHealingBonusDone(spellProto->GetSchoolMask(), true);
     // modify spell power by victim's SPELL_AURA_MOD_HEALING auras (eg Amplify/Dampen Magic)
     DoneAdvertisedBenefit += victim->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_HEALING, spellProto->GetSchoolMask());
 
@@ -7373,33 +7328,17 @@ int32 Unit::SpellHealingBonusDone(Unit* victim, SpellInfo const* spellProto, int
     // Check for table values
     if (spellEffectInfo.BonusCoefficientFromAP > 0.0f)
     {
-        float attackPowerCoeff = spellEffectInfo.BonusCoefficientFromAP;
-        if (Player* modOwner = GetSpellModOwner())
-        {
-            attackPowerCoeff *= 100.0f;
-            modOwner->ApplySpellMod(spellProto, SpellModOp::BonusCoefficient, attackPowerCoeff);
-            attackPowerCoeff /= 100.0f;
-        }
+        WeaponAttackType const attType = (spellProto->IsRangedWeaponSpell() && spellProto->DmgClass != SPELL_DAMAGE_CLASS_MELEE) ? RANGED_ATTACK : BASE_ATTACK;
+        float APbonus = float(victim->GetTotalAuraModifier(attType == BASE_ATTACK ? SPELL_AURA_MELEE_ATTACK_POWER_ATTACKER_BONUS : SPELL_AURA_RANGED_ATTACK_POWER_ATTACKER_BONUS));
+        APbonus += GetTotalAttackPowerValue(attType);
 
-        WeaponAttackType const attType = [&]()
-        {
-            if ((spellProto->IsRangedWeaponSpell() && spellProto->DmgClass != SPELL_DAMAGE_CLASS_MELEE))
-                return RANGED_ATTACK;
-
-            if (spellProto->HasAttribute(SPELL_ATTR3_REQUIRES_OFF_HAND_WEAPON) && !spellProto->HasAttribute(SPELL_ATTR3_REQUIRES_MAIN_HAND_WEAPON))
-                return OFF_ATTACK;
-
-            return BASE_ATTACK;
-        }();
-        float attackPowerBonus = float(victim->GetTotalAuraModifier(attType != RANGED_ATTACK ? SPELL_AURA_MELEE_ATTACK_POWER_ATTACKER_BONUS : SPELL_AURA_RANGED_ATTACK_POWER_ATTACKER_BONUS));
-        attackPowerBonus += GetTotalAttackPowerValue(attType);
-        DoneTotal += int32(stack * attackPowerCoeff * attackPowerBonus);
+        DoneTotal += int32(spellEffectInfo.BonusCoefficientFromAP * stack * APbonus);
     }
 
     // Default calculation
     if (DoneAdvertisedBenefit)
     {
-        float coeff = spellEffectInfo.BonusCoefficient;
+        float coeff = spellEffectInfo.BonusCoefficient * spellProto->GetSpellScalingMultiplier(GetLevel(), false);
         if (Player* modOwner = GetSpellModOwner())
         {
             coeff *= 100.0f;
@@ -7467,14 +7406,7 @@ float Unit::SpellHealingPctDone(Unit* victim, SpellInfo const* spellProto) const
 
     // Healing done percent
     if (Player const* thisPlayer = ToPlayer())
-    {
-        float maxModDamagePercentSchool = 0.0f;
-        for (uint32 i = 0; i < MAX_SPELL_SCHOOL; ++i)
-            if (spellProto->GetSchoolMask() & (1 << i))
-                maxModDamagePercentSchool = std::max(maxModDamagePercentSchool, thisPlayer->m_activePlayerData->ModHealingDonePercent[i]);
-
-        DoneTotalMod *= maxModDamagePercentSchool;
-    }
+        DoneTotalMod *= thisPlayer->m_activePlayerData->ModHealingDonePercent;
     else // SPELL_AURA_MOD_HEALING_DONE_PERCENT is included in m_activePlayerData->ModHealingDonePercent for players
         DoneTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_HEALING_DONE_PERCENT);
 
@@ -7490,7 +7422,7 @@ float Unit::SpellHealingPctDone(Unit* victim, SpellInfo const* spellProto) const
     float healthPctDiff = 100.0f - victim->GetHealthPct();
     for (AuraEffect const* healingDonePctVsTargetHealth : GetAuraEffectsByType(SPELL_AURA_MOD_HEALING_DONE_PCT_VERSUS_TARGET_HEALTH))
         if (healingDonePctVsTargetHealth->IsAffectingSpell(spellProto))
-            AddPct(DoneTotalMod, CalculatePct(healingDonePctVsTargetHealth->GetAmount(), healthPctDiff));
+            AddPct(DoneTotalMod, CalculatePct(float(healingDonePctVsTargetHealth->GetAmount()), healthPctDiff));
 
     return DoneTotalMod;
 }
@@ -7583,7 +7515,7 @@ int32 Unit::SpellHealingBonusTaken(Unit* caster, SpellInfo const* spellProto, in
     return int32(std::max(heal, 0.0f));
 }
 
-int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask) const
+int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask, bool withModSpellPowerPct /*= false*/) const
 {
     if (Player const* thisPlayer = ToPlayer())
     {
@@ -7607,7 +7539,7 @@ int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask) const
 
         // Check if we are ever using mana - PaperDollFrame.lua
         if (GetPowerIndex(POWER_MANA) != MAX_POWERS)
-            advertisedBenefit += std::max(0, int32(GetStat(STAT_INTELLECT)));  // spellpower from intellect
+            advertisedBenefit += std::max(0, int32(GetStat(STAT_INTELLECT)) - 10);  // spellpower from intellect
 
         // Healing bonus from stats
         AuraEffectList const& mHealingDoneOfStatPercent = GetAuraEffectsByType(SPELL_AURA_MOD_SPELL_HEALING_OF_STAT_PERCENT);
@@ -7617,113 +7549,15 @@ int32 Unit::SpellBaseHealingBonusDone(SpellSchoolMask schoolMask) const
             Stats usedStat = Stats((*i)->GetSpellEffectInfo().MiscValue);
             advertisedBenefit += int32(CalculatePct(GetStat(usedStat), (*i)->GetAmount()));
         }
+
+        // We are going to include SPELL_AURA_MOD_SPELL_POWER_PCT in here because it's only suposed to affect spell power, no other source of healing buffs
+        if (withModSpellPowerPct)
+            advertisedBenefit *= ToPlayer()->m_activePlayerData->ModSpellPowerPercent;
     }
     return advertisedBenefit;
 }
 
-int32 Unit::SpellBaseAbsorbBonusDone(SpellSchoolMask schoolMask) const
-{
-    return SpellBaseHealingBonusDone(schoolMask);
-}
-
-int32 Unit::SpellAbsorbBonusDone(Unit* victim, SpellInfo const* spellProto, int32 absorbamount, SpellEffectInfo const& spellEffectInfo, uint32 stack /*= 1*/, AuraEffect const* aurEff /*= nullptr*/) const
-{
-    if (GetTypeId() == TYPEID_UNIT && IsTotem())
-        if (Unit* owner = GetOwner())
-            return owner->SpellAbsorbBonusDone(victim, spellProto, absorbamount, spellEffectInfo, stack, aurEff);
-
-    if (spellProto->HasAttribute(SPELL_ATTR3_IGNORE_CASTER_MODIFIERS)
-        || spellProto->HasAttribute(SPELL_ATTR11_IGNORE_CASTER_ABSORB_MODIFIERS))
-        return absorbamount;
-
-    int32 doneTotal = 0;
-    float doneTotalMod = SpellAbsorbPctDone(victim, spellProto);
-
-    int32 doneAdvertisedBenefit = SpellBaseAbsorbBonusDone(spellProto->GetSchoolMask());
-    doneAdvertisedBenefit += victim->GetTotalAuraModifierByMiscMask(SPELL_AURA_MOD_HEALING, spellProto->GetSchoolMask());
-
-    if (HasUnitTypeMask(UNIT_MASK_GUARDIAN))
-        doneAdvertisedBenefit += static_cast<Guardian const*>(this)->GetBonusDamage();
-
-    if (spellEffectInfo.BonusCoefficientFromAP > 0.0f)
-    {
-        float attackPowerCoeff = spellEffectInfo.BonusCoefficientFromAP;
-        if (Player* modOwner = GetSpellModOwner())
-        {
-            attackPowerCoeff *= 100.0f;
-            modOwner->ApplySpellMod(spellProto, SpellModOp::BonusCoefficient, attackPowerCoeff);
-            attackPowerCoeff /= 100.0f;
-        }
-
-        WeaponAttackType const attType = [&]()
-        {
-            if ((spellProto->IsRangedWeaponSpell() && spellProto->DmgClass != SPELL_DAMAGE_CLASS_MELEE))
-                return RANGED_ATTACK;
-
-            if (spellProto->HasAttribute(SPELL_ATTR3_REQUIRES_OFF_HAND_WEAPON) && !spellProto->HasAttribute(SPELL_ATTR3_REQUIRES_MAIN_HAND_WEAPON))
-                return OFF_ATTACK;
-
-            return BASE_ATTACK;
-        }();
-        float attackPowerBonus = float(victim->GetTotalAuraModifier(attType != RANGED_ATTACK ? SPELL_AURA_MELEE_ATTACK_POWER_ATTACKER_BONUS : SPELL_AURA_RANGED_ATTACK_POWER_ATTACKER_BONUS));
-        attackPowerBonus += GetTotalAttackPowerValue(attType);
-        doneTotal += int32(stack * attackPowerCoeff * attackPowerBonus);
-    }
-
-    if (doneAdvertisedBenefit)
-    {
-        float coeff = spellEffectInfo.BonusCoefficient;
-
-        if (Player* modOwner = GetSpellModOwner())
-        {
-            coeff *= 100.f;
-            modOwner->ApplySpellMod(spellProto, SpellModOp::BonusCoefficient, coeff);
-            coeff /= 100.f;
-        }
-
-        doneTotal += int32(doneAdvertisedBenefit * coeff * stack);
-    }
-
-    if (aurEff)
-        aurEff->GetBase()->CallScriptCalcDamageAndHealingHandlers(aurEff, aurEff->GetBase()->GetApplicationOfTarget(victim->GetGUID()), victim, absorbamount, doneTotal, doneTotalMod);
-
-    float absorbAmount = float(absorbamount + doneTotal) * doneTotalMod;
-
-    return static_cast<int32>(std::round(absorbAmount));
-}
-
-float Unit::SpellAbsorbPctDone(Unit* victim, SpellInfo const* spellProto) const
-{
-    if (GetTypeId() == TYPEID_UNIT && IsTotem())
-        if (Unit* owner = GetOwner())
-            return owner->SpellAbsorbPctDone(victim, spellProto);
-
-    float doneTotalMod = 1.f;
-
-    if (Player* modOwner = GetSpellModOwner())
-        AddPct(doneTotalMod, modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_DONE) + modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY));
-
-    doneTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_ABSORB_DONE_PCT);
-
-    return doneTotalMod;
-}
-
-int32 Unit::SpellAbsorbBonusTaken(Unit* /*caster*/, SpellInfo const* spellProto, int32 absorbamount) const
-{
-    if (spellProto->HasAttribute(SPELL_ATTR11_IGNORE_TARGET_ABSORB_MODIFIERS))
-        return absorbamount;
-
-    int32 doneTotal = 0;
-    float takenTotalMod = 1.f;
-
-    takenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_ABSORB_TAKEN_PCT);
-
-    float absorb = float(absorbamount + doneTotal) * takenTotalMod;
-
-    return static_cast<int32>(std::round(absorb));
-}
-
-bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, WorldObject const* caster, bool requireImmunityPurgesEffectAttribute /*= false*/) const
+bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, WorldObject const* caster, bool requireImmunityPurgesEffectAttribute /*= false*/) const
 {
     if (!spellInfo)
         return false;
@@ -7734,14 +7568,14 @@ bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, World
         if (!requireImmunityPurgesEffectAttribute)
             return range.begin() != range.end();
 
-        return std::ranges::any_of(range, [](uint32 immunitySpellId)
+        return std::any_of(range.begin(), range.end(), [](SpellImmuneContainer::value_type const& entry)
         {
-            if (SpellInfo const* immunitySourceSpell = sSpellMgr->GetSpellInfo(immunitySpellId, DIFFICULTY_NONE))
+            if (SpellInfo const* immunitySourceSpell = sSpellMgr->GetSpellInfo(entry.second, DIFFICULTY_NONE))
                 if (immunitySourceSpell->HasAttribute(SPELL_ATTR1_IMMUNITY_PURGES_EFFECT))
                     return true;
 
             return false;
-        }, Trinity::Containers::MapValue);
+        });
     };
 
     // Single spell immunity.
@@ -7772,7 +7606,7 @@ bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, World
     {
         // State/effect immunities applied by aura expect full spell immunity
         // Ignore effects with mechanic, they are supposed to be checked separately
-        if (!spellEffectInfo.IsEffect() || !(effectMask & (1 << spellEffectInfo.EffectIndex)))
+        if (!spellEffectInfo.IsEffect())
             continue;
         if (!IsImmunedToSpellEffect(spellInfo, spellEffectInfo, caster, requireImmunityPurgesEffectAttribute))
         {
@@ -7790,23 +7624,23 @@ bool Unit::IsImmunedToSpell(SpellInfo const* spellInfo, uint32 effectMask, World
     {
         uint32 schoolImmunityMask = 0;
         SpellImmuneContainer const& schoolList = m_spellImmune[IMMUNITY_SCHOOL];
-        for (auto [auraSchoolImmunityMask, immunityAuraId] : schoolList)
+        for (auto itr = schoolList.begin(); itr != schoolList.end(); ++itr)
         {
-            if ((auraSchoolImmunityMask & schoolMask) == 0)
+            if ((itr->first & schoolMask) == 0)
                 continue;
 
-            SpellInfo const* immuneSpellInfo = sSpellMgr->GetSpellInfo(immunityAuraId, GetMap()->GetDifficultyID());
+            SpellInfo const* immuneSpellInfo = sSpellMgr->GetSpellInfo(itr->second, GetMap()->GetDifficultyID());
             if (requireImmunityPurgesEffectAttribute)
                 if (!immuneSpellInfo || !immuneSpellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_PURGES_EFFECT))
                     continue;
 
-            if (!(spellInfo->NegativeEffects.to_ulong() & effectMask) && !(immuneSpellInfo && immuneSpellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS)))
+            if (!(immuneSpellInfo && immuneSpellInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS)) && caster && caster->IsFriendlyTo(this))
                 continue;
 
             if (spellInfo->CanPierceImmuneAura(immuneSpellInfo))
                 continue;
 
-            schoolImmunityMask |= auraSchoolImmunityMask;
+            schoolImmunityMask |= itr->first;
         }
         if ((schoolImmunityMask & schoolMask) == schoolMask)
             return true;
@@ -7873,7 +7707,7 @@ bool Unit::IsImmunedToDamage(SpellSchoolMask schoolMask) const
     return false;
 }
 
-bool Unit::IsImmunedToDamage(WorldObject const* /*caster*/, SpellInfo const* spellInfo, SpellEffectInfo const* spellEffectInfo /*= nullptr*/) const
+bool Unit::IsImmunedToDamage(WorldObject const* caster, SpellInfo const* spellInfo, SpellEffectInfo const* spellEffectInfo /*= nullptr*/) const
 {
     if (!spellInfo)
         return false;
@@ -7892,7 +7726,7 @@ bool Unit::IsImmunedToDamage(WorldObject const* /*caster*/, SpellInfo const* spe
             for (auto&& [immunitySchoolMask, immunityAuraId] : container)
             {
                 SpellInfo const* immuneAuraInfo = sSpellMgr->GetSpellInfo(immunityAuraId, GetMap()->GetDifficultyID());
-                if (spellInfo->IsPositive() && !(immuneAuraInfo && immuneAuraInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS)))
+                if (immuneAuraInfo && !immuneAuraInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS) && caster && caster->IsFriendlyTo(this))
                     continue;
 
                 if (immuneAuraInfo && spellInfo->CanPierceImmuneAura(immuneAuraInfo))
@@ -7917,7 +7751,7 @@ bool Unit::IsImmunedToDamage(WorldObject const* /*caster*/, SpellInfo const* spe
     return false;
 }
 
-bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, SpellEffectInfo const& spellEffectInfo, WorldObject const* /*caster*/,
+bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, SpellEffectInfo const& spellEffectInfo, WorldObject const* caster,
     bool requireImmunityPurgesEffectAttribute /*= false*/) const
 {
     if (!spellInfo)
@@ -7935,14 +7769,14 @@ bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, SpellEffectInfo co
         if (!requireImmunityPurgesEffectAttribute)
             return range.begin() != range.end();
 
-        return std::ranges::any_of(range, [](uint32 immunitySpellId)
+        return std::any_of(range.begin(), range.end(), [](SpellImmuneContainer::value_type const& entry)
         {
-            if (SpellInfo const* immunitySourceSpell = sSpellMgr->GetSpellInfo(immunitySpellId, DIFFICULTY_NONE))
+            if (SpellInfo const* immunitySourceSpell = sSpellMgr->GetSpellInfo(entry.second, DIFFICULTY_NONE))
                 if (immunitySourceSpell->HasAttribute(SPELL_ATTR1_IMMUNITY_PURGES_EFFECT))
                     return true;
 
             return false;
-        }, Trinity::Containers::MapValue);
+        });
     };
 
     // If m_immuneToEffect type contain this effect type, IMMUNE effect.
@@ -7974,10 +7808,7 @@ bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, SpellEffectInfo co
                 if (!(immuneAuraApply->GetMiscValue() & spellInfo->GetSchoolMask()))               // Check school
                     continue;
 
-                if (!spellInfo->IsPositiveEffect(spellEffectInfo.EffectIndex)) // Harmful
-                    return true;
-
-                if (immuneAuraApply->GetSpellInfo()->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS)) // Friendly
+                if (immuneAuraApply->GetSpellInfo()->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS) || (caster && !IsFriendlyTo(caster))) // Harmful
                     return true;
             }
         }
@@ -7986,24 +7817,26 @@ bool Unit::IsImmunedToSpellEffect(SpellInfo const* spellInfo, SpellEffectInfo co
     return false;
 }
 
-bool Unit::IsImmunedToAuraPeriodicTick(WorldObject const* /*caster*/, AuraEffect const* auraEffect) const
+bool Unit::IsImmunedToAuraPeriodicTick(WorldObject const* caster, SpellInfo const* spellInfo, SpellEffectInfo const* spellEffectInfo) const
 {
-    if (auraEffect->GetSpellInfo()->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) || auraEffect->GetSpellInfo()->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES) /*only school immunities are checked in this function*/)
+    if (!spellInfo)
         return false;
 
-    if (auraEffect->GetSpellEffectInfo().EffectAttributes.HasFlag(SpellEffectAttributes::NoImmunity))
+    if (spellInfo->HasAttribute(SPELL_ATTR0_NO_IMMUNITIES) || spellInfo->HasAttribute(SPELL_ATTR2_NO_SCHOOL_IMMUNITIES) /*only school immunities are checked in this function*/)
         return false;
 
-    if (uint32 schoolMask = auraEffect->GetSpellInfo()->GetSchoolMask())
+    if (spellEffectInfo && spellEffectInfo->EffectAttributes.HasFlag(SpellEffectAttributes::NoImmunity))
+        return false;
+
+    if (uint32 schoolMask = spellInfo->GetSchoolMask())
     {
         auto hasImmunity = [&](SpellImmuneContainer const& container)
         {
-            bool isPositive = auraEffect->GetBase()->GetApplicationOfTarget(GetGUID())->IsPositive();
             uint32 schoolImmunityMask = 0;
             for (auto&& [immunitySchoolMask, immunityAuraId] : container)
             {
                 SpellInfo const* immuneAuraInfo = sSpellMgr->GetSpellInfo(immunityAuraId, GetMap()->GetDifficultyID());
-                if (isPositive && !(immuneAuraInfo && immuneAuraInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS)))
+                if (immuneAuraInfo && !immuneAuraInfo->HasAttribute(SPELL_ATTR1_IMMUNITY_TO_HOSTILE_AND_FRIENDLY_EFFECTS) && caster && caster->IsFriendlyTo(this))
                     continue;
 
                 schoolImmunityMask |= immunitySchoolMask;
@@ -8213,12 +8046,12 @@ int32 Unit::MeleeDamageBonusTaken(Unit* attacker, int32 pdamage, WeaponAttackTyp
         TakenTotalMod *= GetTotalAuraMultiplier(SPELL_AURA_MOD_RANGED_DAMAGE_TAKEN_PCT);
 
     // Versatility
-    if (Player* modOwner = GetSpellModOwner())
-    {
-        // only 50% of SPELL_AURA_MOD_VERSATILITY for damage reduction
-        float versaBonus = modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY) / 2.0f;
-        AddPct(TakenTotalMod, -(modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_TAKEN) + versaBonus));
-    }
+    //if (Player* modOwner = GetSpellModOwner())
+    //{
+    //    // only 50% of SPELL_AURA_MOD_VERSATILITY for damage reduction
+    //    float versaBonus = modOwner->GetTotalAuraModifier(SPELL_AURA_MOD_VERSATILITY) / 2.0f;
+    //    AddPct(TakenTotalMod, -(modOwner->GetRatingBonusValue(CR_VERSATILITY_DAMAGE_TAKEN) + versaBonus));
+    //}
 
     // Sanctified Wrath (bypass damage reduction)
     if (TakenTotalMod < 1.0f)
@@ -8449,10 +8282,6 @@ MountCapabilityEntry const* Unit::GetMountCapability(uint32 mountType) const
         if (mountCapability->ReqSpellKnownID && !HasSpell(mountCapability->ReqSpellKnownID))
             continue;
 
-        if (Player const* thisPlayer = ToPlayer())
-            if (!ConditionMgr::IsPlayerMeetingCondition(thisPlayer, mountCapability->PlayerConditionID))
-                continue;
-
         return mountCapability;
     }
 
@@ -8473,15 +8302,11 @@ void Unit::UpdateMountCapability()
     for (AuraEffect* aurEff : mounts)
     {
         aurEff->RecalculateAmount();
-        if (!aurEff->GetAmountAsInt())
+        if (!aurEff->GetAmount())
             aurEff->GetBase()->Remove();
-        else if (MountCapabilityEntry const* capability = sMountCapabilityStore.LookupEntry(aurEff->GetAmountAsInt())) // aura may get removed by interrupt flag, reapply
-        {
-            SetFlightCapabilityID(capability->FlightCapabilityID, true);
-
+        else if (MountCapabilityEntry const* capability = sMountCapabilityStore.LookupEntry(aurEff->GetAmount())) // aura may get removed by interrupt flag, reapply
             if (!HasAura(capability->ModSpellAuraID))
                 CastSpell(this, capability->ModSpellAuraID, aurEff);
-        }
     }
 }
 
@@ -8674,7 +8499,7 @@ void Unit::TriggerOnHealthChangeAuras(uint64 oldVal, uint64 newVal)
     AuraEffectVector effects = CopyAuraEffectList(GetAuraEffectsByType(SPELL_AURA_TRIGGER_SPELL_ON_HEALTH_PCT));
     for (AuraEffect const* effect : effects)
     {
-        SpellEffectValue triggerHealthPct = effect->GetAmount();
+        uint32 triggerHealthPct = effect->GetAmount();
         uint32 triggerSpell = effect->GetSpellEffectInfo().TriggerSpell;
         uint64 threshold = CountPctFromMaxHealth(triggerHealthPct);
 
@@ -8780,7 +8605,7 @@ void Unit::SetVisible(bool x)
 
 void Unit::UpdateSpeed(UnitMoveType mtype)
 {
-    float main_speed_mod  = 0.0f;
+    int32 main_speed_mod  = 0;
     float stack_bonus     = 1.0f;
     float non_stack_bonus = 1.0f;
 
@@ -8822,7 +8647,7 @@ void Unit::UpdateSpeed(UnitMoveType mtype)
                 stack_bonus     = GetTotalAuraMultiplier(SPELL_AURA_MOD_VEHICLE_SPEED_ALWAYS);
 
                 // for some spells this mod is applied on vehicle owner
-                float owner_speed_mod = 0.0f;
+                int32 owner_speed_mod = 0;
 
                 if (Unit* owner = GetCharmer())
                     owner_speed_mod = owner->GetMaxPositiveAuraModifier(SPELL_AURA_MOD_INCREASE_VEHICLE_FLIGHT_SPEED);
@@ -8866,7 +8691,7 @@ void Unit::UpdateSpeed(UnitMoveType mtype)
 
             // Normalize speed by 191 aura SPELL_AURA_USE_NORMAL_MOVEMENT_SPEED if need
             /// @todo possible affect only on MOVE_RUN
-            if (float normalization = GetMaxPositiveAuraModifier(SPELL_AURA_USE_NORMAL_MOVEMENT_SPEED))
+            if (int32 normalization = GetMaxPositiveAuraModifier(SPELL_AURA_USE_NORMAL_MOVEMENT_SPEED))
             {
                 if (Creature* creature = ToCreature())
                     if (CreatureImmunities const* immunities = SpellMgr::GetCreatureImmunities(creature->GetCreatureTemplate()->CreatureImmunitiesId))
@@ -8882,7 +8707,7 @@ void Unit::UpdateSpeed(UnitMoveType mtype)
             if (mtype == MOVE_RUN)
             {
                 // force minimum speed rate @ aura 437 SPELL_AURA_MOD_MINIMUM_SPEED_RATE
-                if (float minSpeedMod = GetMaxPositiveAuraModifier(SPELL_AURA_MOD_MINIMUM_SPEED_RATE))
+                if (int32 minSpeedMod = GetMaxPositiveAuraModifier(SPELL_AURA_MOD_MINIMUM_SPEED_RATE))
                 {
                     float minSpeed = minSpeedMod / (IsControlledByPlayer() ? playerBaseMoveSpeed[mtype] : baseMoveSpeed[mtype]);
                     if (speed < minSpeed)
@@ -8914,11 +8739,11 @@ void Unit::UpdateSpeed(UnitMoveType mtype)
     }
 
     // Apply strongest slow aura mod to speed
-    float slow = GetMaxNegativeAuraModifier(SPELL_AURA_MOD_DECREASE_SPEED);
+    int32 slow = GetMaxNegativeAuraModifier(SPELL_AURA_MOD_DECREASE_SPEED);
     if (slow)
         AddPct(speed, slow);
 
-    if (float minSpeedMod = GetMaxPositiveAuraModifier(SPELL_AURA_MOD_MINIMUM_SPEED))
+    if (float minSpeedMod = (float)GetMaxPositiveAuraModifier(SPELL_AURA_MOD_MINIMUM_SPEED))
     {
         float baseMinSpeed = 1.0f;
         if (!GetOwnerGUID().IsPlayer() && !IsHunterPet() && GetTypeId() == TYPEID_UNIT)
@@ -9003,158 +8828,6 @@ void Unit::SetSpeedRate(UnitMoveType mtype, float rate)
     }
 }
 
-void Unit::SetFlightCapabilityID(int32 flightCapabilityId, bool clientUpdate)
-{
-    if (flightCapabilityId && !sFlightCapabilityStore.HasRecord(flightCapabilityId))
-        return;
-
-    SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::FlightCapabilityID), flightCapabilityId);
-
-    UpdateAdvFlyingSpeed(ADV_FLYING_AIR_FRICTION, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_MAX_VEL, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_LIFT_COEFFICIENT, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_DOUBLE_JUMP_VEL_MOD, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_GLIDE_START_MIN_HEIGHT, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_ADD_IMPULSE_MAX_SPEED, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_BANKING_RATE, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_PITCHING_RATE_DOWN, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_PITCHING_RATE_UP, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_TURN_VELOCITY_THRESHOLD, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_SURFACE_FRICTION, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_OVER_MAX_DECELERATION, clientUpdate);
-    UpdateAdvFlyingSpeed(ADV_FLYING_LAUNCH_SPEED_COEFFICIENT, clientUpdate);
-}
-
-void Unit::UpdateAdvFlyingSpeed(AdvFlyingRateTypeSingle speedType, bool clientUpdate)
-{
-    FlightCapabilityEntry const* flightCapabilityEntry = sFlightCapabilityStore.LookupEntry(GetFlightCapabilityID());
-    if (!flightCapabilityEntry)
-        flightCapabilityEntry = sFlightCapabilityStore.AssertEntry(1);
-
-    auto [opcode, newValue, rateAura] = [&]
-    {
-        switch (speedType)
-        {
-            case ADV_FLYING_AIR_FRICTION:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_AIR_FRICTION, flightCapabilityEntry->AirFriction, SPELL_AURA_MOD_ADV_FLYING_AIR_FRICTION);
-            case ADV_FLYING_MAX_VEL:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_MAX_VEL, flightCapabilityEntry->MaxVel, SPELL_AURA_MOD_ADV_FLYING_MAX_VEL);
-            case ADV_FLYING_LIFT_COEFFICIENT:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_LIFT_COEFFICIENT, flightCapabilityEntry->LiftCoefficient, SPELL_AURA_MOD_ADV_FLYING_LIFT_COEF);
-            case ADV_FLYING_DOUBLE_JUMP_VEL_MOD:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_DOUBLE_JUMP_VEL_MOD, flightCapabilityEntry->DoubleJumpVelMod, SPELL_AURA_NONE);
-            case ADV_FLYING_GLIDE_START_MIN_HEIGHT:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_GLIDE_START_MIN_HEIGHT, flightCapabilityEntry->GlideStartMinHeight, SPELL_AURA_NONE);
-            case ADV_FLYING_ADD_IMPULSE_MAX_SPEED:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_ADD_IMPULSE_MAX_SPEED, flightCapabilityEntry->AddImpulseMaxSpeed, SPELL_AURA_MOD_ADV_FLYING_ADD_IMPULSE_MAX_SPEED);
-            case ADV_FLYING_SURFACE_FRICTION:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_SURFACE_FRICTION, flightCapabilityEntry->SurfaceFriction, SPELL_AURA_NONE);
-            case ADV_FLYING_OVER_MAX_DECELERATION:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_OVER_MAX_DECELERATION, flightCapabilityEntry->OverMaxDeceleration, SPELL_AURA_MOD_ADV_FLYING_OVER_MAX_DECELERATION);
-            case ADV_FLYING_LAUNCH_SPEED_COEFFICIENT:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_LAUNCH_SPEED_COEFFICIENT, flightCapabilityEntry->LaunchSpeedCoefficient, SPELL_AURA_NONE);
-            default:
-                return std::tuple<OpcodeServer, float, AuraType>();
-        }
-    }();
-
-    if (rateAura != SPELL_AURA_NONE)
-    {
-        // take only lowest negative and highest positive auras - these effects do not stack
-        if (float neg = GetMaxNegativeAuraModifier(rateAura, [](AuraEffect const* mod) { return mod->GetAmount() > 0 && mod->GetAmount() < 100; }))
-            ApplyPct(newValue, neg);
-
-        if (float pos = GetMaxPositiveAuraModifier(rateAura, [](AuraEffect const* mod) { return mod->GetAmount() > 100; }))
-            ApplyPct(newValue, pos);
-    }
-
-    if (m_advFlyingSpeed[speedType] == newValue)
-        return;
-
-    m_advFlyingSpeed[speedType] = newValue;
-
-    if (!clientUpdate)
-        return;
-
-    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
-    {
-        WorldPackets::Movement::SetAdvFlyingSpeed selfpacket(opcode);
-        selfpacket.MoverGUID = GetGUID();
-        selfpacket.SequenceIndex = m_movementCounter++;
-        selfpacket.Speed = newValue;
-        playerMover->GetSession()->SendPacket(selfpacket.Write());
-    }
-}
-
-void Unit::UpdateAdvFlyingSpeed(AdvFlyingRateTypeRange speedType, bool clientUpdate)
-{
-    FlightCapabilityEntry const* flightCapabilityEntry = sFlightCapabilityStore.LookupEntry(GetFlightCapabilityID());
-    if (!flightCapabilityEntry)
-        flightCapabilityEntry = sFlightCapabilityStore.AssertEntry(1);
-
-    auto [opcode, min, max, rateAura] = [&]
-    {
-        switch (speedType)
-        {
-            case ADV_FLYING_BANKING_RATE:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_BANKING_RATE, flightCapabilityEntry->BankingRateMin, flightCapabilityEntry->BankingRateMax, SPELL_AURA_MOD_ADV_FLYING_BANKING_RATE);
-            case ADV_FLYING_PITCHING_RATE_DOWN:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_PITCHING_RATE_DOWN, flightCapabilityEntry->PitchingRateDownMin, flightCapabilityEntry->PitchingRateDownMax, SPELL_AURA_MOD_ADV_FLYING_PITCHING_RATE_DOWN);
-            case ADV_FLYING_PITCHING_RATE_UP:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_PITCHING_RATE_UP, flightCapabilityEntry->PitchingRateUpMin, flightCapabilityEntry->PitchingRateUpMax, SPELL_AURA_MOD_ADV_FLYING_PITCHING_RATE_UP);
-            case ADV_FLYING_TURN_VELOCITY_THRESHOLD:
-                return std::tuple(SMSG_MOVE_SET_ADV_FLYING_TURN_VELOCITY_THRESHOLD, flightCapabilityEntry->TurnVelocityThresholdMin, flightCapabilityEntry->TurnVelocityThresholdMax, SPELL_AURA_NONE);
-            default:
-                return std::tuple<OpcodeServer, float, float, AuraType>();
-        }
-    }();
-
-    if (rateAura != SPELL_AURA_NONE)
-    {
-        // take only lowest negative and highest positive auras - these effects do not stack
-        if (float neg = GetMaxNegativeAuraModifier(rateAura, [](AuraEffect const* mod) { return mod->GetAmount() > 0 && mod->GetAmount() < 100; }))
-        {
-            ApplyPct(min, neg);
-            ApplyPct(max, neg);
-        }
-
-        if (float pos = GetMaxPositiveAuraModifier(rateAura, [](AuraEffect const* mod) { return mod->GetAmount() > 100; }))
-        {
-            ApplyPct(min, pos);
-            ApplyPct(max, pos);
-        }
-    }
-
-    if (m_advFlyingSpeed[speedType] == min && m_advFlyingSpeed[speedType + 1] == max)
-        return;
-
-    m_advFlyingSpeed[speedType] = min;
-    m_advFlyingSpeed[speedType + 1] = max;
-
-    if (!clientUpdate)
-        return;
-
-    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
-    {
-        WorldPackets::Movement::SetAdvFlyingSpeedRange selfpacket(opcode);
-        selfpacket.MoverGUID = GetGUID();
-        selfpacket.SequenceIndex = m_movementCounter++;
-        selfpacket.SpeedMin = min;
-        selfpacket.SpeedMax = max;
-        playerMover->GetSession()->SendPacket(selfpacket.Write());
-    }
-}
-
-void Unit::FollowerAdded(AbstractFollower* f)
-{
-    m_followingMe.insert(f);
-}
-
-void Unit::FollowerRemoved(AbstractFollower* f)
-{
-    m_followingMe.erase(f);
-}
-
 void Unit::RemoveAllFollowers()
 {
     while (!m_followingMe.empty())
@@ -9206,6 +8879,9 @@ void Unit::setDeathState(DeathState s)
         if (m_vignette && !m_vignette->Data->GetFlags().HasFlag(VignetteFlags::PersistsThroughDeath))
             SetVignette(0);
 
+        if (!GetComboTarget().IsEmpty())
+            ClearComboTarget();
+
         // players in instance don't have ZoneScript, but they have InstanceScript
         if (ZoneScript* zoneScript = GetZoneScript() ? GetZoneScript() : GetInstanceScript())
             zoneScript->OnUnitDeath(this);
@@ -9229,9 +8905,8 @@ void Unit::AtEnterCombat()
     if (Spell* spell = m_currentSpells[CURRENT_GENERIC_SPELL])
         if (spell->getState() == SPELL_STATE_PREPARING
             && spell->m_spellInfo->HasAttribute(SPELL_ATTR0_NOT_IN_COMBAT_ONLY_PEACEFUL)
-            && spell->m_spellInfo->InterruptFlags.HasFlag(SpellInterruptFlags::Combat)
-            && !spell->m_spellInfo->HasAura(SPELL_AURA_MOUNTED)) // for some reason mounts are not interrupted by entering combat even with both interrupt flag and attribute
-            InterruptSpell(CURRENT_GENERIC_SPELL, false, false);
+            && spell->m_spellInfo->InterruptFlags.HasFlag(SpellInterruptFlags::Combat))
+            InterruptNonMeleeSpells(false);
 
     RemoveAurasWithInterruptFlags(SpellAuraInterruptFlags::EnteringCombat);
     Unit::ProcSkillsAndAuras(this, nullptr, PROC_FLAG_ENTER_COMBAT, PROC_FLAG_NONE, PROC_SPELL_TYPE_MASK_ALL, PROC_SPELL_PHASE_NONE, PROC_HIT_NONE, nullptr, nullptr, nullptr);
@@ -9252,10 +8927,10 @@ void Unit::AtExitCombat()
 
     RemoveAurasWithInterruptFlags(SpellAuraInterruptFlags::LeavingCombat);
 
-    GetSpellHistory()->AtExitCombat();
-
     if (!IsInteractionAllowedInCombat())
         UpdateNearbyPlayersInteractions();
+
+    _regenInterruptTimestamp = GameTime::Now();
 }
 
 void Unit::AtTargetAttacked(Unit* target, bool canInitialAggro)
@@ -9477,29 +9152,9 @@ uint32 Unit::GetCreatureTypeMask() const
     return (creatureType >= 1) ? (1 << (creatureType - 1)) : 0;
 }
 
-void Unit::UpdateCreatureType()
-{
-    uint8 creatureType = [&]() -> uint8
-    {
-        if (Creature const* creature = ToCreature())
-            return creature->GetCreatureTemplate()->type;
-
-        ShapeshiftForm form = GetShapeshiftForm();
-        SpellShapeshiftFormEntry const* ssEntry = sSpellShapeshiftFormStore.LookupEntry(form);
-        if (ssEntry && ssEntry->CreatureType > 0)
-            return ssEntry->CreatureType;
-
-        ChrRacesEntry const* raceEntry = sChrRacesStore.AssertEntry(GetRace());
-        return raceEntry->CreatureType;
-    }();
-
-    SetUpdateFieldFlagValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::CreatureType), creatureType);
-}
-
 void Unit::SetShapeshiftForm(ShapeshiftForm form)
 {
     SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ShapeshiftForm), form);
-    UpdateCreatureType();
 }
 
 void Unit::CancelShapeshiftForm(bool onlyTravelShapeshiftForm /*= false*/, AuraRemoveMode removeMode /*= AURA_REMOVE_BY_DEFAULT*/, bool force /*= false*/)
@@ -9697,7 +9352,7 @@ void Unit::UpdateUnitMod(UnitMods unitMod)
         case UNIT_MOD_RAGE:
         case UNIT_MOD_FOCUS:
         case UNIT_MOD_ENERGY:
-        case UNIT_MOD_COMBO_POINTS:
+        case UNIT_MOD_HAPPINESS:
         case UNIT_MOD_RUNES:
         case UNIT_MOD_RUNIC_POWER:
         case UNIT_MOD_SOUL_SHARDS:
@@ -9707,7 +9362,7 @@ void Unit::UpdateUnitMod(UnitMods unitMod)
         case UNIT_MOD_MAELSTROM:
         case UNIT_MOD_CHI:
         case UNIT_MOD_INSANITY:
-        case UNIT_MOD_BURNING_EMBERS:
+        case UNIT_MOD_COMBO_POINTS:
         case UNIT_MOD_DEMONIC_FURY:
         case UNIT_MOD_ARCANE_CHARGES:
         case UNIT_MOD_FURY:
@@ -9718,7 +9373,8 @@ void Unit::UpdateUnitMod(UnitMods unitMod)
         case UNIT_MOD_RUNE_UNHOLY:
         case UNIT_MOD_ALTERNATE_QUEST:
         case UNIT_MOD_ALTERNATE_ENCOUNTER:
-        case UNIT_MOD_ALTERNATE_MOUNT:     UpdateMaxPower(Powers(unitMod - UNIT_MOD_POWER_START));     break;
+        case UNIT_MOD_ALTERNATE_MOUNT:
+        case UNIT_MOD_BALANCE:             UpdateMaxPower(Powers(unitMod - UNIT_MOD_POWER_START));     break;
 
         case UNIT_MOD_RESISTANCE_HOLY:
         case UNIT_MOD_RESISTANCE_FIRE:
@@ -9901,26 +9557,20 @@ void Unit::UpdateResistances(uint32 school)
 
         float value = CalculatePct(GetFlatModifierValue(unitMod, BASE_VALUE), std::max(GetFlatModifierValue(unitMod, BASE_PCT_EXCLUDE_CREATE), -100.0f));
         value *= GetPctModifierValue(unitMod, BASE_PCT);
-
-        float baseValue = value;
-
         value += GetFlatModifierValue(unitMod, TOTAL_VALUE);
         value *= GetPctModifierValue(unitMod, TOTAL_PCT);
 
         SetResistance(SpellSchools(school), int32(value));
-        SetBonusResistanceMod(SpellSchools(school), int32(value - baseValue));
     }
     else
         UpdateArmor();
 }
 
-float Unit::GetTotalAttackPowerValue(WeaponAttackType attType, bool includeWeapon /*= true*/) const
+float Unit::GetTotalAttackPowerValue(WeaponAttackType attType, bool /*includeWeapon*/ /*= true*/) const
 {
     if (attType == RANGED_ATTACK)
     {
         float ap = m_unitData->RangedAttackPower + m_unitData->RangedAttackPowerModPos + m_unitData->RangedAttackPowerModNeg;
-        if (includeWeapon)
-            ap += std::max<float>(m_unitData->MainHandWeaponAttackPower, m_unitData->RangedWeaponAttackPower);
         if (ap < 0)
             return 0.0f;
         return ap * (1.0f + m_unitData->RangedAttackPowerMultiplier);
@@ -9928,16 +9578,6 @@ float Unit::GetTotalAttackPowerValue(WeaponAttackType attType, bool includeWeapo
     else
     {
         float ap = m_unitData->AttackPower + m_unitData->AttackPowerModPos + m_unitData->AttackPowerModNeg;
-        if (includeWeapon)
-        {
-            if (attType == BASE_ATTACK)
-                ap += std::max<float>(m_unitData->MainHandWeaponAttackPower, m_unitData->RangedWeaponAttackPower);
-            else
-            {
-                ap += m_unitData->OffHandWeaponAttackPower;
-                ap /= 2;
-            }
-        }
         if (ap < 0)
             return 0.0f;
         return ap * (1.0f + m_unitData->AttackPowerMultiplier);
@@ -9955,7 +9595,7 @@ float Unit::GetWeaponDamageRange(WeaponAttackType attType, WeaponDamageRange typ
 bool Unit::CanFreeMove() const
 {
     return !HasUnitState(UNIT_STATE_CONFUSED | UNIT_STATE_FLEEING | UNIT_STATE_IN_FLIGHT |
-        UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_DISTRACTED);
+        UNIT_STATE_ROOT | UNIT_STATE_STUNNED | UNIT_STATE_DISTRACTED) && GetOwnerGUID().IsEmpty();
 }
 
 void Unit::SetLevel(uint8 lvl, bool sendUpdate/* = true*/)
@@ -10118,11 +9758,11 @@ void Unit::TriggerOnPowerChangeAuras(Powers power, int32 oldVal, int32 newVal)
         {
             if (effect->GetMiscValue() == power)
             {
-                SpellEffectValue effectAmount = effect->GetAmount();
+                int32 effectAmount = effect->GetAmount();
                 uint32 triggerSpell = effect->GetSpellEffectInfo().TriggerSpell;
 
-                SpellEffectValue oldValueCheck = oldVal;
-                SpellEffectValue newValueCheck = newVal;
+                float oldValueCheck = oldVal;
+                float newValueCheck = newVal;
 
                 if (effect->GetAuraType() == SPELL_AURA_TRIGGER_SPELL_ON_POWER_PCT)
                 {
@@ -10271,7 +9911,6 @@ void Unit::RemoveFromWorld()
         RemoveAllGameObjects();
         RemoveAllDynObjects();
         RemoveAllAreaTriggers(AreaTriggerRemoveReason::UnitDespawn);
-        ExitAllAreaTriggers(); // exit all areatriggers the unit is in
 
         ExitVehicle();  // Remove applied auras with SPELL_AURA_CONTROL_VEHICLE
         UnsummonAllTotems();
@@ -10575,7 +10214,7 @@ void Unit::TriggerAurasProcOnEvent(AuraApplicationList* myProcAuras, AuraApplica
                                    ProcFlagsSpellPhase spellPhaseMask, ProcFlagsHit hitMask, Spell* spell, DamageInfo* damageInfo, HealInfo* healInfo)
 {
     // prepare data for self trigger
-    ProcEventInfo myProcEventInfo(this, actionTarget, typeMaskActor, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
+    ProcEventInfo myProcEventInfo(this, actionTarget, actionTarget, typeMaskActor, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
     AuraApplicationProcContainer myAurasTriggeringProc;
     if (typeMaskActor)
     {
@@ -10598,7 +10237,7 @@ void Unit::TriggerAurasProcOnEvent(AuraApplicationList* myProcAuras, AuraApplica
     }
 
     // prepare data for target trigger
-    ProcEventInfo targetProcEventInfo(this, actionTarget, typeMaskActionTarget, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
+    ProcEventInfo targetProcEventInfo(this, actionTarget, this, typeMaskActionTarget, spellTypeMask, spellPhaseMask, hitMask, spell, damageInfo, healInfo);
     AuraApplicationProcContainer targetAurasTriggeringProc;
     if (typeMaskActionTarget && actionTarget)
         actionTarget->GetProcAurasTriggeredOnEvent(targetAurasTriggeringProc, targetProcAuras, targetProcEventInfo);
@@ -10634,7 +10273,7 @@ void Unit::TriggerAurasProcOnEvent(ProcEventInfo& eventInfo, AuraApplicationProc
 }
 
 ///----------Pet responses methods-----------------
-void Unit::SendPetActionFeedback(PetActionFeedback msg, uint32 spellId) const
+void Unit::SendPetActionFeedback(PetActionFeedback msg, uint32 spellId)
 {
     Unit* owner = GetOwner();
     if (!owner || owner->GetTypeId() != TYPEID_PLAYER)
@@ -10646,24 +10285,19 @@ void Unit::SendPetActionFeedback(PetActionFeedback msg, uint32 spellId) const
     owner->ToPlayer()->SendDirectMessage(petActionFeedback.Write());
 }
 
-void Unit::SendPetActionSound(PetAction action) const
+void Unit::SendPetTalk(uint32 pettalk)
 {
+    Unit* owner = GetOwner();
+    if (!owner || owner->GetTypeId() != TYPEID_PLAYER)
+        return;
+
     WorldPackets::Pet::PetActionSound petActionSound;
     petActionSound.UnitGUID = GetGUID();
-    petActionSound.Action = action;
-    SendMessageToSet(petActionSound.Write(), false);
+    petActionSound.Action = pettalk;
+    owner->ToPlayer()->SendDirectMessage(petActionSound.Write());
 }
 
-void Unit::SendPetDismissSound() const
-{
-    WorldPackets::Pet::PetDismissSound petDismissSound;
-    petDismissSound.UnitGUID = GetGUID();
-    petDismissSound.CreatureDisplayInfoID = GetNativeDisplayId();
-    petDismissSound.ModelPosition = GetPosition();
-    SendMessageToSet(petDismissSound.Write(), false);
-}
-
-void Unit::SendPetAIReaction(ObjectGuid guid) const
+void Unit::SendPetAIReaction(ObjectGuid guid)
 {
     Unit* owner = GetOwner();
     if (!owner || owner->GetTypeId() != TYPEID_PLAYER)
@@ -10742,7 +10376,7 @@ void Unit::SetStandState(UnitStandStateType state, uint32 animKitID /* = 0*/)
 {
     SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::StandState), state);
 
-    if (state == UNIT_STAND_STATE_STAND)
+    if (IsStandState())
        RemoveAurasWithInterruptFlags(SpellAuraInterruptFlags::Standing);
 
     if (GetTypeId() == TYPEID_PLAYER)
@@ -10780,9 +10414,9 @@ bool Unit::IsPolymorphed() const
 
 void Unit::RecalculateObjectScale()
 {
-    float scaleAuras = GetTotalAuraModifier(SPELL_AURA_MOD_SCALE) + GetTotalAuraModifier(SPELL_AURA_MOD_SCALE_2);
+    int32 scaleAuras = GetTotalAuraModifier(SPELL_AURA_MOD_SCALE) + GetTotalAuraModifier(SPELL_AURA_MOD_SCALE_2);
     float scale = GetNativeObjectScale() + CalculatePct(1.0f, scaleAuras);
-    float scaleMin = GetTypeId() == TYPEID_PLAYER ? 0.1f : 0.01f;
+    float scaleMin = GetTypeId() == TYPEID_PLAYER ? 0.1 : 0.01;
     SetObjectScale(std::max(scale, scaleMin));
 }
 
@@ -11005,13 +10639,39 @@ void Unit::ApplyCastTimePercentMod(float val, bool apply)
     {
         ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModCastingSpeed), val, !apply);
         ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModSpellHaste), val, !apply);
-        ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModHasteRegen), val, !apply);
     }
     else
     {
         ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModCastingSpeed), -val, apply);
         ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModSpellHaste), -val, apply);
+    }
+}
+
+void Unit::ApplyHasteRegenMod(float val, bool apply)
+{
+    if (val > 0.f)
+        ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModHasteRegen), val, !apply);
+    else
         ApplyPercentModUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::ModHasteRegen), -val, apply);
+
+    for (Powers powerType : GetUsedPowerTypes())
+    {
+        if (powerType == MAX_POWERS || GetPowerIndex(powerType) == MAX_POWERS)
+            continue;
+
+        PowerTypeEntry const* powerTypeEntry = sDB2Manager.GetPowerTypeEntry(powerType);
+        if (!powerTypeEntry)
+            continue;
+
+        bool regenAffectedByHaste = powerTypeEntry->GetFlags().HasFlag(PowerTypeFlags::RegenAffectedByHaste);
+
+        // Classic Only - Death Knight Runes use the flags of the POWER_RUNES
+        if (powerType == POWER_RUNE_BLOOD || powerType == POWER_RUNE_FROST || powerType == POWER_RUNE_UNHOLY)
+            if (PowerTypeEntry const* powerTypeEntry = sDB2Manager.GetPowerTypeEntry(POWER_RUNES))
+                regenAffectedByHaste = powerTypeEntry->GetFlags().HasFlag(PowerTypeFlags::RegenAffectedByHaste);
+
+        if (regenAffectedByHaste)
+            UpdatePowerRegen(powerType);
     }
 }
 
@@ -11190,7 +10850,6 @@ void Unit::SetAIAnimKitId(uint16 animKitId)
         return;
 
     _aiAnimKitId = animKitId;
-    m_updateFlag.AnimKit = _aiAnimKitId != 0 || _movementAnimKitId != 0 || _meleeAnimKitId != 0;
 
     WorldPackets::Misc::SetAIAnimKit data;
     data.Unit = GetGUID();
@@ -11207,7 +10866,6 @@ void Unit::SetMovementAnimKitId(uint16 animKitId)
         return;
 
     _movementAnimKitId = animKitId;
-    m_updateFlag.AnimKit = _aiAnimKitId != 0 || _movementAnimKitId != 0 || _meleeAnimKitId != 0;
 
     WorldPackets::Misc::SetMovementAnimKit data;
     data.Unit = GetGUID();
@@ -11224,7 +10882,6 @@ void Unit::SetMeleeAnimKitId(uint16 animKitId)
         return;
 
     _meleeAnimKitId = animKitId;
-    m_updateFlag.AnimKit = _aiAnimKitId != 0 || _movementAnimKitId != 0 || _meleeAnimKitId != 0;
 
     WorldPackets::Misc::SetMeleeAnimKit data;
     data.Unit = GetGUID();
@@ -11248,9 +10905,9 @@ void Unit::SetMeleeAnimKitId(uint16 animKitId)
 
     Creature* creature = victim->ToCreature();
 
-    bool isRewardAllowed = attacker != victim;
+    bool isRewardAllowed = true;
     if (creature)
-        isRewardAllowed = isRewardAllowed && !creature->GetTapList().empty();
+        isRewardAllowed = creature->IsDamageEnoughForLootingAndReward() && !creature->GetTapList().empty();
 
     std::vector<Player*> tappers;
     if (isRewardAllowed && creature)
@@ -11301,60 +10958,25 @@ void Unit::SetMeleeAnimKitId(uint16 animKitId)
         // Generate loot before updating looter
         if (creature)
         {
-            DungeonEncounterEntry const* dungeonEncounter = nullptr;
-            if (InstanceScript const* instance = creature->GetInstanceScript())
-                dungeonEncounter = instance->GetBossDungeonEncounter(creature);
+            Group* group = !groups.empty() ? *groups.begin() : nullptr;
+            Player* looter = group ? ASSERT_NOTNULL(ObjectAccessor::GetPlayer(*creature, group->GetLooterGuid())) : tappers[0];
 
-            if (creature->GetMap()->IsDungeon())
-            {
-                if (dungeonEncounter)
-                {
-                    creature->m_personalLoot = GenerateDungeonEncounterPersonalLoot(dungeonEncounter->ID, creature->GetLootId(),
-                        LootTemplates_Creature, LOOT_CORPSE, creature, creature->GetCreatureDifficulty()->GoldMin, creature->GetCreatureDifficulty()->GoldMax,
-                        creature->GetLootMode(), creature->GetMap()->GetMapDifficulty(), tappers);
-                }
-                else if (!tappers.empty())
-                {
-                    Group* group = !groups.empty() ? *groups.begin() : nullptr;
-                    Player* looter = group ? ASSERT_NOTNULL(ObjectAccessor::GetPlayer(*creature, group->GetLooterGuid())) : tappers[0];
+            Loot* loot = new Loot(creature->GetMap(), creature->GetGUID(), LOOT_CORPSE, group);
+            if (uint32 lootid = creature->GetLootId())
+                loot->FillLoot(lootid, LootTemplates_Creature, looter, false, false, creature->GetLootMode(), ItemBonusMgr::GetContextForPlayer(creature->GetMap()->GetMapDifficulty(), looter));
 
-                    Loot* loot = new Loot(creature->GetMap(), creature->GetGUID(), LOOT_CORPSE, dungeonEncounter ? group : nullptr);
+            if (creature->GetLootMode() > 0)
+                loot->generateMoneyLoot(creature->GetCreatureDifficulty()->GoldMin, creature->GetCreatureDifficulty()->GoldMax);
 
-                    if (uint32 lootid = creature->GetLootId())
-                        loot->FillLoot(lootid, LootTemplates_Creature, looter, dungeonEncounter != nullptr, false, creature->GetLootMode(), ItemBonusMgr::GetContextForPlayer(creature->GetMap()->GetMapDifficulty(), looter));
+            if (group)
+                loot->NotifyLootList(creature->GetMap());
 
-                    if (creature->GetLootMode() > 0)
-                        loot->generateMoneyLoot(creature->GetCreatureDifficulty()->GoldMin, creature->GetCreatureDifficulty()->GoldMax);
+            creature->m_loot.reset(loot);
 
-                    if (group)
-                        loot->NotifyLootList(creature->GetMap());
-
-                    creature->m_personalLoot[looter->GetGUID()].reset(loot);   // trash mob loot is personal, generated with round robin rules
-
-                    // Update round robin looter only if the creature had loot
-                    if (!loot->isLooted())
-                        for (Group* tapperGroup : groups)
-                            tapperGroup->UpdateLooterGuid(creature);
-                }
-            }
-            else
-            {
-                for (Player* tapper : tappers)
-                {
-                    Loot* loot = new Loot(creature->GetMap(), creature->GetGUID(), LOOT_CORPSE, nullptr);
-
-                    if (dungeonEncounter)
-                        loot->SetDungeonEncounterId(dungeonEncounter->ID);
-
-                    if (uint32 lootid = creature->GetLootId())
-                        loot->FillLoot(lootid, LootTemplates_Creature, tapper, true, false, creature->GetLootMode(), ItemBonusMgr::GetContextForPlayer(creature->GetMap()->GetMapDifficulty(), tapper));
-
-                    if (creature->GetLootMode() > 0)
-                        loot->generateMoneyLoot(creature->GetCreatureDifficulty()->GoldMin, creature->GetCreatureDifficulty()->GoldMax);
-
-                    creature->m_personalLoot[tapper->GetGUID()].reset(loot);
-                }
-            }
+            // Update round robin looter only if the creature had loot
+            if (!loot->isLooted())
+                for (Group* tapperGroup : groups)
+                    tapperGroup->UpdateLooterGuid(creature);
         }
 
         if (Vignettes::VignetteData const* vignette = victim->GetVignette())
@@ -11525,6 +11147,10 @@ void Unit::SetMeleeAnimKitId(uint16 animKitId)
         }
     }
 
+    // Combo Points handling - clear target after killing it
+    if (attacker && attacker->GetComboTarget() == victim->GetGUID())
+        attacker->ClearComboTarget();
+
     // achievement stuff
     if (attacker && victim->GetTypeId() == TYPEID_PLAYER)
     {
@@ -11680,19 +11306,22 @@ void Unit::SetStunned(bool apply)
     }
 }
 
-void Unit::SetRooted(bool apply)
+void Unit::SetRooted(bool apply, bool packetOnly /*= false*/)
 {
-    if (apply)
+    if (!packetOnly)
     {
-        // MOVEMENTFLAG_ROOT cannot be used in conjunction with MOVEMENTFLAG_MASK_MOVING (tested 3.3.5a)
-        // this will freeze clients. That's why we remove MOVEMENTFLAG_MASK_MOVING before
-        // setting MOVEMENTFLAG_ROOT
-        RemoveUnitMovementFlag(MOVEMENTFLAG_MASK_MOVING);
-        AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
-        StopMoving();
+        if (apply)
+        {
+            // MOVEMENTFLAG_ROOT cannot be used in conjunction with MOVEMENTFLAG_MASK_MOVING (tested 3.3.5a)
+            // this will freeze clients. That's why we remove MOVEMENTFLAG_MASK_MOVING before
+            // setting MOVEMENTFLAG_ROOT
+            RemoveUnitMovementFlag(MOVEMENTFLAG_MASK_MOVING);
+            AddUnitMovementFlag(MOVEMENTFLAG_ROOT);
+            StopMoving();
+        }
+        else
+            RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
     }
-    else
-        RemoveUnitMovementFlag(MOVEMENTFLAG_ROOT);
 
     static OpcodeServer const rootOpcodeTable[2][2] =
     {
@@ -11700,7 +11329,7 @@ void Unit::SetRooted(bool apply)
         { SMSG_MOVE_SPLINE_ROOT, SMSG_MOVE_ROOT }
     };
 
-    if (Player* playerMover = GetPlayerMovingMe()) // unit controlled by a player.
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved())) // unit controlled by a player.
     {
         WorldPackets::Movement::MoveSetFlag packet(rootOpcodeTable[apply][1]);
         packet.MoverGUID = GetGUID();
@@ -12214,12 +11843,12 @@ void Unit::GetPartyMembers(std::list<Unit*> &TagUnitMap)
     {
         uint8 subgroup = owner->ToPlayer()->GetSubGroup();
 
-        for (GroupReference const& itr : group->GetMembers())
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* Target = itr.GetSource();
+            Player* Target = itr->GetSource();
 
             // IsHostileTo check duel and controlled by enemy
-            if (Target->IsInMap(owner) && Target->GetSubGroup() == subgroup && !IsHostileTo(Target))
+            if (Target && Target->IsInMap(owner) && Target->GetSubGroup() == subgroup && !IsHostileTo(Target))
             {
                 if (Target->IsAlive())
                     TagUnitMap.push_back(Target);
@@ -12276,7 +11905,7 @@ Aura* Unit::AddAura(SpellInfo const* spellInfo, uint32 effMask, Unit* target)
     if (!target->IsAlive() && !spellInfo->IsPassive() && !spellInfo->HasAttribute(SPELL_ATTR2_ALLOW_DEAD_TARGET))
         return nullptr;
 
-    if (target->IsImmunedToSpell(spellInfo, effMask, this))
+    if (target->IsImmunedToSpell(spellInfo, this))
         return nullptr;
 
     for (SpellEffectInfo const& spellEffectInfo : spellInfo->GetEffects())
@@ -12312,7 +11941,7 @@ void Unit::SetAuraStack(uint32 spellId, Unit* target, uint32 stack)
         aura->SetStackAmount(stack);
 }
 
-void Unit::SendPlaySpellVisual(Unit* target, uint32 spellVisualId, uint8 missReason, uint8 reflectStatus, float travelSpeed, bool speedAsTime /*= false*/, float launchDelay /*= 0.0f*/)
+void Unit::SendPlaySpellVisual(Unit* target, uint32 spellVisualId, uint16 missReason, uint16 reflectStatus, float travelSpeed, bool speedAsTime /*= false*/, float launchDelay /*= 0.0f*/)
 {
     WorldPackets::Spells::PlaySpellVisual playSpellVisual;
     playSpellVisual.Source = GetGUID();
@@ -12327,7 +11956,7 @@ void Unit::SendPlaySpellVisual(Unit* target, uint32 spellVisualId, uint8 missRea
     SendMessageToSet(playSpellVisual.Write(), true);
 }
 
-void Unit::SendPlaySpellVisual(Position const& targetPosition, uint32 spellVisualId, uint8 missReason, uint8 reflectStatus, float travelSpeed, bool speedAsTime /*= false*/, float launchDelay /*= 0.0f*/)
+void Unit::SendPlaySpellVisual(Position const& targetPosition, uint32 spellVisualId, uint16 missReason, uint16 reflectStatus, float travelSpeed, bool speedAsTime /*= false*/, float launchDelay /*= 0.0f*/)
 {
     WorldPackets::Spells::PlaySpellVisual playSpellVisual;
     playSpellVisual.Source = GetGUID();
@@ -12424,6 +12053,211 @@ bool Unit::CanApplyResilience() const
     *damage -= target->GetDamageReduction(*damage);
 }
 
+// Players update their powers in 2 seconds intervals, creatures in 1 second ones
+constexpr uint32 CREATURE_POWER_REGEN_UPDATE_INTERVAL = 1 * IN_MILLISECONDS;
+constexpr uint32 PLAYER_POWER_REGEN_UPDATE_INTERVAL = 2 * IN_MILLISECONDS;
+
+void Unit::RegenerateAll(uint32 diff)
+{
+    _powerRegenUpdateTimer += diff;
+    _healthRegenerationTimer += diff;
+
+    for (Powers powerType : GetUsedPowerTypes())
+    {
+        if (powerType == MAX_POWERS)
+            continue;
+
+        // Classic only - Runes are regenerated separately
+        if (powerType == POWER_RUNE_BLOOD || powerType == POWER_RUNE_FROST || powerType == POWER_RUNE_UNHOLY || powerType == POWER_RUNES)
+            continue;
+
+        Regenerate(powerType, diff);
+    }
+
+    if (GetClass() == CLASS_DEATH_KNIGHT)
+        RegenerateRunes(diff);
+
+    uint32 powerRegenUpdateInterval = IsPlayer() ? PLAYER_POWER_REGEN_UPDATE_INTERVAL : CREATURE_POWER_REGEN_UPDATE_INTERVAL;
+    if (_powerRegenUpdateTimer >= powerRegenUpdateInterval)
+        _powerRegenUpdateTimer -= powerRegenUpdateInterval;
+
+    if (_healthRegenerationTimer >= HEALTH_REGENERATION_INTERVAL)
+    {
+        RegenerateHealth();
+        _healthRegenerationTimer -= HEALTH_REGENERATION_INTERVAL;
+    }
+}
+
+void Unit::Regenerate(Powers power, uint32 diff)
+{
+    if (!HasUnitFlag2(UNIT_FLAG2_REGENERATE_POWER))
+        return;
+
+    // Skip regeneration for power type we cannot have
+    uint32 powerIndex = GetPowerIndex(power);
+    if (powerIndex == MAX_POWERS || powerIndex >= MAX_POWERS_PER_CLASS)
+        return;
+
+    /// @todo possible use of miscvalueb instead of amount
+    if (HasAuraTypeWithValue(SPELL_AURA_PREVENT_REGENERATE_POWER, power) || HasAuraType(SPELL_AURA_INTERRUPT_REGEN))
+        return;
+
+    int32 curValue = GetPower(power);
+
+    PowerTypeEntry const* powerType = sDB2Manager.GetPowerTypeEntry(power);
+    if (!powerType)
+        return;
+
+    float addvalue = 0.0f;
+    if (!IsInCombat())
+    {
+        if (powerType->GetFlags().HasFlag(PowerTypeFlags::UseRegenInterrupt) && _regenInterruptTimestamp + Milliseconds(powerType->RegenInterruptTimeMS) >= GameTime::Now())
+            return;
+
+        addvalue = (powerType->RegenPeace + m_unitData->PowerRegenFlatModifier[powerIndex]) * 0.001f * diff;
+    }
+    else
+        addvalue = (powerType->RegenCombat + m_unitData->PowerRegenInterruptedFlatModifier[powerIndex]) * 0.001f * diff;
+
+    static Rates const RatesForPower[MAX_POWERS] =
+    {
+        RATE_POWER_MANA,
+        RATE_POWER_RAGE_LOSS,
+        RATE_POWER_FOCUS,
+        RATE_POWER_ENERGY,
+        RATE_POWER_COMBO_POINTS_LOSS,
+        MAX_RATES, // runes
+        RATE_POWER_RUNIC_POWER_LOSS,
+        RATE_POWER_SOUL_SHARDS,
+        RATE_POWER_LUNAR_POWER,
+        RATE_POWER_HOLY_POWER,
+        MAX_RATES, // alternate
+        RATE_POWER_MAELSTROM,
+        RATE_POWER_CHI,
+        RATE_POWER_INSANITY,
+        MAX_RATES, // burning embers, unused
+        MAX_RATES, // demonic fury, unused
+        RATE_POWER_ARCANE_CHARGES,
+        RATE_POWER_FURY,
+        RATE_POWER_PAIN,
+        RATE_POWER_ESSENCE,
+        MAX_RATES, // runes
+        MAX_RATES, // runes
+        MAX_RATES, // runes
+        MAX_RATES, // alternate
+        MAX_RATES, // alternate
+        MAX_RATES, // alternate
+    };
+
+    if (RatesForPower[power] != MAX_RATES)
+        addvalue *= sWorld->getRate(RatesForPower[power]);
+
+    int32 minPower = powerType->MinPower;
+    int32 maxPower = GetMaxPower(power);
+
+    if (powerType->CenterPower)
+    {
+        if (curValue > powerType->CenterPower)
+        {
+            addvalue = -std::abs(addvalue);
+            minPower = powerType->CenterPower;
+        }
+        else if (curValue < powerType->CenterPower)
+        {
+            addvalue = std::abs(addvalue);
+            maxPower = powerType->CenterPower;
+        }
+        else
+            return;
+    }
+
+    addvalue += _powerFraction[powerIndex];
+    int32 integerValue = int32(std::fabs(addvalue));
+
+    if (addvalue < 0.0f)
+    {
+        if (curValue <= minPower)
+            return;
+    }
+    else if (addvalue > 0.0f)
+    {
+        if (curValue >= maxPower)
+            return;
+    }
+    else
+        return;
+
+    bool forcesSetPower = false;
+    if (addvalue < 0.0f)
+    {
+        if (curValue > minPower + integerValue)
+        {
+            curValue -= integerValue;
+            _powerFraction[powerIndex] = addvalue + integerValue;
+        }
+        else
+        {
+            curValue = minPower;
+            _powerFraction[powerIndex] = 0;
+            forcesSetPower = true;
+        }
+    }
+    else
+    {
+        if (curValue + integerValue <= maxPower)
+        {
+            curValue += integerValue;
+            _powerFraction[powerIndex] = addvalue - integerValue;
+        }
+        else
+        {
+            curValue = maxPower;
+            _powerFraction[powerIndex] = 0;
+            forcesSetPower = true;
+        }
+    }
+
+    if (IsPlayer() && ToPlayer()->GetCommandStatus(CHEAT_POWER))
+        curValue = maxPower;
+
+    if (_powerRegenUpdateTimer >= (IsPlayer() ? PLAYER_POWER_REGEN_UPDATE_INTERVAL : CREATURE_POWER_REGEN_UPDATE_INTERVAL) || forcesSetPower)
+        SetPower(power, curValue);
+    else
+    {
+        // throttle packet sending
+        DoWithSuppressingObjectUpdates([&]()
+        {
+            SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::Power, powerIndex), curValue);
+            const_cast<UF::UnitData&>(*m_unitData).ClearChanged(&UF::UnitData::Power, powerIndex);
+        });
+    }
+}
+
+void Unit::InterruptPowerRegen(Powers power)
+{
+    uint32 powerIndex = GetPowerIndex(power);
+    if (powerIndex == MAX_POWERS || powerIndex >= MAX_POWERS_PER_CLASS)
+        return;
+
+    _regenInterruptTimestamp = GameTime::Now();
+    _powerFraction[powerIndex] = 0.0f;
+
+    if (IsPlayer())
+        ToPlayer()->SendDirectMessage(WorldPackets::Combat::InterruptPowerRegen(power).Write());
+}
+
+void Unit::RegisterPowerTypes()
+{
+    for (uint8 i = POWER_MANA; i < MAX_POWERS; ++i)
+    {
+        uint32 powerIndex = GetPowerIndex(Powers(i));
+        if (powerIndex == MAX_POWERS || powerIndex == MAX_POWERS_PER_CLASS)
+            continue;
+
+        _usedPowerTypes[powerIndex] = static_cast<Powers>(i);
+    }
+}
+
 int32 Unit::CalculateAOEAvoidance(int32 damage, uint32 schoolMask, bool npcCaster) const
 {
     damage = int32(float(damage) * GetTotalAuraMultiplierByMiscMask(SPELL_AURA_MOD_AOE_DAMAGE_AVOIDANCE, schoolMask));
@@ -12444,8 +12278,7 @@ float Unit::MeleeSpellMissChance(Unit const* victim, WeaponAttackType attType, S
     float missChance = victim->GetUnitMissChance();
 
     // melee attacks while dual wielding have +19% chance to miss
-    if (!spellInfo && haveOffhandWeapon() && attType != RANGED_ATTACK && !m_currentSpells[CURRENT_MELEE_SPELL]
-        && !IsInFeralForm() && !HasAuraType(SPELL_AURA_IGNORE_DUAL_WIELD_HIT_PENALTY))
+    if (!spellInfo && haveOffhandWeapon() && !IsInFeralForm() && !HasAuraType(SPELL_AURA_IGNORE_DUAL_WIELD_HIT_PENALTY))
         missChance += 19.0f;
 
     // Spellmod from SpellModOp::HitChance
@@ -12499,7 +12332,7 @@ void Unit::SendMoveKnockBack(Player* player, float speedXY, float speedZ, float 
     player->GetSession()->SendPacket(moveKnockBack.Write());
 }
 
-void Unit::KnockbackFrom(Position const& origin, float speedXY, float speedZ, float angle /*= M_PI*/, Movement::SpellEffectExtraData const* spellEffectExtraData /*= nullptr*/)
+void Unit::KnockbackFrom(Position const& origin, float speedXY, float speedZ, Movement::SpellEffectExtraData const* spellEffectExtraData /*= nullptr*/)
 {
     Player* player = ToPlayer();
     if (!player)
@@ -12513,14 +12346,14 @@ void Unit::KnockbackFrom(Position const& origin, float speedXY, float speedZ, fl
     }
 
     if (!player)
-        GetMotionMaster()->MoveKnockbackFrom(origin, speedXY, speedZ, angle, spellEffectExtraData);
+        GetMotionMaster()->MoveKnockbackFrom(origin, speedXY, speedZ, spellEffectExtraData);
     else
     {
-        float o = (GetPosition() == origin ? GetOrientation() : GetAbsoluteAngle(origin)) + angle;
+        float o = GetPosition() == origin ? GetOrientation() + M_PI : origin.GetAbsoluteAngle(this);
         if (speedXY < 0)
         {
             speedXY = -speedXY;
-            o = o - float(M_PI);
+            o = o - M_PI;
         }
 
         float vcos = std::cos(o);
@@ -12568,12 +12401,6 @@ uint32 Unit::GetModelForForm(ShapeshiftForm form, uint32 spellId) const
 
     if (Player const* player = ToPlayer())
     {
-        if (Aura* artifactAura = GetAura(ARTIFACTS_ALL_WEAPONS_GENERAL_WEAPON_EQUIPPED_PASSIVE))
-            if (Item* artifact = player->GetItemByGuid(artifactAura->GetCastItemGUID()))
-                if (ArtifactAppearanceEntry const* artifactAppearance = sArtifactAppearanceStore.LookupEntry(artifact->GetModifier(ITEM_MODIFIER_ARTIFACT_APPEARANCE_ID)))
-                    if (ShapeshiftForm(artifactAppearance->OverrideShapeshiftFormID) == form)
-                        return artifactAppearance->OverrideShapeshiftDisplayID;
-
         if (ShapeshiftFormModelData const* formModelData = sDB2Manager.GetShapeshiftFormModelData(GetRace(), player->GetNativeGender(), form))
         {
             bool useRandom = false;
@@ -12602,7 +12429,7 @@ uint32 Unit::GetModelForForm(ShapeshiftForm form, uint32 spellId) const
                         ChrCustomizationReqEntry const* choiceReq = sChrCustomizationReqStore.LookupEntry((*formModelData->Choices)[i]->ChrCustomizationReqID);
                         if (!choiceReq || player->GetSession()->MeetsChrCustomizationReq(choiceReq, Races(GetRace()), Classes(GetClass()), false,
                             MakeChrCustomizationChoiceRange(player->m_playerData->Customizations)))
-                            displayIds.push_back(displayInfo->DisplayID);
+                            displayIds.push_back(displayInfo->CreatureDisplayInfoID);
                     }
                 }
 
@@ -12620,7 +12447,7 @@ uint32 Unit::GetModelForForm(ShapeshiftForm form, uint32 spellId) const
 
                     if (choiceItr != formModelData->Choices->end())
                         if (ChrCustomizationDisplayInfoEntry const* displayInfo = formModelData->Displays[std::distance(formModelData->Choices->begin(), choiceItr)])
-                            return displayInfo->DisplayID;
+                            return displayInfo->CreatureDisplayInfoID;
                 }
             }
         }
@@ -12637,11 +12464,42 @@ uint32 Unit::GetModelForForm(ShapeshiftForm form, uint32 spellId) const
         }
     }
 
+    uint32 modelId = 0;
     SpellShapeshiftFormEntry const* formEntry = sSpellShapeshiftFormStore.LookupEntry(form);
-    if (formEntry && formEntry->CreatureDisplayID)
-        return formEntry->CreatureDisplayID;
+    if (formEntry && formEntry->CreatureDisplayID[0])
+    {
+        // Take the alliance modelid as default
+        if (GetTypeId() != TYPEID_PLAYER)
+            return formEntry->CreatureDisplayID[0];
+        else
+        {
+            if (Player::TeamForRace(GetRace()) == ALLIANCE)
+                modelId = formEntry->CreatureDisplayID[0];
+            else
+                modelId = formEntry->CreatureDisplayID[1];
 
-    return 0;
+            // If the player is horde but there are no values for the horde modelid - take the alliance modelid
+            if (!modelId && Player::TeamForRace(GetRace()) == HORDE)
+                modelId = formEntry->CreatureDisplayID[0];
+        }
+    }
+
+    return modelId;
+}
+
+void Unit::JumpTo(float speedXY, float speedZ, float angle, Optional<Position> dest)
+{
+    if (dest)
+        angle += GetRelativeAngle(*dest);
+
+    if (GetTypeId() == TYPEID_UNIT)
+        GetMotionMaster()->MoveJumpTo(angle, speedXY, speedZ);
+    else
+    {
+        float vcos = std::cos(angle+GetOrientation());
+        float vsin = std::sin(angle+GetOrientation());
+        SendMoveKnockBack(ToPlayer(), speedXY, -speedZ, vcos, vsin);
+    }
 }
 
 void Unit::HandleSpellClick(Unit* clicker, int8 seatId /*= -1*/)
@@ -12720,21 +12578,21 @@ bool Unit::HandleSpellClick(Unit* clicker, int8 seatId, uint32 spellId, TriggerC
         {
             CastSpellExtraArgs args(flags);
             args.OriginalCaster = origCasterGUID;
-            args.AddSpellMod(SpellValueModFloat(SPELLVALUE_BASE_POINT0 + effectIndex), seatId + 1);
+            args.AddSpellMod(SpellValueMod(SPELLVALUE_BASE_POINT0 + effectIndex), seatId + 1);
             castResult = caster->CastSpell(target, spellId, args);
         }
         else    // This can happen during Player::_LoadAuras
         {
-            std::array<SpellEffectValue, MAX_SPELL_EFFECTS> bp = { };
+            int32 bp[MAX_SPELL_EFFECTS] = { };
             for (SpellEffectInfo const& spellEffectInfo : spellEntry->GetEffects())
-                bp[spellEffectInfo.EffectIndex] = spellEffectInfo.BasePoints;
+                bp[spellEffectInfo.EffectIndex] = int32(spellEffectInfo.BasePoints);
 
             bp[effectIndex] = seatId;
 
             AuraCreateInfo createInfo(ObjectGuid::Create<HighGuid::Cast>(SPELL_CAST_SOURCE_NORMAL, GetMapId(), spellEntry->Id, GetMap()->GenerateLowGuid<HighGuid::Cast>()), spellEntry, GetMap()->GetDifficultyID(), MAX_EFFECT_MASK, this);
             createInfo
                 .SetCaster(clicker)
-                .SetBaseAmount(bp.data())
+                .SetBaseAmount(bp)
                 .SetCasterGUID(origCasterGUID);
 
             Aura::TryRefreshStackOrCreate(createInfo);
@@ -12966,22 +12824,18 @@ bool Unit::CanSwim() const
     return HasUnitFlag(UNIT_FLAG_RENAME | UNIT_FLAG_CAN_SWIM);
 }
 
-void Unit::NearTeleportTo(TeleportLocation const& target, bool casting)
+void Unit::NearTeleportTo(Position const& pos, bool casting /*= false*/)
 {
     DisableSpline();
+    TeleportLocation target{ .Location = { GetMapId(), pos } };
     if (GetTypeId() == TYPEID_PLAYER)
         ToPlayer()->TeleportTo(target, TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET | (casting ? TELE_TO_SPELL : TELE_TO_NONE));
     else
     {
         SendTeleportPacket(target);
-        UpdatePosition(target.Location, true);
+        UpdatePosition(pos, true);
         UpdateObjectVisibility();
     }
-}
-
-void Unit::NearTeleportTo(Position const& pos, bool casting /*= false*/)
-{
-    NearTeleportTo(TeleportLocation{ .Location = { GetMapId(), pos } }, casting);
 }
 
 void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
@@ -12993,6 +12847,7 @@ void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
     moveUpdateTeleport.Status = &m_movementInfo;
     if (_movementForces)
         moveUpdateTeleport.MovementForces = _movementForces->GetForces();
+    Unit* broadcastSource = this;
 
     // should this really be the unit _being_ moved? not the unit doing the moving?
     if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
@@ -13005,15 +12860,14 @@ void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
         moveTeleport.SequenceIndex = m_movementCounter++;
         playerMover->SendDirectMessage(moveTeleport.Write());
 
-        // Broadcast the packet to everyone except self.
-        SendMessageToSet(moveUpdateTeleport.Write(), playerMover);
+        broadcastSource = playerMover;
     }
     else
     {
         // This is the only packet sent for creatures which contains MovementInfo structure
         // we do not update m_movementInfo for creatures so it needs to be done manually here
         moveUpdateTeleport.Status->guid = GetGUID();
-        moveUpdateTeleport.Status->time = GameTime::GetGameTimeMS();
+        moveUpdateTeleport.Status->time = getMSTime();
 
         if (teleportLocation.TransportGuid)
         {
@@ -13021,17 +12875,18 @@ void Unit::SendTeleportPacket(TeleportLocation const& teleportLocation)
             if (!transport)
                 return;
 
-            moveUpdateTeleport.Status->pos.Relocate(transport->GetPositionWithOffset(teleportLocation.Location));
+            float x, y, z, o;
+            teleportLocation.Location.GetPosition(x, y, z, o);
+            transport->CalculatePassengerPosition(x, y, z, &o);
+            moveUpdateTeleport.Status->pos.Relocate(x, y, z, o);
             moveUpdateTeleport.Status->transport.pos.Relocate(teleportLocation.Location);
         }
         else
-        {
             moveUpdateTeleport.Status->pos.Relocate(teleportLocation.Location);
-            moveUpdateTeleport.Status->transport.Reset();
-        }
-
-        SendMessageToSet(moveUpdateTeleport.Write(), true);
     }
+
+    // Broadcast the packet to everyone except self.
+    broadcastSource->SendMessageToSet(moveUpdateTeleport.Write(), false);
 }
 
 bool Unit::UpdatePosition(float x, float y, float z, float orientation, bool teleport)
@@ -13105,17 +12960,17 @@ void Unit::UpdateHeight(float newZ)
         GetVehicleKit()->RelocatePassengers();
 }
 
-// baseRage means damage taken when attacker = false
-int32 Unit::RewardRage(uint32 baseRage)
+// Modifies the rage amount gained by dealing or taking damage. Applies aura modifiers and power rate config settings
+int32 Unit::RewardRage(uint32 baseRage, bool asAttacker)
 {
     float addRage = baseRage;
 
-    // talent who gave more rage on attack
-    AddPct(addRage, GetTotalAuraModifier(SPELL_AURA_MOD_RAGE_FROM_DAMAGE_DEALT));
+    if (asAttacker)
+        AddPct(addRage, GetTotalAuraModifier(SPELL_AURA_MOD_RAGE_FROM_DAMAGE_DEALT));
 
     addRage *= sWorld->getRate(RATE_POWER_RAGE_INCOME);
 
-    return ModifyPower(POWER_RAGE, uint32(addRage * 10), false);
+    return ModifyPower(POWER_RAGE, static_cast<uint32>(addRage), !asAttacker);
 }
 
 void Unit::StopAttackFaction(uint32 faction_id)
@@ -13246,7 +13101,7 @@ void CharmInfo::SaveStayPosition()
 
     if (_unit->movespline->onTransport)
         if (TransportBase* transport = _unit->GetDirectTransport())
-            transport->GetPositionWithOffset({ stayPos.x, stayPos.y, stayPos.z }).GetPosition(stayPos.x, stayPos.y, stayPos.z);
+            transport->CalculatePassengerPosition(stayPos.x, stayPos.y, stayPos.z);
 
     _stayX = stayPos.x;
     _stayY = stayPos.y;
@@ -13387,7 +13242,7 @@ bool Unit::SetDisableGravity(bool disable, bool updateAnimTier /*= true*/)
         { SMSG_MOVE_SPLINE_DISABLE_GRAVITY, SMSG_MOVE_DISABLE_GRAVITY }
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(gravityOpcodeTable[disable][1]);
         packet.MoverGUID = GetGUID();
@@ -13405,20 +13260,17 @@ bool Unit::SetDisableGravity(bool disable, bool updateAnimTier /*= true*/)
         SendMessageToSet(packet.Write(), true);
     }
 
-    if (!GetVehicle())
+    if (IsAlive())
     {
-        if (IsAlive())
-        {
-            if (IsGravityDisabled() || IsHovering())
-                SetPlayHoverAnim(true);
-            else
-                SetPlayHoverAnim(false);
-        }
-        else if (IsPlayer()) // To update player who dies while flying/hovering
-            SetPlayHoverAnim(false, false);
+        if (IsGravityDisabled() || IsHovering())
+            SetPlayHoverAnim(true);
+        else
+            SetPlayHoverAnim(false);
     }
+    else if (IsPlayer()) // To update player who dies while flying/hovering
+        SetPlayHoverAnim(false, false);
 
-    if (IsCreature() && updateAnimTier && !HasUnitState(UNIT_STATE_ROOT))
+    if (IsCreature() && updateAnimTier && IsAlive() && !HasUnitState(UNIT_STATE_ROOT))
     {
         if (IsGravityDisabled())
             SetAnimTier(AnimTier::Fly);
@@ -13488,7 +13340,7 @@ bool Unit::SetCanFly(bool enable)
     if (!enable && GetTypeId() == TYPEID_PLAYER)
         ToPlayer()->SetFallInformation(0, GetPositionZ());
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(flyOpcodeTable[enable][1]);
         packet.MoverGUID = GetGUID();
@@ -13525,7 +13377,7 @@ bool Unit::SetWaterWalking(bool enable)
         { SMSG_MOVE_SPLINE_SET_WATER_WALK, SMSG_MOVE_SET_WATER_WALK }
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(waterWalkingOpcodeTable[enable][1]);
         packet.MoverGUID = GetGUID();
@@ -13563,7 +13415,7 @@ bool Unit::SetFeatherFall(bool enable)
         { SMSG_MOVE_SPLINE_SET_FEATHER_FALL, SMSG_MOVE_SET_FEATHER_FALL }
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(featherFallOpcodeTable[enable][1]);
         packet.MoverGUID = GetGUID();
@@ -13616,7 +13468,7 @@ bool Unit::SetHover(bool enable, bool updateAnimTier /*= true*/)
         { SMSG_MOVE_SPLINE_SET_HOVER,   SMSG_MOVE_SET_HOVERING   }
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(hoverOpcodeTable[enable][1]);
         packet.MoverGUID = GetGUID();
@@ -13644,7 +13496,7 @@ bool Unit::SetHover(bool enable, bool updateAnimTier /*= true*/)
     else if (IsPlayer()) // To update player who dies while flying/hovering
         SetPlayHoverAnim(false, false);
 
-    if (IsCreature() && updateAnimTier && !HasUnitState(UNIT_STATE_ROOT))
+    if (IsCreature() && updateAnimTier && IsAlive() && !HasUnitState(UNIT_STATE_ROOT))
     {
         if (IsGravityDisabled())
             SetAnimTier(AnimTier::Fly);
@@ -13673,7 +13525,7 @@ bool Unit::SetCollision(bool disable)
         { SMSG_MOVE_SPLINE_DISABLE_COLLISION, SMSG_MOVE_DISABLE_COLLISION }
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(collisionOpcodeTable[disable][1]);
         packet.MoverGUID = GetGUID();
@@ -13689,161 +13541,6 @@ bool Unit::SetCollision(bool disable)
         WorldPackets::Movement::MoveSplineSetFlag packet(collisionOpcodeTable[disable][0]);
         packet.MoverGUID = GetGUID();
         SendMessageToSet(packet.Write(), true);
-    }
-
-    return true;
-}
-
-bool Unit::SetStrafingDisabled(bool disable)
-{
-    if (disable == HasExtraUnitMovementFlag(MOVEMENTFLAG2_NO_STRAFE))
-        return false;
-
-    if (disable)
-        AddExtraUnitMovementFlag(MOVEMENTFLAG2_NO_STRAFE);
-    else
-        RemoveExtraUnitMovementFlag(MOVEMENTFLAG2_NO_STRAFE);
-
-    static OpcodeServer const disableStrafingOpcodeTable[2] =
-    {
-        SMSG_MOVE_ENABLE_STRAFING,
-        SMSG_MOVE_DISABLE_STRAFING,
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(disableStrafingOpcodeTable[disable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
-    }
-
-    return true;
-}
-
-bool Unit::SetJumpingDisabled(bool disable)
-{
-    if (disable == HasExtraUnitMovementFlag(MOVEMENTFLAG2_NO_JUMPING))
-        return false;
-
-    if (disable)
-        AddExtraUnitMovementFlag(MOVEMENTFLAG2_NO_JUMPING);
-    else
-        RemoveExtraUnitMovementFlag(MOVEMENTFLAG2_NO_JUMPING);
-
-    static OpcodeServer const disableJumpingOpcodeTable[2] =
-    {
-        SMSG_MOVE_ENABLE_JUMPING,
-        SMSG_MOVE_DISABLE_JUMPING,
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(disableJumpingOpcodeTable[disable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
-    }
-
-    return true;
-}
-
-bool Unit::SetEnableFullSpeedTurning(bool enable)
-{
-    if (enable == HasExtraUnitMovementFlag(MOVEMENTFLAG2_FULL_SPEED_TURNING))
-        return false;
-
-    if (enable)
-        AddExtraUnitMovementFlag(MOVEMENTFLAG2_FULL_SPEED_TURNING);
-    else
-        RemoveExtraUnitMovementFlag(MOVEMENTFLAG2_FULL_SPEED_TURNING);
-
-    static constexpr OpcodeServer fullSpeedTurningOpcodeTable[2] =
-    {
-        SMSG_MOVE_DISABLE_FULL_SPEED_TURNING,
-        SMSG_MOVE_ENABLE_FULL_SPEED_TURNING
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(fullSpeedTurningOpcodeTable[enable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
-    }
-
-    return true;
-}
-
-bool Unit::SetEnableFullSpeedPitching(bool enable)
-{
-    if (enable == HasExtraUnitMovementFlag(MOVEMENTFLAG2_FULL_SPEED_PITCHING))
-        return false;
-
-    if (enable)
-        AddExtraUnitMovementFlag(MOVEMENTFLAG2_FULL_SPEED_PITCHING);
-    else
-        RemoveExtraUnitMovementFlag(MOVEMENTFLAG2_FULL_SPEED_PITCHING);
-
-    static constexpr OpcodeServer fullSpeedPitchingOpcodeTable[2] =
-    {
-        SMSG_MOVE_DISABLE_FULL_SPEED_PITCHING,
-        SMSG_MOVE_ENABLE_FULL_SPEED_PITCHING
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(fullSpeedPitchingOpcodeTable[enable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
-    }
-
-    return true;
-}
-
-bool Unit::SetAlwaysAllowPitching(bool enable)
-{
-    if (enable == HasExtraUnitMovementFlag(MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING))
-        return false;
-
-    if (enable)
-        AddExtraUnitMovementFlag(MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING);
-    else
-        RemoveExtraUnitMovementFlag(MOVEMENTFLAG2_ALWAYS_ALLOW_PITCHING);
-
-    static constexpr OpcodeServer alwaysAllowPitchingOpcodeTable[2] =
-    {
-        SMSG_MOVE_UNSET_ALWAYS_ALLOW_PITCHING,
-        SMSG_MOVE_SET_ALWAYS_ALLOW_PITCHING
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(alwaysAllowPitchingOpcodeTable[enable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
     }
 
     return true;
@@ -13868,7 +13565,7 @@ bool Unit::SetCanTransitionBetweenSwimAndFly(bool enable)
         SMSG_MOVE_ENABLE_TRANSITION_BETWEEN_SWIM_AND_FLY
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(swimToFlyTransOpcodeTable[enable]);
         packet.MoverGUID = GetGUID();
@@ -13900,7 +13597,7 @@ bool Unit::SetCanTurnWhileFalling(bool enable)
         SMSG_MOVE_SET_CAN_TURN_WHILE_FALLING
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(canTurnWhileFallingOpcodeTable[enable]);
         packet.MoverGUID = GetGUID();
@@ -13931,7 +13628,7 @@ bool Unit::SetCanDoubleJump(bool enable)
         SMSG_MOVE_ENABLE_DOUBLE_JUMP
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(doubleJumpOpcodeTable[enable]);
         packet.MoverGUID = GetGUID();
@@ -13958,75 +13655,13 @@ bool Unit::SetDisableInertia(bool disable)
 
     static OpcodeServer const disableInertiaOpcodeTable[2] =
     {
-        SMSG_MOVE_ENABLE_INERTIA,
-        SMSG_MOVE_DISABLE_INERTIA
+        SMSG_MOVE_DISABLE_INERTIA,
+        SMSG_MOVE_ENABLE_INERTIA
     };
 
-    if (Player* playerMover = GetPlayerMovingMe())
+    if (Player* playerMover = Unit::ToPlayer(GetUnitBeingMoved()))
     {
         WorldPackets::Movement::MoveSetFlag packet(disableInertiaOpcodeTable[disable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
-    }
-
-    return true;
-}
-
-bool Unit::SetCanAdvFly(bool enable)
-{
-    if (enable == HasExtraUnitMovementFlag2(MOVEMENTFLAG3_CAN_ADV_FLY))
-        return false;
-
-    if (enable)
-        AddExtraUnitMovementFlag2(MOVEMENTFLAG3_CAN_ADV_FLY);
-    else
-        RemoveExtraUnitMovementFlag2(MOVEMENTFLAG3_CAN_ADV_FLY | MOVEMENTFLAG3_ADV_FLYING);
-
-    static OpcodeServer const advFlyOpcodeTable[2] =
-    {
-        SMSG_MOVE_UNSET_CAN_ADV_FLY,
-        SMSG_MOVE_SET_CAN_ADV_FLY
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(advFlyOpcodeTable[enable]);
-        packet.MoverGUID = GetGUID();
-        packet.SequenceIndex = m_movementCounter++;
-        playerMover->SendDirectMessage(packet.Write());
-
-        WorldPackets::Movement::MoveUpdate moveUpdate;
-        moveUpdate.Status = &m_movementInfo;
-        SendMessageToSet(moveUpdate.Write(), playerMover);
-    }
-
-    return true;
-}
-
-bool Unit::SetMoveCantSwim(bool cantSwim)
-{
-    if (cantSwim == HasExtraUnitMovementFlag2(MOVEMENTFLAG3_CANNOT_SWIM))
-        return false;
-
-    if (cantSwim)
-        AddExtraUnitMovementFlag2(MOVEMENTFLAG3_CANNOT_SWIM);
-    else
-        RemoveExtraUnitMovementFlag2(MOVEMENTFLAG3_CANNOT_SWIM);
-
-    static OpcodeServer const cantSwimOpcodeTable[2] =
-    {
-        SMSG_MOVE_UNSET_CANNOT_SWIM,
-        SMSG_MOVE_SET_CANNOT_SWIM,
-    };
-
-    if (Player* playerMover = GetPlayerMovingMe())
-    {
-        WorldPackets::Movement::MoveSetFlag packet(cantSwimOpcodeTable[cantSwim]);
         packet.MoverGUID = GetGUID();
         packet.SequenceIndex = m_movementCounter++;
         playerMover->SendDirectMessage(packet.Write());
@@ -14187,7 +13822,7 @@ void Unit::SetPlayHoverAnim(bool enable, bool sendUpdate /*= true*/)
     if (IsPlayingHoverAnim() == enable)
         return;
 
-    m_updateFlag.PlayHoverAnim = enable;
+    _playHoverAnim = enable;
 
     if (!sendUpdate)
         return;
@@ -14236,7 +13871,7 @@ UF::UpdateFieldFlag Unit::GetUpdateFieldFlagsFor(Player const* target) const
     return flags;
 }
 
-void Unit::DestroyForPlayer(Player const* target) const
+void Unit::DestroyForPlayer(Player* target) const
 {
     if (Battleground* bg = target->GetBattleground())
     {
@@ -14251,15 +13886,15 @@ void Unit::DestroyForPlayer(Player const* target) const
     WorldObject::DestroyForPlayer(target);
 }
 
-void Unit::ClearValuesChangesMask()
+void Unit::ClearUpdateMask(bool remove)
 {
     m_values.ClearChangesMask(&Unit::m_unitData);
-    WorldObject::ClearValuesChangesMask();
+    Object::ClearUpdateMask(remove);
 }
 
-SpellEffectValue Unit::GetHighestExclusiveSameEffectSpellGroupValue(AuraEffect const* aurEff, AuraType auraType, bool checkMiscValue /*= false*/, int32 miscValue /*= 0*/) const
+int32 Unit::GetHighestExclusiveSameEffectSpellGroupValue(AuraEffect const* aurEff, AuraType auraType, bool checkMiscValue /*= false*/, int32 miscValue /*= 0*/) const
 {
-    SpellEffectValue val = 0;
+    int32 val = 0;
     SpellSpellGroupMapBounds spellGroup = sSpellMgr->GetSpellSpellGroupMapBounds(aurEff->GetSpellInfo()->GetFirstRankSpell()->Id);
     for (SpellSpellGroupMap::const_iterator itr = spellGroup.first; itr != spellGroup.second ; ++itr)
     {
@@ -14290,7 +13925,7 @@ bool Unit::IsHighestExclusiveAura(Aura const* aura, bool removeOtherAuraApplicat
     return true;
 }
 
-bool Unit::IsHighestExclusiveAuraEffect(SpellInfo const* spellInfo, AuraType auraType, SpellEffectValue effectAmount, uint32 auraEffectMask, bool removeOtherAuraApplications /*= false*/)
+bool Unit::IsHighestExclusiveAuraEffect(SpellInfo const* spellInfo, AuraType auraType, int32 effectAmount, uint32 auraEffectMask, bool removeOtherAuraApplications /*= false*/)
 {
     AuraEffectList const& auras = GetAuraEffectsByType(auraType);
     for (Unit::AuraEffectList::const_iterator itr = auras.begin(); itr != auras.end();)
@@ -14300,12 +13935,10 @@ bool Unit::IsHighestExclusiveAuraEffect(SpellInfo const* spellInfo, AuraType aur
 
         if (sSpellMgr->CheckSpellGroupStackRules(spellInfo, existingAurEff->GetSpellInfo()) == SPELL_GROUP_STACK_RULE_EXCLUSIVE_HIGHEST)
         {
-            SpellEffectValue diff = abs(effectAmount) - abs(existingAurEff->GetAmount());
+            int64 diff = int64(abs(effectAmount)) - int64(abs(existingAurEff->GetAmount()));
             if (!diff)
-            {
-                // treat the aura with more effects as stronger
-                diff = std::popcount(auraEffectMask) - std::popcount(existingAurEff->GetBase()->GetEffectMask());
-            }
+                for (int32 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+                    diff += int64((auraEffectMask & (1 << i)) >> i) - int64((existingAurEff->GetBase()->GetEffectMask() & (1 << i)) >> i);
 
             if (diff > 0)
             {
@@ -14479,9 +14112,9 @@ SpellInfo const* Unit::GetCastSpellInfo(SpellInfo const* spellInfo, TriggerCastF
         for (AuraEffect const* auraEffect : GetAuraEffectsByType(type))
         {
             bool matches = auraEffect->GetMiscValue() ? uint32(auraEffect->GetMiscValue()) == spellInfo->Id : auraEffect->IsAffectingSpell(spellInfo);
-            if (matches && context->AddSpell(auraEffect->GetAmountAsInt()))
+            if (matches && context->AddSpell(auraEffect->GetAmount()))
             {
-                if (SpellInfo const* newInfo = sSpellMgr->GetSpellInfo(auraEffect->GetAmountAsInt(), GetMap()->GetDifficultyID()))
+                if (SpellInfo const* newInfo = sSpellMgr->GetSpellInfo(auraEffect->GetAmount(), GetMap()->GetDifficultyID()))
                 {
                     if (auraEffect->GetSpellInfo()->HasAttribute(SPELL_ATTR8_IGNORE_SPELLCAST_OVERRIDE_COST))
                         triggerFlag |= TRIGGERED_IGNORE_POWER_COST;
@@ -14566,23 +14199,6 @@ float Unit::GetCollisionHeight() const
     return collisionHeight == 0.0f ? DEFAULT_COLLISION_HEIGHT : collisionHeight;
 }
 
-void Unit::AddWorldEffect(int32 worldEffectId)
-{
-    AddDynamicUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::WorldEffects)) = worldEffectId;
-}
-
-void Unit::RemoveWorldEffect(int32 worldEffectId)
-{
-    int32 index = m_unitData->WorldEffects.FindIndex(worldEffectId);
-    if (index >= 0)
-        RemoveDynamicUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::WorldEffects), index);
-}
-
-void Unit::ClearWorldEffects()
-{
-    ClearDynamicUpdateFieldValues(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::WorldEffects));
-}
-
 void Unit::SetVignette(uint32 vignetteId)
 {
     if (m_vignette)
@@ -14596,6 +14212,22 @@ void Unit::SetVignette(uint32 vignetteId)
 
     if (VignetteEntry const* vignette = sVignetteStore.LookupEntry(vignetteId))
         m_vignette = Vignettes::Create(vignette, this);
+}
+
+void Unit::AddComboPoints(ObjectGuid targetGuid, int32 points)
+{
+    // if we lose our target or our target changes, reset combo points back to zero
+    if (targetGuid.IsEmpty() || targetGuid != m_unitData->ComboTarget)
+        SetPower(POWER_COMBO_POINTS, 0, false);
+
+    SetComboTarget(targetGuid);
+    ModifyPower(POWER_COMBO_POINTS, points);
+}
+
+void Unit::ClearComboTarget()
+{
+    SetComboTarget(ObjectGuid::Empty);
+    ModifyPower(POWER_COMBO_POINTS, 0);
 }
 
 std::string Unit::GetDebugInfo() const

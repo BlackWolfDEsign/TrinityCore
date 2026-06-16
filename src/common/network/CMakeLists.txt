@@ -8,17 +8,22 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
+CollectSourceFiles(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE_SOURCES)
+
 GroupSources(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(network)
+add_library(network
+  ${PRIVATE_SOURCES})
 
-CollectAndAddSourceFiles(
-  network
+CollectIncludeDirectories(
   ${CMAKE_CURRENT_SOURCE_DIR}
-  EXCLUDE
-  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
+  PUBLIC_INCLUDES)
 
 target_include_directories(network
+  PUBLIC
+    ${PUBLIC_INCLUDES}
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -45,9 +50,4 @@ if(BUILD_SHARED_LIBS)
       RUNTIME
         DESTINATION "${CMAKE_INSTALL_PREFIX}")
   endif()
-endif()
-
-# Generate precompiled header
-if(USE_COREPCH)
-  add_cxx_pch(network PrecompiledHeaders/networkPCH.h)
 endif()

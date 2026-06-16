@@ -43,11 +43,7 @@ class TC_GAME_API ChatHandler
         WorldSession const* GetSession() const { return m_session; }
         Player* GetPlayer() const;
         explicit ChatHandler(WorldSession* session) : m_session(session), sentErrorMessage(false) { }
-        ChatHandler(ChatHandler const&) = delete;
-        ChatHandler(ChatHandler&&) = delete;
-        ChatHandler& operator=(ChatHandler const&) = delete;
-        ChatHandler& operator=(ChatHandler&&) = delete;
-        virtual ~ChatHandler() = default;
+        virtual ~ChatHandler() { }
 
         static char* LineFromMessage(char*& pos);
 
@@ -56,33 +52,24 @@ class TC_GAME_API ChatHandler
         virtual void SendSysMessage(std::string_view str, bool escapeCharacters = false);
 
         void SendSysMessage(uint32 entry);
-        void SendSysMessage(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept;
 
         template<typename... Args>
-        void PSendSysMessage(char const* fmt, Args&&... args)
+        void PSendSysMessage(const char* fmt, Args&&... args)
         {
-            this->SendSysMessage(fmt, fmt::make_printf_args(args...));
+            SendSysMessage(fmt::sprintf(fmt, std::forward<Args>(args)...));
         }
 
         template<typename... Args>
         void PSendSysMessage(uint32 entry, Args&&... args)
         {
-            this->PSendSysMessage(GetTrinityString(entry), std::forward<Args>(args)...);
+            SendSysMessage(PGetParseString(entry, std::forward<Args>(args)...).c_str());
         }
 
         template<typename... Args>
-        static std::string PGetParseString(std::string_view fmt, Args&&... args) noexcept
+        std::string PGetParseString(uint32 entry, Args&&... args) const
         {
-            return StringVPrintf(fmt, fmt::make_printf_args(args...));
+            return fmt::sprintf(GetTrinityString(entry), std::forward<Args>(args)...);
         }
-
-        template<typename... Args>
-        std::string PGetParseString(uint32 entry, Args&&... args) const noexcept
-        {
-            return PGetParseString(GetTrinityString(entry), std::forward<Args>(args)...);
-        }
-
-        static std::string StringVPrintf(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept;
 
         bool _ParseCommands(std::string_view text);
         virtual bool ParseCommands(std::string_view text);
@@ -159,7 +146,7 @@ class TC_GAME_API CliHandler : public ChatHandler
 class TC_GAME_API AddonChannelCommandHandler : public ChatHandler
 {
     public:
-        static std::string_view const PREFIX;
+        static std::string const PREFIX;
 
         using ChatHandler::ChatHandler;
         bool ParseCommands(std::string_view str) override;
@@ -168,7 +155,7 @@ class TC_GAME_API AddonChannelCommandHandler : public ChatHandler
         bool IsHumanReadable() const override { return humanReadable; }
 
     private:
-        void Send(std::string_view msg);
+        void Send(std::string const& msg);
         void SendAck();
         void SendOK();
         void SendFailed();

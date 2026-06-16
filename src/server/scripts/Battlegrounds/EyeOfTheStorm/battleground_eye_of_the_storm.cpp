@@ -367,8 +367,7 @@ struct battleground_eye_of_the_storm : BattlegroundScript
         return baseCount;
     }
 
-    template <std::invocable<Player*> Action>
-    void DoForFlagKeepers(Action const& action) const
+    void DoForFlagKeepers(std::function<void(Player*)> const& action) const
     {
         if (GameObject const* flag = battlegroundMap->GetGameObject(_flagGUID))
             if (Player* carrier = ObjectAccessor::FindPlayer(flag->GetFlagCarrierGUID()))

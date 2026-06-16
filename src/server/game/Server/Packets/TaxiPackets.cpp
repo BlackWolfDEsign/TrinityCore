@@ -16,33 +16,30 @@
 */
 
 #include "TaxiPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::Taxi
-{
-void TaxiNodeStatusQuery::Read()
+void WorldPackets::Taxi::TaxiNodeStatusQuery::Read()
 {
     _worldPacket >> UnitGUID;
 }
 
-WorldPacket const* TaxiNodeStatus::Write()
+WorldPacket const* WorldPackets::Taxi::TaxiNodeStatus::Write()
 {
     _worldPacket << Unit;
-    _worldPacket << Bits<2>(Status);
+    _worldPacket.WriteBits(Status, 2);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* ShowTaxiNodes::Write()
+WorldPacket const* WorldPackets::Taxi::ShowTaxiNodes::Write()
 {
-    _worldPacket << OptionalInit(WindowInfo);
+    _worldPacket.WriteBit(WindowInfo.has_value());
     _worldPacket.FlushBits();
 
     _worldPacket << uint32(CanLandNodes.size() / 8); // client reads this in uint64 blocks, size is ensured to be divisible by 8 in TaxiMask constructor
     _worldPacket << uint32(CanUseNodes.size() / 8);  // client reads this in uint64 blocks, size is ensured to be divisible by 8 in TaxiMask constructor
 
-    if (WindowInfo)
+    if (WindowInfo.has_value())
     {
         _worldPacket << WindowInfo->UnitGUID;
         _worldPacket << uint32(WindowInfo->CurrentNode);
@@ -54,17 +51,17 @@ WorldPacket const* ShowTaxiNodes::Write()
     return &_worldPacket;
 }
 
-void EnableTaxiNode::Read()
+void WorldPackets::Taxi::EnableTaxiNode::Read()
 {
     _worldPacket >> Unit;
 }
 
-void TaxiQueryAvailableNodes::Read()
+void WorldPackets::Taxi::TaxiQueryAvailableNodes::Read()
 {
     _worldPacket >> Unit;
 }
 
-void ActivateTaxi::Read()
+void WorldPackets::Taxi::ActivateTaxi::Read()
 {
     _worldPacket >> Vendor;
     _worldPacket >> Node;
@@ -72,18 +69,17 @@ void ActivateTaxi::Read()
     _worldPacket >> FlyingMountID;
 }
 
-WorldPacket const* NewTaxiPath::Write()
+WorldPacket const* WorldPackets::Taxi::NewTaxiPath::Write()
 {
     _worldPacket << int32(TaxiNodesID);
 
     return &_worldPacket;
 }
 
-WorldPacket const* ActivateTaxiReply::Write()
+WorldPacket const* WorldPackets::Taxi::ActivateTaxiReply::Write()
 {
-    _worldPacket << Bits<4>(Reply);
+    _worldPacket.WriteBits(Reply, 4);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
-}
 }

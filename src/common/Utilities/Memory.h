@@ -22,7 +22,7 @@
 #include <concepts>
 #include <memory>
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
@@ -130,7 +130,7 @@ Impl::stateless_unique_ptr_deleter<Ptr, Del> unique_ptr_deleter()
  * @endcode
  */
 template<typename Ptr, typename T = std::remove_pointer_t<Ptr>, typename Del> requires std::invocable<Del, Ptr> && std::is_pointer_v<Ptr>
-inline std::unique_ptr<T, Impl::stateful_unique_ptr_deleter<Ptr, Del>> make_unique_ptr_with_deleter(Ptr ptr, Del deleter)
+std::unique_ptr<T, Impl::stateful_unique_ptr_deleter<Ptr, Del>> make_unique_ptr_with_deleter(Ptr ptr, Del deleter)
 {
     return std::unique_ptr<T, Impl::stateful_unique_ptr_deleter<Ptr, Del>>(ptr, std::move(deleter));
 }
@@ -161,13 +161,13 @@ inline std::unique_ptr<T, Impl::stateful_unique_ptr_deleter<Ptr, Del>> make_uniq
  * @endcode
  */
 template<auto Del, typename Ptr, typename T = std::remove_pointer_t<Ptr>> requires std::invocable<decltype(Del), Ptr> && std::is_pointer_v<Ptr>
-inline std::unique_ptr<T, Impl::stateless_unique_ptr_deleter<Ptr, Del>> make_unique_ptr_with_deleter(Ptr ptr)
+std::unique_ptr<T, Impl::stateless_unique_ptr_deleter<Ptr, Del>> make_unique_ptr_with_deleter(Ptr ptr)
 {
     return std::unique_ptr<T, Impl::stateless_unique_ptr_deleter<Ptr, Del>>(ptr);
 }
 }
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic pop
 #endif
 

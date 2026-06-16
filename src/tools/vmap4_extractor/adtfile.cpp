@@ -15,48 +15,72 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "adtfile.h"
-#include "Common.h"
-#include "Memory.h"
-#include "StringFormat.h"
-#include "Util.h"
-#include "model.h"
 #include "vmapexport.h"
-#include "wmo.h"
-#include <algorithm>
+#include "adtfile.h"
+#include "StringFormat.h"
 #include <cstdio>
+#include "Errors.h"
+#include "Memory.h"
 
-std::string_view GetPlainName(std::string_view fileName)
+char const* GetPlainName(char const* FileName)
 {
-    std::size_t lastSeparatorPos = fileName.find_last_of("\\/"sv);
+    const char * szTemp;
 
-    if (lastSeparatorPos != std::string_view::npos)
-        fileName.remove_prefix(lastSeparatorPos + 1);
-
-    return fileName;
+    if((szTemp = strrchr(FileName, '\\')) != nullptr)
+        FileName = szTemp + 1;
+    return FileName;
 }
 
-void NormalizeFileName(std::string& name)
+char* GetPlainName(char* FileName)
 {
-    if (name.starts_with("FILE"sv)) // name is FileDataId formatted, do not normalize
-        return;
+    char * szTemp;
 
-    auto ptr = name.begin() + (name.length() - 1);
+    if((szTemp = strrchr(FileName, '\\')) != nullptr)
+        FileName = szTemp + 1;
+    return FileName;
+}
+
+void FixNameCase(char* name, size_t len)
+{
+    char* ptr = name + len - 1;
 
     //extension in lowercase
-    for (; *ptr != '.' && ptr > name.begin(); --ptr)
-        if (*ptr >= 'A' && *ptr <= 'Z')
-            *ptr |= 0x20;
+    for (; *ptr != '.'; --ptr)
+        *ptr |= 0x20;
 
-    for (; ptr > name.begin(); --ptr)
+    for (; ptr >= name; --ptr)
     {
-        if (ptr > name.begin() && *ptr >= 'A' && *ptr <= 'Z' && isalpha(*(ptr - 1)))
+        if (ptr > name && *ptr >= 'A' && *ptr <= 'Z' && isalpha(*(ptr - 1)))
             *ptr |= 0x20;
-        else if ((ptr == name.begin() || !isalpha(*(ptr - 1))) && *ptr >= 'a' && *ptr <= 'z')
+        else if ((ptr == name || !isalpha(*(ptr - 1))) && *ptr >= 'a' && *ptr <= 'z')
             *ptr &= ~0x20;
-        else if (*ptr == ' ')
-            *ptr = '_';
     }
+}
+
+void FixNameSpaces(char* name, size_t len)
+{
+    if (len < 3)
+        return;
+
+    for (size_t i = 0; i < len - 3; i++)
+        if (name[i] == ' ')
+            name[i] = '_';
+}
+
+void NormalizeFileName(char* name, size_t len)
+{
+    if (len >= 4 && !memcmp(name, "FILE", 4)) // name is FileDataId formatted, do not normalize
+        return;
+
+    FixNameCase(name, len);
+    FixNameSpaces(name, len);
+}
+
+char* GetExtension(char* FileName)
+{
+    if (char* szTemp = strrchr(FileName, '.'))
+        return szTemp;
+    return nullptr;
 }
 
 extern std::shared_ptr<CASC::Storage> CascStorage;
@@ -95,47 +119,62 @@ bool ADTFile::init(uint32 map_num, uint32 originalMapId)
 
     while (!_file.isEof())
     {
-        char fourcc[4];
+        char fourcc[5];
         _file.read(&fourcc,4);
         _file.read(&size, 4);
-        std::ranges::reverse(fourcc);
+        flipcc(fourcc);
+        fourcc[4] = 0;
 
         size_t nextpos = _file.getPos() + size;
 
-        if (!memcmp(fourcc, "MMDX", 4))
+        if (!strcmp(fourcc,"MMDX"))
         {
             if (size)
             {
-                char* p = _file.getPointer();
-                _file.seekRelative(size);
-                char* end = _file.getPointer();
-                while (p < end)
+                char* buf = new char[size];
+                _file.read(buf, size);
+                char* p = buf;
+                while (p < buf + size)
                 {
-                    std::size_t length = std::ranges::distance(p, CStringSentinel.Checked(end));
-                    ModelInstanceNames.emplace_back(p, length);
+                    std::string path(p);
 
-                    p += length + 1;
+                    char* s = GetPlainName(p);
+                    NormalizeFileName(s, strlen(s));
+
+                    ModelInstanceNames.emplace_back(s);
+
+                    ExtractSingleModel(path);
+
+                    p += strlen(p) + 1;
                 }
+                delete[] buf;
             }
         }
-        else if (!memcmp(fourcc, "MWMO", 4))
+        else if (!strcmp(fourcc,"MWMO"))
         {
             if (size)
             {
-                char* p = _file.getPointer();
-                _file.seekRelative(size);
-                char* end = _file.getPointer();
-                while (p < end)
+                char* buf = new char[size];
+                _file.read(buf, size);
+                char* p = buf;
+                while (p < buf + size)
                 {
-                    std::size_t length = std::ranges::distance(p, CStringSentinel.Checked(end));
-                    WmoInstanceNames.emplace_back(p, length);
+                    std::string path(p);
 
-                    p += length + 1;
+                    char* s = GetPlainName(p);
+                    NormalizeFileName(s, strlen(s));
+
+                    WmoInstanceNames.emplace_back(s);
+
+                    ExtractSingleWmo(path);
+
+                    p += strlen(p) + 1;
                 }
+                delete[] buf;
             }
         }
         //======================
-        else if (!memcmp(fourcc, "MDDF", 4))
+        else if (!strcmp(fourcc, "MDDF"))
         {
             if (size)
             {
@@ -144,21 +183,22 @@ bool ADTFile::init(uint32 map_num, uint32 originalMapId)
                 {
                     ADT::MDDF doodadDef;
                     _file.read(&doodadDef, sizeof(ADT::MDDF));
-
-                    std::string fileName;
-                    if (doodadDef.Flags & 0x40)
-                        fileName = Trinity::StringFormat("FILE{:08X}.xxx", doodadDef.Id);
+                    if (!(doodadDef.Flags & 0x40))
+                    {
+                        Doodad::Extract(doodadDef, ModelInstanceNames[doodadDef.Id].c_str(), map_num, originalMapId, dirfile.get(), dirfileCache);
+                    }
                     else
-                        fileName = ModelInstanceNames[doodadDef.Id];
-
-                    if (ExtractSingleModel(fileName))
+                    {
+                        std::string fileName = Trinity::StringFormat("FILE{:08X}.xxx", doodadDef.Id);
+                        ExtractSingleModel(fileName);
                         Doodad::Extract(doodadDef, fileName.c_str(), map_num, originalMapId, dirfile.get(), dirfileCache);
+                    }
                 }
 
                 ModelInstanceNames.clear();
             }
         }
-        else if (!memcmp(fourcc, "MODF", 4))
+        else if (!strcmp(fourcc,"MODF"))
         {
             if (size)
             {
@@ -167,20 +207,17 @@ bool ADTFile::init(uint32 map_num, uint32 originalMapId)
                 {
                     ADT::MODF mapObjDef;
                     _file.read(&mapObjDef, sizeof(ADT::MODF));
-
-                    std::string fileName;
-                    if (mapObjDef.Flags & 0x8)
-                        fileName = Trinity::StringFormat("FILE{:08X}.xxx", mapObjDef.Id);
-                    else
-                        fileName = WmoInstanceNames[mapObjDef.Id];
-
-                    if (ExtractedModelData const* extracted = ExtractSingleWmo(fileName))
+                    if (!(mapObjDef.Flags & 0x8))
                     {
-                        if (extracted->HasCollision())
-                            MapObject::Extract(mapObjDef, fileName.c_str(), false, map_num, originalMapId, dirfile.get(), dirfileCache);
-
-                        if (extracted->Doodads)
-                            Doodad::ExtractSet(*extracted->Doodads, mapObjDef, false, map_num, originalMapId, dirfile.get(), dirfileCache);
+                        MapObject::Extract(mapObjDef, WmoInstanceNames[mapObjDef.Id].c_str(), false, map_num, originalMapId, dirfile.get(), dirfileCache);
+                        Doodad::ExtractSet(WmoDoodads[WmoInstanceNames[mapObjDef.Id]], mapObjDef, false, map_num, originalMapId, dirfile.get(), dirfileCache);
+                    }
+                    else
+                    {
+                        std::string fileName = Trinity::StringFormat("FILE{:08X}.xxx", mapObjDef.Id);
+                        ExtractSingleWmo(fileName);
+                        MapObject::Extract(mapObjDef, fileName.c_str(), false, map_num, originalMapId, dirfile.get(), dirfileCache);
+                        Doodad::ExtractSet(WmoDoodads[fileName], mapObjDef, false, map_num, originalMapId, dirfile.get(), dirfileCache);
                     }
                 }
 

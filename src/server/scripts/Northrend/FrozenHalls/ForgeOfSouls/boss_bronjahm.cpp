@@ -50,12 +50,11 @@ enum Spells
 
 enum Events
 {
-    EVENT_MAGIC_BANE = 1,
-    EVENT_SHADOW_BOLT,
-    EVENT_CORRUPT_SOUL,
-    EVENT_SOULSTORM,
-    EVENT_FEAR,
-    EVENT_TELEPORT
+    EVENT_MAGIC_BANE    = 1,
+    EVENT_SHADOW_BOLT   = 2,
+    EVENT_CORRUPT_SOUL  = 3,
+    EVENT_SOULSTORM     = 4,
+    EVENT_FEAR          = 5
 };
 
 enum CombatPhases
@@ -116,7 +115,9 @@ struct boss_bronjahm : public BossAI
         if (events.IsInPhase(PHASE_1) && !HealthAbovePct(30))
         {
             events.SetPhase(PHASE_2);
-            events.ScheduleEvent(EVENT_TELEPORT, 1ms, 0, PHASE_2);
+            DoCast(me, SPELL_TELEPORT);
+            events.ScheduleEvent(EVENT_FEAR, 12s, 16s, 0, PHASE_2);
+            events.ScheduleEvent(EVENT_SOULSTORM, 100ms, 0, PHASE_2);
             me->SetCanMelee(false);
         }
     }
@@ -197,11 +198,6 @@ struct boss_bronjahm : public BossAI
                     me->CastSpell(nullptr, SPELL_FEAR, { SPELLVALUE_MAX_TARGETS, 1 });
                     events.ScheduleEvent(EVENT_FEAR, 8s, 12s, 0, PHASE_2);
                     break;
-                case EVENT_TELEPORT:
-                    DoCastSelf(SPELL_TELEPORT);
-                    events.ScheduleEvent(EVENT_FEAR, 12s, 16s, 0, PHASE_2);
-                    events.ScheduleEvent(EVENT_SOULSTORM, 100ms, 0, PHASE_2);
-                    break;
                 default:
                     break;
             }
@@ -266,7 +262,7 @@ class spell_bronjahm_consume_soul : public SpellScript
     void HandleScript(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetHitUnit()->CastSpell(GetHitUnit(), GetEffectValueAsInt(), true);
+        GetHitUnit()->CastSpell(GetHitUnit(), GetEffectValue(), true);
     }
 
     void Register() override

@@ -224,7 +224,7 @@ class spell_midsummer_juggle_torch : public SpellScript
         if (!GetExplTargetDest())
             return;
 
-        WorldLocation spellDest = *GetExplTargetDest();
+        Position spellDest = *GetExplTargetDest();
         float distance = GetCaster()->GetExactDist2d(spellDest.GetPositionX(), spellDest.GetPositionY());
 
         uint32 torchSpellID = 0;
@@ -234,7 +234,7 @@ class spell_midsummer_juggle_torch : public SpellScript
         {
             torchSpellID = SPELL_JUGGLE_TORCH_SELF;
             torchShadowSpellID = SPELL_JUGGLE_TORCH_SHADOW_SELF;
-            spellDest = GetCaster()->GetWorldLocation();
+            spellDest = GetCaster()->GetPosition();
         }
         else if (distance <= 10.0f)
         {

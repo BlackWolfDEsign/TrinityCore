@@ -16,31 +16,19 @@
  */
 
 #include "BattlePetPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::BattlePet
-{
-ByteBuffer& operator<<(ByteBuffer& data, BattlePetSlot const& slot)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::BattlePet::BattlePetSlot const& slot)
 {
     data << (slot.Pet.Guid.IsEmpty() ? ObjectGuid::Create<HighGuid::BattlePet>(0) : slot.Pet.Guid);
     data << uint32(slot.CollarID);
     data << uint8(slot.Index);
-    data << Bits<1>(slot.Locked);
+    data.WriteBit(slot.Locked);
     data.FlushBits();
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, BattlePetOwnerInfo const& owner)
-{
-    data << owner.Guid;
-    data << uint32(owner.PlayerVirtualRealm);
-    data << uint32(owner.PlayerNativeRealm);
-
-    return data;
-}
-
-ByteBuffer& operator<<(ByteBuffer& data, BattlePet const& pet)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::BattlePet::BattlePet const& pet)
 {
     data << pet.Guid;
     data << uint32(pet.Species);
@@ -55,25 +43,29 @@ ByteBuffer& operator<<(ByteBuffer& data, BattlePet const& pet)
     data << uint32(pet.MaxHealth);
     data << uint32(pet.Speed);
     data << uint8(pet.Quality);
-    data << SizedString::BitsSize<7>(pet.Name);
-    data << OptionalInit(pet.OwnerInfo);
-    data << Bits<1>(pet.NoRename);
+    data.WriteBits(pet.Name.size(), 7);
+    data.WriteBit(pet.OwnerInfo.has_value());
+    data.WriteBit(false); // NoRename
     data.FlushBits();
 
-    data << SizedString::Data(pet.Name);
+    data.WriteString(pet.Name);
 
     if (pet.OwnerInfo)
-        data << *pet.OwnerInfo;
+    {
+        data << pet.OwnerInfo->Guid;
+        data << uint32(pet.OwnerInfo->PlayerVirtualRealm);
+        data << uint32(pet.OwnerInfo->PlayerNativeRealm);
+    }
 
     return data;
 }
 
-WorldPacket const* BattlePetJournal::Write()
+WorldPacket const* WorldPackets::BattlePet::BattlePetJournal::Write()
 {
     _worldPacket << uint16(Trap);
-    _worldPacket << Size<uint32>(Slots);
-    _worldPacket << Size<uint32>(Pets);
-    _worldPacket << Bits<1>(HasJournalLock);
+    _worldPacket << uint32(Slots.size());
+    _worldPacket << uint32(Pets.size());
+    _worldPacket.WriteBit(HasJournalLock);
     _worldPacket.FlushBits();
 
     for (BattlePetSlot const& slot : Slots)
@@ -85,10 +77,10 @@ WorldPacket const* BattlePetJournal::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* BattlePetUpdates::Write()
+WorldPacket const* WorldPackets::BattlePet::BattlePetUpdates::Write()
 {
-    _worldPacket << Size<uint32>(Pets);
-    _worldPacket << Bits<1>(PetAdded);
+    _worldPacket << uint32(Pets.size());
+    _worldPacket.WriteBit(PetAdded);
     _worldPacket.FlushBits();
 
     for (BattlePet const& pet : Pets)
@@ -97,122 +89,91 @@ WorldPacket const* BattlePetUpdates::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* PetBattleSlotUpdates::Write()
+WorldPacket const* WorldPackets::BattlePet::PetBattleSlotUpdates::Write()
 {
-    _worldPacket << Size<uint32>(Slots);
-    _worldPacket << Bits<1>(NewSlot);
-    _worldPacket << Bits<1>(AutoSlotted);
+    _worldPacket << uint32(Slots.size());
+    _worldPacket.WriteBit(NewSlot);
+    _worldPacket.WriteBit(AutoSlotted);
     _worldPacket.FlushBits();
 
-    for (BattlePetSlot const& slot : Slots)
+    for (auto const& slot : Slots)
         _worldPacket << slot;
 
     return &_worldPacket;
 }
 
-void BattlePetSetBattleSlot::Read()
+void WorldPackets::BattlePet::BattlePetSetBattleSlot::Read()
 {
     _worldPacket >> PetGuid;
     _worldPacket >> Slot;
 }
 
-void BattlePetModifyName::Read()
-{
-    _worldPacket >> PetGuid;
-    _worldPacket >> SizedString::BitsSize<7>(Name);
-    _worldPacket >> OptionalInit(DeclinedNames);
-
-    if (DeclinedNames)
-    {
-        for (uint8 i = 0; i < MAX_DECLINED_NAME_CASES; ++i)
-            _worldPacket >> SizedString::BitsSize<7>(DeclinedNames->name[i]);
-
-        for (uint8 i = 0; i < MAX_DECLINED_NAME_CASES; ++i)
-            _worldPacket >> SizedString::Data(DeclinedNames->name[i]);
-    }
-
-    _worldPacket >> SizedString::Data(Name);
-}
-
-void QueryBattlePetName::Read()
+void WorldPackets::BattlePet::QueryBattlePetName::Read()
 {
     _worldPacket >> BattlePetID;
     _worldPacket >> UnitGUID;
 }
 
-WorldPacket const* QueryBattlePetNameResponse::Write()
+WorldPacket const* WorldPackets::BattlePet::QueryBattlePetNameResponse::Write()
 {
     _worldPacket << BattlePetID;
     _worldPacket << int32(CreatureID);
     _worldPacket << Timestamp;
 
-    _worldPacket << Bits<1>(Allow);
+    _worldPacket.WriteBit(Allow);
 
     if (Allow)
     {
-        _worldPacket << SizedString::BitsSize<8>(Name);
-        _worldPacket << Bits<1>(HasDeclined);
+        _worldPacket.WriteBits(Name.length(), 8);
+        _worldPacket.WriteBit(HasDeclined);
 
         for (uint8 i = 0; i < MAX_DECLINED_NAME_CASES; ++i)
-            _worldPacket << SizedString::BitsSize<7>(DeclinedNames.name[i]);
-
-        _worldPacket.FlushBits();
+            _worldPacket.WriteBits(DeclinedNames.name[i].length(), 7);
 
         for (uint8 i = 0; i < MAX_DECLINED_NAME_CASES; ++i)
-            _worldPacket << SizedString::Data(DeclinedNames.name[i]);
+            _worldPacket.WriteString(DeclinedNames.name[i]);
 
-        _worldPacket << SizedString::Data(Name);
+        _worldPacket.WriteString(Name);
     }
-    else
-        _worldPacket.FlushBits();
+
+    _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-void BattlePetDeletePet::Read()
-{
-    _worldPacket >> PetGuid;
-}
-
-void BattlePetSetFlags::Read()
+void WorldPackets::BattlePet::BattlePetSetFlags::Read()
 {
     _worldPacket >> PetGuid;
     _worldPacket >> Flags;
-    _worldPacket >> Bits<2>(ControlType);
+    ControlType = _worldPacket.ReadBits(2);
 }
 
-void BattlePetClearFanfare::Read()
+void WorldPackets::BattlePet::BattlePetClearFanfare::Read()
 {
     _worldPacket >> PetGuid;
 }
 
-void CageBattlePet::Read()
-{
-    _worldPacket >> PetGuid;
-}
-
-WorldPacket const* BattlePetDeleted::Write()
+WorldPacket const* WorldPackets::BattlePet::BattlePetDeleted::Write()
 {
     _worldPacket << PetGuid;
 
     return &_worldPacket;
 }
 
-WorldPacket const* BattlePetError::Write()
+WorldPacket const* WorldPackets::BattlePet::BattlePetError::Write()
 {
-    _worldPacket << Bits<4>(Result);
+    _worldPacket.WriteBits(Result, 4);
     _worldPacket << int32(CreatureID);
 
     return &_worldPacket;
 }
 
-void BattlePetSummon::Read()
+void WorldPackets::BattlePet::BattlePetSummon::Read()
 {
     _worldPacket >> PetGuid;
 }
 
-void BattlePetUpdateNotify::Read()
+void WorldPackets::BattlePet::BattlePetUpdateNotify::Read()
 {
     _worldPacket >> PetGuid;
-}
 }

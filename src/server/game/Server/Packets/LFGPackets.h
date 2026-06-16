@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_LFG_PACKETS_H
-#define TRINITYCORE_LFG_PACKETS_H
+#ifndef LFGPackets_h__
+#define LFGPackets_h__
 
 #include "Packet.h"
 #include "PacketUtilities.h"
@@ -36,12 +36,12 @@ namespace WorldPackets
         class DFJoin final : public ClientPacket
         {
         public:
-            explicit DFJoin(WorldPacket&& packet) : ClientPacket(CMSG_DF_JOIN, std::move(packet)) { }
+            DFJoin(WorldPacket&& packet) : ClientPacket(CMSG_DF_JOIN, std::move(packet)) { }
 
             void Read() override;
 
             bool QueueAsGroup = false;
-            bool Mercenary = false;
+            bool Unknown = false;       // Always false in 7.2.5
             Optional<uint8> PartyIndex;
             uint8 Roles = 0;
             Array<uint32, 50> Slots;
@@ -50,7 +50,7 @@ namespace WorldPackets
         class DFLeave final : public ClientPacket
         {
         public:
-            explicit DFLeave(WorldPacket&& packet) : ClientPacket(CMSG_DF_LEAVE, std::move(packet)) { }
+            DFLeave(WorldPacket&& packet) : ClientPacket(CMSG_DF_LEAVE, std::move(packet)) { }
 
             void Read() override;
 
@@ -60,7 +60,7 @@ namespace WorldPackets
         class DFProposalResponse final : public ClientPacket
         {
         public:
-            explicit DFProposalResponse(WorldPacket&& packet) : ClientPacket(CMSG_DF_PROPOSAL_RESPONSE, std::move(packet)) { }
+            DFProposalResponse(WorldPacket&& packet) : ClientPacket(CMSG_DF_PROPOSAL_RESPONSE, std::move(packet)) { }
 
             void Read() override;
 
@@ -73,7 +73,7 @@ namespace WorldPackets
         class DFSetRoles final : public ClientPacket
         {
         public:
-            explicit DFSetRoles(WorldPacket&& packet) : ClientPacket(CMSG_DF_SET_ROLES, std::move(packet)) { }
+            DFSetRoles(WorldPacket&& packet) : ClientPacket(CMSG_DF_SET_ROLES, std::move(packet)) { }
 
             void Read() override;
 
@@ -84,7 +84,7 @@ namespace WorldPackets
         class DFBootPlayerVote final : public ClientPacket
         {
         public:
-            explicit DFBootPlayerVote(WorldPacket&& packet) : ClientPacket(CMSG_DF_BOOT_PLAYER_VOTE, std::move(packet)) { }
+            DFBootPlayerVote(WorldPacket&& packet) : ClientPacket(CMSG_DF_BOOT_PLAYER_VOTE, std::move(packet)) { }
 
             void Read() override;
 
@@ -94,7 +94,7 @@ namespace WorldPackets
         class DFTeleport final : public ClientPacket
         {
         public:
-            explicit DFTeleport(WorldPacket&& packet) : ClientPacket(CMSG_DF_TELEPORT, std::move(packet)) { }
+            DFTeleport(WorldPacket&& packet) : ClientPacket(CMSG_DF_TELEPORT, std::move(packet)) { }
 
             void Read() override;
 
@@ -104,7 +104,7 @@ namespace WorldPackets
         class DFGetSystemInfo final : public ClientPacket
         {
         public:
-            explicit DFGetSystemInfo(WorldPacket&& packet) : ClientPacket(CMSG_DF_GET_SYSTEM_INFO, std::move(packet)) { }
+            DFGetSystemInfo(WorldPacket&& packet) : ClientPacket(CMSG_DF_GET_SYSTEM_INFO, std::move(packet)) { }
 
             void Read() override;
 
@@ -115,7 +115,23 @@ namespace WorldPackets
         class DFGetJoinStatus final : public ClientPacket
         {
         public:
-            explicit DFGetJoinStatus(WorldPacket&& packet) : ClientPacket(CMSG_DF_GET_JOIN_STATUS, std::move(packet)) { }
+            DFGetJoinStatus(WorldPacket&& packet) : ClientPacket(CMSG_DF_GET_JOIN_STATUS, std::move(packet)) { }
+
+            void Read() override { }
+        };
+
+        class LFGListGetStatus final : public ClientPacket
+        {
+        public:
+            LFGListGetStatus(WorldPacket&& packet) : ClientPacket(CMSG_LFG_LIST_GET_STATUS, std::move(packet)) { }
+
+            void Read() override { }
+        };
+
+        class LFGRequestLFGListBlacklist final : public ClientPacket
+        {
+        public:
+            LFGRequestLFGListBlacklist(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_LFG_LIST_BLACKLIST, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -137,38 +153,6 @@ namespace WorldPackets
         {
             Optional<ObjectGuid> PlayerGuid;
             std::vector<LFGBlackListSlot> Slot;
-        };
-
-        struct LfgPlayerQuestRewardItem
-        {
-            LfgPlayerQuestRewardItem() = default;
-            LfgPlayerQuestRewardItem(int32 itemId, int32 quantity) : ItemID(itemId), Quantity(quantity) { }
-
-            int32 ItemID = 0;
-            int32 Quantity = 0;
-        };
-
-        struct LfgPlayerQuestRewardCurrency
-        {
-            LfgPlayerQuestRewardCurrency() = default;
-            LfgPlayerQuestRewardCurrency(int32 currencyID, int32 quantity) : CurrencyID(currencyID), Quantity(quantity) { }
-
-            int32 CurrencyID = 0;
-            int32 Quantity = 0;
-        };
-
-        struct LfgPlayerQuestReward
-        {
-            uint8 Mask = 0;                                             // Roles required for this reward, only used by ShortageReward in SMSG_LFG_PLAYER_INFO
-            int32 RewardMoney = 0;                                      // Only used by SMSG_LFG_PLAYER_INFO
-            int32 RewardXP = 0;
-            std::vector<LfgPlayerQuestRewardItem> Item;
-            std::vector<LfgPlayerQuestRewardCurrency> Currency;         // Only used by SMSG_LFG_PLAYER_INFO
-            std::vector<LfgPlayerQuestRewardCurrency> BonusCurrency;    // Only used by SMSG_LFG_PLAYER_INFO
-            Optional<int32> RewardSpellID;                              // Only used by SMSG_LFG_PLAYER_INFO
-            Optional<int32> ArtifactXPCategory;
-            Optional<uint64> ArtifactXP;
-            Optional<int32> Honor;                                      // Only used by SMSG_REQUEST_PVP_REWARDS_RESPONSE
         };
 
         struct LfgPlayerDungeonInfo
@@ -197,7 +181,7 @@ namespace WorldPackets
         class LfgPlayerInfo final : public ServerPacket
         {
         public:
-            explicit LfgPlayerInfo() : ServerPacket(SMSG_LFG_PLAYER_INFO) { }
+            LfgPlayerInfo() : ServerPacket(SMSG_LFG_PLAYER_INFO) { }
 
             WorldPacket const* Write() override;
 
@@ -208,7 +192,7 @@ namespace WorldPackets
         class LfgPartyInfo final : public ServerPacket
         {
         public:
-            explicit LfgPartyInfo() : ServerPacket(SMSG_LFG_PARTY_INFO) { }
+            LfgPartyInfo() : ServerPacket(SMSG_LFG_PARTY_INFO) { }
 
             WorldPacket const* Write() override;
 
@@ -218,13 +202,13 @@ namespace WorldPackets
         class LFGUpdateStatus final : public ServerPacket
         {
         public:
-            explicit LFGUpdateStatus() : ServerPacket(SMSG_LFG_UPDATE_STATUS) { }
+            LFGUpdateStatus() : ServerPacket(SMSG_LFG_UPDATE_STATUS) { }
 
             WorldPacket const* Write() override;
 
             RideTicket Ticket;
             uint8 SubType = 0;
-            uint32 Reason = 0;
+            uint8 Reason = 0;
             std::vector<uint32> Slots;
             uint8 RequestedRoles = 0;
             std::vector<ObjectGuid> SuspendedPlayers;
@@ -234,13 +218,13 @@ namespace WorldPackets
             bool Joined = false;
             bool LfgJoined = false;
             bool Queued = false;
-            bool Brawl = false;
+            bool Unused = false;
         };
 
         class RoleChosen final : public ServerPacket
         {
         public:
-            explicit RoleChosen() : ServerPacket(SMSG_ROLE_CHOSEN, 16 + 4 + 1) { }
+            RoleChosen() : ServerPacket(SMSG_ROLE_CHOSEN, 16 + 4 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -264,7 +248,7 @@ namespace WorldPackets
         class LFGRoleCheckUpdate final : public ServerPacket
         {
         public:
-            explicit LFGRoleCheckUpdate() : ServerPacket(SMSG_LFG_ROLE_CHECK_UPDATE) { }
+            LFGRoleCheckUpdate() : ServerPacket(SMSG_LFG_ROLE_CHECK_UPDATE) { }
 
             WorldPacket const* Write() override;
 
@@ -281,21 +265,21 @@ namespace WorldPackets
         class LFGJoinResult final : public ServerPacket
         {
         public:
-            explicit LFGJoinResult() : ServerPacket(SMSG_LFG_JOIN_RESULT) { }
+            LFGJoinResult() : ServerPacket(SMSG_LFG_JOIN_RESULT) { }
 
             WorldPacket const* Write() override;
 
             RideTicket Ticket;
-            int32 Result = 0;
+            uint8 Result = 0;
             uint8 ResultDetail = 0;
             std::vector<LFGBlackList> BlackList;
-            std::vector<std::string_view> BlackListNames;
+            std::vector<std::string const*> BlackListNames;
         };
 
         class LFGQueueStatus final : public ServerPacket
         {
         public:
-            explicit LFGQueueStatus() : ServerPacket(SMSG_LFG_QUEUE_STATUS, 16 + 4 + 4 + 4 + 4 + 4 + 4 + 4 * 3 + 3 + 4) { }
+            LFGQueueStatus() : ServerPacket(SMSG_LFG_QUEUE_STATUS, 16 + 4 + 4 + 4 + 4 + 4 + 4 + 4 * 3 + 3 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -334,7 +318,7 @@ namespace WorldPackets
         class LFGPlayerReward final : public ServerPacket
         {
         public:
-            explicit LFGPlayerReward() : ServerPacket(SMSG_LFG_PLAYER_REWARD) { }
+            LFGPlayerReward() : ServerPacket(SMSG_LFG_PLAYER_REWARD) { }
 
             WorldPacket const* Write() override;
 
@@ -362,7 +346,7 @@ namespace WorldPackets
         class LfgBootPlayer final : public ServerPacket
         {
         public:
-            explicit LfgBootPlayer() : ServerPacket(SMSG_LFG_BOOT_PLAYER) { }
+            LfgBootPlayer() : ServerPacket(SMSG_LFG_BOOT_PLAYER) { }
 
             WorldPacket const* Write() override;
 
@@ -382,7 +366,7 @@ namespace WorldPackets
         class LFGProposalUpdate final : public ServerPacket
         {
         public:
-            explicit LFGProposalUpdate() : ServerPacket(SMSG_LFG_PROPOSAL_UPDATE) { }
+            LFGProposalUpdate() : ServerPacket(SMSG_LFG_PROPOSAL_UPDATE) { }
 
             WorldPacket const* Write() override;
 
@@ -393,17 +377,17 @@ namespace WorldPackets
             int8 State = 0;
             uint32 CompletedMask = 0;
             uint32 EncounterMask = 0;
-            uint8 PromisedShortageRolePriority = 0;
+            uint8 Unused = 0;
             bool ValidCompletedMask = false;
             bool ProposalSilent = false;
-            bool FailedByMyParty = false;
+            bool IsRequeue = false;
             std::vector<LFGProposalUpdatePlayer> Players;
         };
 
         class LFGDisabled final : public ServerPacket
         {
         public:
-            explicit LFGDisabled() : ServerPacket(SMSG_LFG_DISABLED, 0) { }
+            LFGDisabled() : ServerPacket(SMSG_LFG_DISABLED, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -411,7 +395,7 @@ namespace WorldPackets
         class LFGOfferContinue final : public ServerPacket
         {
         public:
-            explicit LFGOfferContinue(uint32 slot) : ServerPacket(SMSG_LFG_OFFER_CONTINUE, 4), Slot(slot) { }
+            LFGOfferContinue(uint32 slot) : ServerPacket(SMSG_LFG_OFFER_CONTINUE, 4), Slot(slot) { }
 
             WorldPacket const* Write() override;
 
@@ -421,7 +405,7 @@ namespace WorldPackets
         class LFGTeleportDenied final : public ServerPacket
         {
         public:
-            explicit LFGTeleportDenied(lfg::LfgTeleportResult reason) : ServerPacket(SMSG_LFG_TELEPORT_DENIED, 1), Reason(reason) { }
+            LFGTeleportDenied(lfg::LfgTeleportResult reason) : ServerPacket(SMSG_LFG_TELEPORT_DENIED, 1), Reason(reason) { }
 
             WorldPacket const* Write() override;
 
@@ -430,4 +414,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_LFG_PACKETS_H
+#endif // LFGPackets_h__

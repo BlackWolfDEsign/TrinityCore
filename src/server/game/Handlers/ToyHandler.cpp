@@ -90,7 +90,8 @@ void WorldSession::HandleUseToy(WorldPackets::Toy::UseToy& packet)
 
     spell->m_fromClient = true;
     spell->m_castItemEntry = itemId;
-    std::ranges::copy(packet.Cast.Misc, std::ranges::begin(spell->m_misc.Raw.Data));
+    spell->m_misc.Raw.Data[0] = packet.Cast.Misc[0];
+    spell->m_misc.Raw.Data[1] = packet.Cast.Misc[1];
     spell->m_castFlagsEx |= CAST_FLAG_EX_USE_TOY_SPELL;
     spell->prepare(targets);
 }

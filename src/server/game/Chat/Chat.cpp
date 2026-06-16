@@ -33,6 +33,8 @@
 #include "StringConvert.h"
 #include "World.h"
 #include "WorldSession.h"
+#include <boost/algorithm/string/replace.hpp>
+#include <sstream>
 
 Player* ChatHandler::GetPlayer() const { return m_session ? m_session->GetPlayer() : nullptr; }
 
@@ -87,7 +89,7 @@ bool ChatHandler::HasLowerSecurityAccount(WorldSession* target, uint32 target_ac
         return false;
 
     // ignore only for non-players for non strong checks (when allow apply command at least to same sec level)
-    if (m_session->HasPermission(rbac::RBAC_PERM_CAN_IGNORE_LOWER_SECURITY_CHECK) && !strong && !sWorld->getBoolConfig(CONFIG_GM_LOWER_SECURITY))
+    if (m_session->HasPermission(rbac::RBAC_PERM_CHECK_FOR_LOWER_SECURITY) && !strong && !sWorld->getBoolConfig(CONFIG_GM_LOWER_SECURITY))
         return false;
 
     if (target)
@@ -110,11 +112,19 @@ bool ChatHandler::HasLowerSecurityAccount(WorldSession* target, uint32 target_ac
 
 void ChatHandler::SendSysMessage(std::string_view str, bool escapeCharacters)
 {
-    std::string msg(str);
+    std::string msg{ str };
 
     // Replace every "|" with "||" in msg
-    if (escapeCharacters)
-        StringReplaceAll(&msg, "|"sv, "||"sv);
+    if (escapeCharacters && msg.find('|') != std::string::npos)
+    {
+        std::vector<std::string_view> tokens = Trinity::Tokenize(msg, '|', true);
+        std::ostringstream stream;
+        for (size_t i = 0; i < tokens.size() - 1; ++i)
+            stream << tokens[i] << "||";
+        stream << tokens[tokens.size() - 1];
+
+        msg = stream.str();
+    }
 
     WorldPackets::Chat::Chat packet;
     for (std::string_view line : Trinity::Tokenize(str, '\n', true))
@@ -147,20 +157,6 @@ void ChatHandler::SendGlobalGMSysMessage(const char *str)
 void ChatHandler::SendSysMessage(uint32 entry)
 {
     SendSysMessage(GetTrinityString(entry));
-}
-
-void ChatHandler::SendSysMessage(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept
-{
-    SendSysMessage(StringVPrintf(messageFormat, messageFormatArgs));
-}
-
-std::string ChatHandler::StringVPrintf(std::string_view messageFormat, fmt::printf_args messageFormatArgs) noexcept try
-{
-    return fmt::vsprintf<char>(messageFormat, messageFormatArgs);
-}
-catch (std::exception const& formatError)
-{
-    return fmt::format(R"(An error occurred formatting string "{}" : {})", messageFormat, formatError.what());
 }
 
 bool ChatHandler::_ParseCommands(std::string_view text)
@@ -453,6 +449,9 @@ ObjectGuid::LowType ChatHandler::extractLowGuidFromLink(char* text, HighGuid& gu
                 return player->GetGUID().GetCounter();
 
             ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name);
+            if (guid.IsEmpty())
+                return 0;
+
             return guid.GetCounter();
         }
         case GUID_LINK_CREATURE:
@@ -602,10 +601,7 @@ LocaleConstant ChatHandler::GetSessionDbLocaleIndex() const
 
 std::string ChatHandler::playerLink(std::string const& name) const
 {
-    if (m_session)
-        return Trinity::StringFormat("|cffffffff|Hplayer:{0}|h[{0}]|h|r", name);
-    else
-        return name;
+    return m_session ? "|cffffffff|Hplayer:" + name + "|h[" + name + "]|h|r" : name;
 }
 
 std::string ChatHandler::GetNameLink(Player* chr) const
@@ -698,7 +694,7 @@ LocaleConstant CliHandler::GetSessionDbLocaleIndex() const
     return sObjectMgr->GetDBCLocaleIndex();
 }
 
-std::string_view const AddonChannelCommandHandler::PREFIX = "TrinityCore";
+std::string const AddonChannelCommandHandler::PREFIX = "TrinityCore";
 
 bool AddonChannelCommandHandler::ParseCommands(std::string_view str)
 {
@@ -740,7 +736,7 @@ bool AddonChannelCommandHandler::ParseCommands(std::string_view str)
     }
 }
 
-void AddonChannelCommandHandler::Send(std::string_view msg)
+void AddonChannelCommandHandler::Send(std::string const& msg)
 {
     WorldPackets::Chat::Chat chat;
     chat.Initialize(CHAT_MSG_WHISPER, LANG_ADDON, GetSession()->GetPlayer(), GetSession()->GetPlayer(), msg, 0, "", LOCALE_enUS, PREFIX);
@@ -750,26 +746,29 @@ void AddonChannelCommandHandler::Send(std::string_view msg)
 void AddonChannelCommandHandler::SendAck() // a Command acknowledged, no body
 {
     ASSERT(echo);
-    char ack[5] = "a";
+    char ack[6] = "a";
     memcpy(ack + 1, echo, 4);
-    Send(std::string_view(ack, 5));
+    ack[5] = '\0';
+    Send(ack);
     hadAck = true;
 }
 
 void AddonChannelCommandHandler::SendOK() // o Command OK, no body
 {
     ASSERT(echo);
-    char ok[5] = "o";
+    char ok[6] = "o";
     memcpy(ok + 1, echo, 4);
-    Send(std::string_view(ok, 5));
+    ok[5] = '\0';
+    Send(ok);
 }
 
 void AddonChannelCommandHandler::SendFailed() // f Command failed, no body
 {
     ASSERT(echo);
-    char fail[5] = "f";
+    char fail[6] = "f";
     memcpy(fail + 1, echo, 4);
-    Send(std::string_view(fail, 5));
+    fail[5] = '\0';
+    Send(fail);
 }
 
 // m Command message, message in body
@@ -783,8 +782,7 @@ void AddonChannelCommandHandler::SendSysMessage(std::string_view str, bool escap
     msg.append(echo, 4);
     std::string body(str);
     if (escapeCharacters)
-        StringReplaceAll(&body, "|"sv, "||"sv);
-
+        boost::replace_all(body, "|", "||");
     size_t pos, lastpos;
     for (lastpos = 0, pos = body.find('\n', lastpos); pos != std::string::npos; lastpos = pos + 1, pos = body.find('\n', lastpos))
     {

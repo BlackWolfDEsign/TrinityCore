@@ -21,15 +21,17 @@
 #include "GameObject.h"
 #include "halls_of_lightning.h"
 #include "InstanceScript.h"
+#include "Map.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_VOLKHAN_DOOR, DATA_VOLKHAN, EncounterDoorBehavior::OpenWhenDone },
     { GO_IONAR_DOOR,   DATA_IONAR,   EncounterDoorBehavior::OpenWhenDone },
     { GO_LOKEN_DOOR,   DATA_LOKEN,   EncounterDoorBehavior::OpenWhenDone },
+    { 0,               0,            EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_GENERAL_BJARNGRIM,    DATA_GENERAL_BJARNGRIM  },
     { NPC_VOLKHAN,              DATA_VOLKHAN            },
@@ -37,15 +39,17 @@ static constexpr ObjectData creatureData[] =
     { NPC_LOKEN,                DATA_LOKEN              },
     { NPC_INVISIBLE_STALKER,    DATA_INVISIBLE_STALKER  },
     { NPC_VOLKHANS_ANVIL,       DATA_VOLKHANS_ANVIL     },
+    { 0,                        0                       } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_VOLKHAN_TEMPER_VISUAL, DATA_VOLKHAN_TEMPER_VISUAL },
     { GO_LOKEN_THRONE,          DATA_LOKEN_GLOBE           },
+    { 0,                        0                          } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_GENERAL_BJARNGRIM, {{ 1987 }} },
     { DATA_VOLKHAN, {{ 1985 }} },

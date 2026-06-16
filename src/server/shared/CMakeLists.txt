@@ -8,17 +8,31 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
+CollectSourceFiles(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE_SOURCES
+  # Exclude
+  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
+
+if(USE_COREPCH)
+  set(PRIVATE_PCH_HEADER PrecompiledHeaders/sharedPCH.h)
+endif()
+
 GroupSources(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(shared)
+add_library(shared
+  ${PRIVATE_SOURCES}
+)
 
-CollectAndAddSourceFiles(
-  shared
+CollectIncludeDirectories(
   ${CMAKE_CURRENT_SOURCE_DIR}
-  EXCLUDE
+  PUBLIC_INCLUDES
+  # Exclude
   ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
 
 target_include_directories(shared
+  PUBLIC
+    ${PUBLIC_INCLUDES}
   PRIVATE
     ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -52,5 +66,5 @@ endif()
 
 # Generate precompiled header
 if(USE_COREPCH)
-  add_cxx_pch(shared PrecompiledHeaders/sharedPCH.h)
+  add_cxx_pch(shared ${PRIVATE_PCH_HEADER})
 endif()

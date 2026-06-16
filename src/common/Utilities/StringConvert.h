@@ -22,12 +22,11 @@
 #include "Errors.h"
 #include "Optional.h"
 #include "Types.h"
+#include "Util.h"
 #include <charconv>
 #include <string>
 #include <string_view>
 #include <type_traits>
-
-TC_COMMON_API bool StringEqualI(std::string_view str1, std::string_view str2);
 
 namespace Trinity::Impl::StringConvertImpl
 {
@@ -174,7 +173,7 @@ namespace Trinity::Impl::StringConvertImpl
         }
     };
 
-#if TRINITY_COMPILER_IS_MICROSOFT
+#if TRINITY_COMPILER == TRINITY_COMPILER_MICROSOFT
     template <typename T>
     struct For<T, std::enable_if_t<std::is_floating_point_v<T>>>
     {

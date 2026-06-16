@@ -18,8 +18,8 @@
 #ifndef TRINITY_BAG_H
 #define TRINITY_BAG_H
 
-// Maximum 98 Slots ((CONTAINER_END - CONTAINER_FIELD_SLOT_1)/2
-#define MAX_BAG_SIZE 98                                     // 11.0.0
+// Maximum 36 Slots ((CONTAINER_END - CONTAINER_FIELD_SLOT_1)/2
+#define MAX_BAG_SIZE 36                                     // 4.4.1
 
 #include "Item.h"
 
@@ -54,26 +54,27 @@ class TC_GAME_API Bag : public Item
 
     protected:
         void BuildCreateUpdateBlockForPlayer(UpdateData* data, Player* target) const override;
-        void BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void ClearValuesChangesMask() override;
+        void BuildValuesCreate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void BuildValuesUpdate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void ClearUpdateMask(bool remove) override;
 
     public:
         void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask, UF::ItemData::Mask const& requestedItemMask,
-            UF::ContainerData::Mask const& requestedContainerMask, Player const* target, bool ignoreNestedChangesMask) const;
+            UF::ContainerData::Mask const& requestedContainerMask, Player const* target) const;
 
         struct ValuesUpdateForPlayerWithMaskSender // sender compatible with MessageDistDeliverer
         {
-            explicit ValuesUpdateForPlayerWithMaskSender(Bag const* owner) : Owner(owner), IgnoreNestedChangesMask(false) { }
+            explicit ValuesUpdateForPlayerWithMaskSender(Bag const* owner) : Owner(owner) { }
 
             Bag const* Owner;
             UF::ObjectData::Base ObjectMask;
             UF::ItemData::Base ItemMask;
             UF::ContainerData::Base ContainerMask;
-            bool IgnoreNestedChangesMask;
 
             void operator()(Player const* player) const;
         };
+
+        std::string GetDebugInfo() const override;
 
         UF::UpdateField<UF::ContainerData, int32(WowCS::EntityFragment::CGObject), TYPEID_CONTAINER> m_containerData;
 

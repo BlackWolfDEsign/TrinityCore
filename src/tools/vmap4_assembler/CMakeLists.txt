@@ -8,17 +8,20 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-add_executable(vmap4assembler)
+set(PRIVATE_SOURCES
+  TileAssembler.cpp
+  TileAssembler.h
+  VMapAssembler.cpp)
 
-CollectAndAddSourceFiles(
-  vmap4assembler
-  ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(vmap4assembler ${PRIVATE_SOURCES})
 
 target_link_libraries(vmap4assembler
   PRIVATE
     trinity-core-interface
   PUBLIC
-    common)
+    common
+    casc
+    zlib)
 
 set_target_properties(vmap4assembler
   PROPERTIES

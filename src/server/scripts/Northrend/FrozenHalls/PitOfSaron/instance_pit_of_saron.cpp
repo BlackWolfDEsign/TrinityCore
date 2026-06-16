@@ -23,18 +23,19 @@
 #include "TemporarySummon.h"
 
 // positions for Martin Victus (37591) and Gorkun Ironskull (37592)
-static constexpr Position SlaveLeaderPos  = {689.7158f, -104.8736f, 513.7360f, 0.0f};
+Position const SlaveLeaderPos  = {689.7158f, -104.8736f, 513.7360f, 0.0f};
 // position for Jaina and Sylvanas
-static constexpr Position EventLeaderPos2 = {1054.368f, 107.14620f, 628.4467f, 0.0f};
+Position const EventLeaderPos2 = {1054.368f, 107.14620f, 628.4467f, 0.0f};
 
-static constexpr DoorData Doors[] =
+DoorData const Doors[] =
 {
     { GO_ICE_WALL,                       DATA_GARFROST,  EncounterDoorBehavior::OpenWhenDone },
     { GO_ICE_WALL,                       DATA_ICK,       EncounterDoorBehavior::OpenWhenDone },
     { GO_HALLS_OF_REFLECTION_PORTCULLIS, DATA_TYRANNUS,  EncounterDoorBehavior::OpenWhenDone },
+    { 0,                                 0,              EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_GARFROST, {{ 1999 }} },
     { DATA_ICK, {{ 2001 }} },

@@ -23,15 +23,9 @@
 
 namespace WorldPackets::Crafting
 {
-struct CraftingReagentBase
-{
-    Optional<int32> ItemID;
-    Optional<int32> CurrencyID;
-};
-
 struct SpellReducedReagent
 {
-    CraftingReagentBase Reagent;
+    int32 ItemID = 0;
     int32 Quantity = 0;
 };
 
@@ -45,12 +39,12 @@ struct CraftingData
     int32 SkillFromReagents = 0;
     int32 Skill = 0;
     int32 CritBonusSkill = 0;
-    float ModSkillGain = 0.0f;
-    uint64 OrderID = 0;
+    float field_1C = 0.0f;
+    uint64 field_20 = 0;
     bool IsCrit = false;
-    bool IsRecraft = false;
-    bool IsInitialRecraft = false;
-    bool IsFirstCraft = false;
+    bool field_29 = false;
+    bool field_2A = false;
+    bool BonusCraft = false;
     std::vector<SpellReducedReagent> ResourcesReturned;
     uint32 OperationID = 0;
     ObjectGuid ItemGUID;
@@ -65,8 +59,6 @@ struct CraftingData
     bool ApplyConcentration = false;
 };
 
-ByteBuffer& operator>>(ByteBuffer& data, CraftingReagentBase& reagent);
-ByteBuffer& operator<<(ByteBuffer& data, CraftingReagentBase const& reagent);
 ByteBuffer& operator<<(ByteBuffer& data, SpellReducedReagent const& spellReducedReagent);
 ByteBuffer& operator<<(ByteBuffer& data, CraftingData const& craftingData);
 }

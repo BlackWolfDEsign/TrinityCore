@@ -613,10 +613,10 @@ void PetAI::UpdateAllies()
     _allySet.insert(me->GetGUID());
     if (group) // add group
     {
-        for (GroupReference const& itr : group->GetMembers())
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* Target = itr.GetSource();
-            if (!Target->IsInMap(owner) || !group->SameSubGroup(owner->ToPlayer(), Target))
+            Player* Target = itr->GetSource();
+            if (!Target || !Target->IsInMap(owner) || !group->SameSubGroup(owner->ToPlayer(), Target))
                 continue;
 
             if (Target->GetGUID() == owner->GetGUID())

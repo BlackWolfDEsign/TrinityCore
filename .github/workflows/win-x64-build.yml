@@ -12,7 +12,7 @@ jobs:
       MYSQL_ROOT_DIR: C:/Program Files/MySQL/MySQL Server 8.0
       OPENSSL_ROOT_DIR: C:/libs/openssl
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v4
 
     - name: Set reusable strings
       id: strings
@@ -84,10 +84,10 @@ jobs:
       run: |
         cd ${{ steps.strings.outputs.build-output-dir }}/bin/${{ env.CMAKE_BUILD_TYPE }}
         copy "${{ env.MYSQL_ROOT_DIR }}/lib/libmysql.dll" libmysql.dll
-        # mysql may depend on a different version of openssl so copy its dlls first (override later with openssl's own if same version)
-        Copy-Item -Path "${{ env.MYSQL_ROOT_DIR }}/bin/*" -Include libcrypto*,libssl* -Destination .
-        Copy-Item -Path "${{ env.OPENSSL_ROOT_DIR }}/bin/*" -Include libcrypto*,libssl*,legacy* -Destination .
-
+        copy "${{ env.OPENSSL_ROOT_DIR }}/bin/libssl-3-x64.dll" libssl-3-x64.dll
+        copy "${{ env.OPENSSL_ROOT_DIR }}/bin/libcrypto-3-x64.dll" libcrypto-3-x64.dll
+        copy "${{ env.OPENSSL_ROOT_DIR }}/bin/legacy.dll" legacy.dll
+      
     - name: Check binaries
       run: |
         cd ${{ steps.strings.outputs.build-output-dir }}/bin/${{ env.CMAKE_BUILD_TYPE }}
@@ -98,6 +98,6 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         path: ${{ steps.strings.outputs.build-output-dir }}/bin/${{ env.CMAKE_BUILD_TYPE }}
-        name: TrinityCoreMasterWin64VS2022
+        name: TrinityCoreCataClassicWin64VS2022
         # Set a custom retention for artifacts
         #retention-days: 7

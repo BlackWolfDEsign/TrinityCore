@@ -51,7 +51,6 @@ struct SpellCategoriesEntry;
 struct SpellClassOptionsEntry;
 struct SpellCooldownsEntry;
 struct SpellEffectEntry;
-struct SpellEmpowerStageEntry;
 struct SpellEquippedItemsEntry;
 struct SpellInterruptsEntry;
 struct SpellLabelEntry;
@@ -272,8 +271,7 @@ DEFINE_ENUM_FLAG(ProcAttributes);
                                PROC_ATTR_REQ_POWER_COST         | \
                                PROC_ATTR_REQ_SPELLMOD           | \
                                PROC_ATTR_USE_STACKS_FOR_CHARGES | \
-                               PROC_ATTR_REDUCE_PROC_60         | \
-                               PROC_ATTR_CANT_PROC_FROM_ITEM_CAST)
+                               PROC_ATTR_REDUCE_PROC_60)
 
 struct SpellProcEntry
 {
@@ -439,7 +437,7 @@ class TC_GAME_API PetAura
     public:
         PetAura() : removeOnChangePet(false), damage(0) { }
 
-        PetAura(uint32 petEntry, uint32 aura, bool _removeOnChangePet, SpellEffectValue _damage) :
+        PetAura(uint32 petEntry, uint32 aura, bool _removeOnChangePet, int _damage) :
         removeOnChangePet(_removeOnChangePet), damage(_damage)
         {
             auras[petEntry] = aura;
@@ -466,7 +464,7 @@ class TC_GAME_API PetAura
             return removeOnChangePet;
         }
 
-        SpellEffectValue GetDamage() const
+        int32 GetDamage() const
         {
             return damage;
         }
@@ -474,7 +472,7 @@ class TC_GAME_API PetAura
     private:
         PetAuraMap auras;
         bool removeOnChangePet;
-        SpellEffectValue damage;
+        int32 damage;
 };
 typedef std::map<uint32, PetAura> SpellPetAuraMap;
 
@@ -565,7 +563,7 @@ struct CreatureImmunities
     std::bitset<MAX_SPELL_SCHOOL> School;
     std::bitset<DISPEL_MAX> DispelType;
     std::bitset<MAX_MECHANIC> Mechanic;
-    std::vector<SpellEffects> Effect;
+    std::vector<SpellEffectName> Effect;
     std::vector<AuraType> Aura;
     EnumFlag<SpellOtherImmunity> Other = SpellOtherImmunity::None;
 };
@@ -625,7 +623,6 @@ struct SpellInfoLoadHelper
     SpellClassOptionsEntry const* ClassOptions = nullptr;
     SpellCooldownsEntry const* Cooldowns = nullptr;
     std::array<SpellEffectEntry const*, MAX_SPELL_EFFECTS> Effects = { };
-    std::vector<SpellEmpowerStageEntry const*> EmpowerStages;
     SpellEquippedItemsEntry const* EquippedItems = nullptr;
     SpellInterruptsEntry const* Interrupts = nullptr;
     std::vector<SpellLabelEntry const*> Labels;
@@ -697,7 +694,7 @@ class TC_GAME_API SpellMgr
         void GetSetOfSpellsInSpellGroup(SpellGroup group_id, std::set<uint32>& foundSpells, std::set<SpellGroup>& usedGroups) const;
 
         // Spell Group Stack Rules table
-        bool AddSameEffectStackRuleSpellGroups(SpellInfo const* spellInfo, AuraType auraType, SpellEffectValue amount, std::map<SpellGroup, SpellEffectValue>& groups) const;
+        bool AddSameEffectStackRuleSpellGroups(SpellInfo const* spellInfo, uint32 auraType, int32 amount, std::map<SpellGroup, int32>& groups) const;
         SpellGroupStackRule CheckSpellGroupStackRules(SpellInfo const* spellInfo1, SpellInfo const* spellInfo2) const;
         SpellGroupStackRule GetSpellGroupStackRule(SpellGroup groupid) const;
 
@@ -753,6 +750,7 @@ class TC_GAME_API SpellMgr
 
         // Loading data at server startup
         void UnloadSpellInfoChains();
+        void LoadSpellTalentRanks();
         void LoadSpellRanks();
         void LoadSpellRequired();
         void LoadSpellLearnSkills();

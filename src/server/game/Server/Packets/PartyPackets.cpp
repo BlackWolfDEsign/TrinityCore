@@ -16,8 +16,6 @@
  */
 
 #include "PartyPackets.h"
-#include "Group.h"
-#include "PacketOperators.h"
 #include "Pet.h"
 #include "PhasingHandler.h"
 #include "Player.h"
@@ -25,59 +23,61 @@
 #include "SpellAuraEffects.h"
 #include "SpellAuras.h"
 #include "Vehicle.h"
+#include "WorldSession.h"
 
-namespace WorldPackets::Party
+WorldPacket const* WorldPackets::Party::PartyCommandResult::Write()
 {
-WorldPacket const* PartyCommandResult::Write()
-{
-    _worldPacket << SizedString::BitsSize<9>(Name);
-    _worldPacket << Bits<4>(Command);
-    _worldPacket << Bits<6>(Result);
+    _worldPacket.WriteBits(Name.size(), 9);
+
+    _worldPacket.WriteBits(Command, 4);
+    _worldPacket.WriteBits(Result, 6);
 
     _worldPacket << uint32(ResultData);
     _worldPacket << ResultGUID;
-    _worldPacket << SizedString::Data(Name);
+    _worldPacket.WriteString(Name);
+
+    _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-void PartyInviteClient::Read()
+void WorldPackets::Party::PartyInviteClient::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
 
     _worldPacket.ResetBitPos();
-    _worldPacket >> SizedString::BitsSize<9>(TargetName);
-    _worldPacket >> SizedString::BitsSize<9>(TargetRealm);
+    uint32 targetNameLen = _worldPacket.ReadBits(9);
+    uint32 targetRealmLen = _worldPacket.ReadBits(9);
 
     _worldPacket >> ProposedRoles;
     _worldPacket >> TargetGUID;
 
-    _worldPacket >> SizedString::Data(TargetName);
-    _worldPacket >> SizedString::Data(TargetRealm);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    TargetName = _worldPacket.ReadString(targetNameLen);
+    TargetRealm = _worldPacket.ReadString(targetRealmLen);
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* PartyInvite::Write()
+WorldPacket const* WorldPackets::Party::PartyInvite::Write()
 {
     _worldPacket << Bits<1>(CanAccept);
+    _worldPacket << Bits<1>(MightCRZYou);
     _worldPacket << Bits<1>(IsXRealm);
-    _worldPacket << Bits<1>(IsXNativeRealm);
-    _worldPacket << Bits<1>(ShouldSquelch);
+    _worldPacket << Bits<1>(MustBeBNetFriend);
     _worldPacket << Bits<1>(AllowMultipleRoles);
     _worldPacket << Bits<1>(QuestSessionActive);
-    _worldPacket << SizedString::BitsSize<6>(InviterName);
-    _worldPacket << Bits<1>(IsCrossFaction);
+    _worldPacket << BitsSize<6>(InviterName);
+    _worldPacket << Bits<1>(Unused440);
 
     _worldPacket << InviterRealm;
     _worldPacket << InviterGUID;
     _worldPacket << InviterBNetAccountId;
-    _worldPacket << uint16(InviterCfgRealmID);
+    _worldPacket << uint16(Unk1);
     _worldPacket << uint8(ProposedRoles);
-    _worldPacket << Size<uint32>(LfgSlots);
+    _worldPacket << uint32(LfgSlots.size());
     _worldPacket << uint32(LfgCompletedMask);
 
-    _worldPacket << SizedString::Data(InviterName);
+    _worldPacket.WriteString(InviterName);
 
     for (uint32 LfgSlot : LfgSlots)
         _worldPacket << LfgSlot;
@@ -85,13 +85,13 @@ WorldPacket const* PartyInvite::Write()
     return &_worldPacket;
 }
 
-void PartyInvite::Initialize(Player const* inviter, int32 proposedRoles, bool canAccept)
+void WorldPackets::Party::PartyInvite::Initialize(Player const* inviter, int32 proposedRoles, bool canAccept)
 {
     CanAccept = canAccept;
 
     InviterName = inviter->GetName();
     InviterGUID = inviter->GetGUID();
-    InviterBNetAccountId = inviter->m_playerData->BnetAccount;
+    InviterBNetAccountId = inviter->GetSession()->GetAccountGUID();
 
     ProposedRoles = proposedRoles;
 
@@ -99,60 +99,49 @@ void PartyInvite::Initialize(Player const* inviter, int32 proposedRoles, bool ca
         InviterRealm = Auth::VirtualRealmInfo(realm->Id.GetAddress(), true, false, realm->Name, realm->NormalizedName);
 }
 
-void PartyInviteResponse::Read()
+void WorldPackets::Party::PartyInviteResponse::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> Bits<1>(Accept);
-    _worldPacket >> OptionalInit(RolesDesired);
+    bool hasPartyIndex = _worldPacket.ReadBit();
+    Accept = _worldPacket.ReadBit();
+    bool hasRolesDesired = _worldPacket.ReadBit();
 
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 
-    if (RolesDesired)
-        _worldPacket >> *RolesDesired;
+    if (hasRolesDesired)
+        _worldPacket >> RolesDesired.emplace();
 }
 
-void PartyUninvite::Read()
+void WorldPackets::Party::PartyUninvite::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> SizedString::BitsSize<8>(Reason);
+    bool hasPartyIndex = _worldPacket.ReadBit();
+    uint32 reasonLen = _worldPacket.ReadBits(8);
 
     _worldPacket >> TargetGUID;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 
-    _worldPacket >> SizedString::Data(Reason);
+    Reason = _worldPacket.ReadString(reasonLen);
 }
 
-WorldPacket const* GroupDecline::Write()
+WorldPacket const* WorldPackets::Party::GroupDecline::Write()
 {
-    _worldPacket << SizedString::BitsSize<9>(Name);
+    _worldPacket.WriteBits(Name.length(), 9);
     _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(Name);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* GroupUninvite::Write()
-{
-    _worldPacket << uint8(Reason);
+    _worldPacket.WriteString(Name);
 
     return &_worldPacket;
 }
 
-void RequestPartyMemberStats::Read()
+void WorldPackets::Party::RequestPartyMemberStats::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> Size<uint32>(Targets);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
-
-    for (ObjectGuid& target : Targets)
-        _worldPacket >> target;
+    bool hasPartyIndex = _worldPacket.ReadBit();
+    _worldPacket >> TargetGUID;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyMemberPhase const& phase)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyMemberPhase const& phase)
 {
     data << uint32(phase.Flags);
     data << uint16(phase.Id);
@@ -160,66 +149,62 @@ ByteBuffer& operator<<(ByteBuffer& data, PartyMemberPhase const& phase)
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyMemberPhaseStates const& phases)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyMemberPhaseStates const& phases)
 {
     data << uint32(phases.PhaseShiftFlags);
-    data << Size<uint32>(phases.List);
+    data << uint32(phases.List.size());
     data << phases.PersonalGUID;
 
-    for (PartyMemberPhase const& phase : phases.List)
+    for (WorldPackets::Party::PartyMemberPhase const& phase : phases.List)
         data << phase;
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyMemberAuraStates const& aura)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyMemberAuraStates const& aura)
 {
     data << int32(aura.SpellID);
     data << uint16(aura.Flags);
     data << uint32(aura.ActiveFlags);
-    data << Size<int32>(aura.Points);
+    data << int32(aura.Points.size());
     for (float points : aura.Points)
         data << float(points);
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, CTROptions const& ctrOptions)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::CTROptions const& ctrOptions)
 {
-    data << Size<uint32>(ctrOptions.ConditionalFlags);
-    data << int8(ctrOptions.FactionGroup);
-    data << uint32(ctrOptions.ChromieTimeExpansionMask);
-
-    if (!ctrOptions.ConditionalFlags.empty())
-        data.append(ctrOptions.ConditionalFlags.data(), ctrOptions.ConditionalFlags.size());
+    data << uint32(ctrOptions.ContentTuningConditionMask);
+    data << int32(ctrOptions.Unused901);
+    data << uint32(ctrOptions.ExpansionLevelMask);
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyMemberPetStats const& petStats)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyMemberPetStats const& petStats)
 {
     data << petStats.GUID;
     data << int32(petStats.ModelId);
     data << int32(petStats.CurrentHealth);
     data << int32(petStats.MaxHealth);
-    data << Size<uint32>(petStats.Auras);
-    for (PartyMemberAuraStates const& aura : petStats.Auras)
+    data << uint32(petStats.Auras.size());
+    for (WorldPackets::Party::PartyMemberAuraStates const& aura : petStats.Auras)
         data << aura;
 
-    data << SizedString::BitsSize<8>(petStats.Name);
+    data.WriteBits(petStats.Name.size(), 8);
     data.FlushBits();
-
-    data << SizedString::Data(petStats.Name);
+    data.WriteString(petStats.Name);
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyMemberStats const& memberStats)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyMemberStats const& memberStats)
 {
     for (uint32 i = 0; i < 2; i++)
         data << uint8(memberStats.PartyType[i]);
 
-    data << uint32(memberStats.Status);
+    data << uint16(memberStats.Status);
     data << uint8(memberStats.PowerType);
     data << uint16(memberStats.PowerDisplayID);
     data << int32(memberStats.CurrentHealth);
@@ -235,27 +220,25 @@ ByteBuffer& operator<<(ByteBuffer& data, PartyMemberStats const& memberStats)
     data << int16(memberStats.PositionY);
     data << int16(memberStats.PositionZ);
     data << int32(memberStats.VehicleSeat);
-    data << Size<uint32>(memberStats.Auras);
+    data << uint32(memberStats.Auras.size());
     data << memberStats.Phases;
     data << memberStats.ChromieTime;
 
-    for (PartyMemberAuraStates const& aura : memberStats.Auras)
+    for (WorldPackets::Party::PartyMemberAuraStates const& aura : memberStats.Auras)
         data << aura;
 
-    data << OptionalInit(memberStats.PetStats);
+    data.WriteBit(memberStats.PetStats.has_value());
     data.FlushBits();
 
-    data << memberStats.DungeonScore;
-
-    if (memberStats.PetStats)
+    if (memberStats.PetStats.has_value())
         data << *memberStats.PetStats;
 
     return data;
 }
 
-WorldPacket const* PartyMemberFullState::Write()
+WorldPacket const* WorldPackets::Party::PartyMemberFullState::Write()
 {
-    _worldPacket << Bits<1>(ForEnemy);
+    _worldPacket.WriteBit(ForEnemy);
 
     _worldPacket << MemberStats;
     _worldPacket << MemberGuid;
@@ -263,34 +246,34 @@ WorldPacket const* PartyMemberFullState::Write()
     return &_worldPacket;
 }
 
-void SetPartyLeader::Read()
+void WorldPackets::Party::SetPartyLeader::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> TargetGUID;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void SetPartyAssignment::Read()
+void WorldPackets::Party::SetPartyAssignment::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> Bits<1>(Set);
+    bool hasPartyIndex = _worldPacket.ReadBit();
+    Set = _worldPacket.ReadBit();
     _worldPacket >> Assignment;
     _worldPacket >> Target;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void SetRole::Read()
+void WorldPackets::Party::SetRole::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> TargetGUID;
     _worldPacket >> Role;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* RoleChangedInform::Write()
+WorldPacket const* WorldPackets::Party::RoleChangedInform::Write()
 {
     _worldPacket << uint8(PartyIndex);
     _worldPacket << From;
@@ -301,33 +284,32 @@ WorldPacket const* RoleChangedInform::Write()
     return &_worldPacket;
 }
 
-void LeaveGroup::Read()
+void WorldPackets::Party::LeaveGroup::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (_worldPacket.ReadBit())
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void SetLootMethod::Read()
+void WorldPackets::Party::SetLootMethod::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> LootMethod;
     _worldPacket >> LootMasterGUID;
     _worldPacket >> LootThreshold;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void MinimapPingClient::Read()
+void WorldPackets::Party::MinimapPingClient::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> PositionX;
     _worldPacket >> PositionY;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* MinimapPing::Write()
+WorldPacket const* WorldPackets::Party::MinimapPing::Write()
 {
     _worldPacket << Sender;
     _worldPacket << PositionX;
@@ -336,16 +318,16 @@ WorldPacket const* MinimapPing::Write()
     return &_worldPacket;
 }
 
-void UpdateRaidTarget::Read()
+void WorldPackets::Party::UpdateRaidTarget::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> Target;
     _worldPacket >> Symbol;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* SendRaidTargetUpdateSingle::Write()
+WorldPacket const* WorldPackets::Party::SendRaidTargetUpdateSingle::Write()
 {
     _worldPacket << PartyIndex;
     _worldPacket << Symbol;
@@ -355,49 +337,47 @@ WorldPacket const* SendRaidTargetUpdateSingle::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* SendRaidTargetUpdateAll::Write()
+WorldPacket const* WorldPackets::Party::SendRaidTargetUpdateAll::Write()
 {
     _worldPacket << uint8(PartyIndex);
-    _worldPacket << Size<uint32>(TargetIcons);
+    _worldPacket << uint32(TargetIcons.size());
 
-    for (auto& [symbol, target] : TargetIcons)
+    for (auto itr = TargetIcons.begin(); itr != TargetIcons.end(); ++itr)
     {
-        _worldPacket << target;
-        _worldPacket << uint8(symbol);
+        _worldPacket << itr->second;
+        _worldPacket << uint8(itr->first);
     }
 
     return &_worldPacket;
 }
 
-void ConvertRaid::Read()
+void WorldPackets::Party::ConvertRaid::Read()
 {
-    _worldPacket >> Bits<1>(Raid);
+    Raid = _worldPacket.ReadBit();
 }
 
-void RequestPartyJoinUpdates::Read()
+void WorldPackets::Party::RequestPartyJoinUpdates::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (_worldPacket.ReadBit())
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void SetAssistantLeader::Read()
+void WorldPackets::Party::SetAssistantLeader::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> Bits<1>(Apply);
+    bool hasPartyIndex = _worldPacket.ReadBit();
+    Apply = _worldPacket.ReadBit();
     _worldPacket >> Target;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void DoReadyCheck::Read()
+void WorldPackets::Party::DoReadyCheck::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (_worldPacket.ReadBit())
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* ReadyCheckStarted::Write()
+WorldPacket const* WorldPackets::Party::ReadyCheckStarted::Write()
 {
     _worldPacket << PartyIndex;
     _worldPacket << PartyGUID;
@@ -407,26 +387,26 @@ WorldPacket const* ReadyCheckStarted::Write()
     return &_worldPacket;
 }
 
-void ReadyCheckResponseClient::Read()
+void WorldPackets::Party::ReadyCheckResponseClient::Read()
 {
-    _worldPacket >> Bits<1>(IsReady);
-    _worldPacket >> OptionalInit(PartyIndex);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    IsReady = _worldPacket.ReadBit();
+    if (_worldPacket.ReadBit())
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* ReadyCheckResponse::Write()
+WorldPacket const* WorldPackets::Party::ReadyCheckResponse::Write()
 {
     _worldPacket << PartyGUID;
     _worldPacket << Player;
 
-    _worldPacket << Bits<1>(IsReady);
+    _worldPacket.WriteBit(IsReady);
+
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-WorldPacket const* ReadyCheckCompleted::Write()
+WorldPacket const* WorldPackets::Party::ReadyCheckCompleted::Write()
 {
     _worldPacket << PartyIndex;
     _worldPacket << PartyGUID;
@@ -434,19 +414,18 @@ WorldPacket const* ReadyCheckCompleted::Write()
     return &_worldPacket;
 }
 
-void OptOutOfLoot::Read()
+void WorldPackets::Party::OptOutOfLoot::Read()
 {
-    _worldPacket >> Bits<1>(PassOnLoot);
+    PassOnLoot = _worldPacket.ReadBit();
 }
 
-void InitiateRolePoll::Read()
+void WorldPackets::Party::InitiateRolePoll::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (_worldPacket.ReadBit())
+        _worldPacket >> PartyIndex.emplace();
 }
 
-WorldPacket const* RolePollInform::Write()
+WorldPacket const* WorldPackets::Party::RolePollInform::Write()
 {
     _worldPacket << PartyIndex;
     _worldPacket << From;
@@ -454,88 +433,53 @@ WorldPacket const* RolePollInform::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* GroupNewLeader::Write()
+WorldPacket const* WorldPackets::Party::GroupNewLeader::Write()
 {
     _worldPacket << PartyIndex;
-    _worldPacket << SizedString::BitsSize<9>(Name);
-
-    _worldPacket << SizedString::Data(Name);
+    _worldPacket.WriteBits(Name.size(), 9);
+    _worldPacket.WriteString(Name);
 
     return &_worldPacket;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, LeaverInfo const& leaverInfo)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyPlayerInfo const& playerInfo)
 {
-    data << leaverInfo.BnetAccountGUID;
-    data << float(leaverInfo.LeaveScore);
-    data << uint32(leaverInfo.SeasonID);
-    data << uint32(leaverInfo.TotalLeaves);
-    data << uint32(leaverInfo.TotalSuccesses);
-    data << int32(leaverInfo.ConsecutiveSuccesses);
-    data << leaverInfo.LastPenaltyTime;
-    data << leaverInfo.LeaverExpirationTime;
-    data << int32(leaverInfo.Unknown_1120);
-    data << Bits<1>(leaverInfo.LeaverStatus);
-    data.FlushBits();
-
-    return data;
-}
-
-ByteBuffer& operator<<(ByteBuffer& data, PartyPlayerInfo const& playerInfo)
-{
-    data << SizedString::BitsSize<6>(playerInfo.Name);
-    data << SizedCString::BitsSize<6>(playerInfo.VoiceStateID);
-    data << Bits<1>(playerInfo.Connected);
-    data << Bits<1>(playerInfo.VoiceChatSilenced);
-    data << Bits<1>(playerInfo.FromSocialQueue);
-    data << playerInfo.Leaver;
+    data.WriteBits(playerInfo.Name.size(), 6);
+    data.WriteBits(playerInfo.VoiceStateID.size() + 1, 6);
+    data.WriteBit(playerInfo.Connected);
+    data.WriteBit(playerInfo.VoiceChatSilenced);
+    data.WriteBit(playerInfo.FromSocialQueue);
     data << playerInfo.GUID;
     data << uint8(playerInfo.Subgroup);
     data << uint8(playerInfo.Flags);
     data << uint8(playerInfo.RolesAssigned);
     data << uint8(playerInfo.Class);
     data << uint8(playerInfo.FactionGroup);
-    data << SizedString::Data(playerInfo.Name);
-    data << SizedCString::Data(playerInfo.VoiceStateID);
+    data.WriteString(playerInfo.Name);
+    if (!playerInfo.VoiceStateID.empty())
+        data << playerInfo.VoiceStateID;
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, ChallengeModeData const& challengeMode)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyLFGInfo const& lfgInfos)
 {
-    data << int32(challengeMode.MapID);
-    data << int32(challengeMode.InitialPlayerCount);
-    data << uint64(challengeMode.InstanceID);
-    data << challengeMode.StartTime;
-    data << challengeMode.KeystoneOwnerGUID;
-    data << challengeMode.LeaverGUID;
-    data << challengeMode.InstanceAbandonVoteCooldown;
-    data << Bits<1>(challengeMode.IsActive);
-    data << Bits<1>(challengeMode.HasRestrictions);
-    data << Bits<1>(challengeMode.CanVoteAbandon);
-    data.FlushBits();
-
-    return data;
-}
-
-ByteBuffer& operator<<(ByteBuffer& data, PartyLFGInfo const& lfgInfos)
-{
-    data << uint32(lfgInfos.Slot);
     data << uint8(lfgInfos.MyFlags);
+    data << uint32(lfgInfos.Slot);
     data << uint32(lfgInfos.MyRandomSlot);
     data << uint8(lfgInfos.MyPartialClear);
     data << float(lfgInfos.MyGearDiff);
     data << uint8(lfgInfos.MyStrangerCount);
     data << uint8(lfgInfos.MyKickVoteCount);
     data << uint8(lfgInfos.BootCount);
-    data << Bits<1>(lfgInfos.Aborted);
-    data << Bits<1>(lfgInfos.MyFirstReward);
+    data.WriteBit(lfgInfos.Aborted);
+    data.WriteBit(lfgInfos.MyFirstReward);
     data.FlushBits();
 
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyLootSettings const& lootSettings)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyLootSettings const& lootSettings)
 {
     data << uint8(lootSettings.Method);
     data << lootSettings.LootMaster;
@@ -544,16 +488,16 @@ ByteBuffer& operator<<(ByteBuffer& data, PartyLootSettings const& lootSettings)
     return data;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, PartyDifficultySettings const& difficultySettings)
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Party::PartyDifficultySettings const& difficultySettings)
 {
-    data << int16(difficultySettings.DungeonDifficultyID);
-    data << int16(difficultySettings.RaidDifficultyID);
-    data << int16(difficultySettings.LegacyRaidDifficultyID);
+    data << uint32(difficultySettings.DungeonDifficultyID);
+    data << uint32(difficultySettings.RaidDifficultyID);
+    data << uint32(difficultySettings.LegacyRaidDifficultyID);
 
     return data;
 }
 
-WorldPacket const* PartyUpdate::Write()
+WorldPacket const* WorldPackets::Party::PartyUpdate::Write()
 {
     _worldPacket << uint16(PartyFlags);
     _worldPacket << uint8(PartyIndex);
@@ -564,68 +508,63 @@ WorldPacket const* PartyUpdate::Write()
     _worldPacket << LeaderGUID;
     _worldPacket << uint8(LeaderFactionGroup);
     _worldPacket << int32(PingRestriction);
-    _worldPacket << Size<uint32>(PlayerList);
-    _worldPacket << OptionalInit(ChallengeMode);
-    _worldPacket << OptionalInit(LfgInfos);
-    _worldPacket << OptionalInit(LootSettings);
-    _worldPacket << OptionalInit(DifficultySettings);
+    _worldPacket << uint32(PlayerList.size());
+    _worldPacket.WriteBit(LfgInfos.has_value());
+    _worldPacket.WriteBit(LootSettings.has_value());
+    _worldPacket.WriteBit(DifficultySettings.has_value());
     _worldPacket.FlushBits();
 
-    for (PartyPlayerInfo const& playerInfos : PlayerList)
+    for (WorldPackets::Party::PartyPlayerInfo const& playerInfos : PlayerList)
         _worldPacket << playerInfos;
 
-    if (LootSettings)
+    if (LootSettings.has_value())
         _worldPacket << *LootSettings;
 
-    if (DifficultySettings)
+    if (DifficultySettings.has_value())
         _worldPacket << *DifficultySettings;
 
-    if (ChallengeMode)
-        _worldPacket << *ChallengeMode;
-
-    if (LfgInfos)
+    if (LfgInfos.has_value())
         _worldPacket << *LfgInfos;
 
     return &_worldPacket;
 }
 
-void SetEveryoneIsAssistant::Read()
+void WorldPackets::Party::SetEveryoneIsAssistant::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> Bits<1>(EveryoneIsAssistant);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    bool hasPartyIndex = _worldPacket.ReadBit();
+    EveryoneIsAssistant = _worldPacket.ReadBit();
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void ChangeSubGroup::Read()
+void WorldPackets::Party::ChangeSubGroup::Read()
 {
     _worldPacket >> TargetGUID;
     _worldPacket >> NewSubGroup;
-    _worldPacket >> OptionalInit(PartyIndex);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (_worldPacket.ReadBit())
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void SwapSubGroups::Read()
+void WorldPackets::Party::SwapSubGroups::Read()
 {
-    _worldPacket >> OptionalInit(PartyIndex);
+    bool hasPartyIndex = _worldPacket.ReadBit();
     _worldPacket >> FirstTarget;
     _worldPacket >> SecondTarget;
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
+    if (hasPartyIndex)
+        _worldPacket >> PartyIndex.emplace();
 }
 
-void ClearRaidMarker::Read()
+void WorldPackets::Party::ClearRaidMarker::Read()
 {
     _worldPacket >> MarkerId;
 }
 
-WorldPacket const* RaidMarkersChanged::Write()
+WorldPacket const* WorldPackets::Party::RaidMarkersChanged::Write()
 {
     _worldPacket << uint8(PartyIndex);
     _worldPacket << uint32(ActiveMarkers);
 
-    _worldPacket << BitsSize<4>(RaidMarkers);
+    _worldPacket.WriteBits(RaidMarkers.size(), 4);
     _worldPacket.FlushBits();
 
     for (RaidMarker const* raidMarker : RaidMarkers)
@@ -638,7 +577,7 @@ WorldPacket const* RaidMarkersChanged::Write()
     return &_worldPacket;
 }
 
-void PartyMemberFullState::Initialize(Player const* player)
+void WorldPackets::Party::PartyMemberFullState::Initialize(Player const* player)
 {
     ForEnemy = false;
 
@@ -689,7 +628,7 @@ void PartyMemberFullState::Initialize(Player const* player)
     MemberStats.PositionY = int16(player->GetPositionY());
     MemberStats.PositionZ = int16(player->GetPositionZ());
 
-    MemberStats.SpecID = AsUnderlyingType(player->GetPrimarySpecialization());
+    MemberStats.SpecID = player->GetPrimaryTalentTree();
     MemberStats.PartyType[0] = player->m_playerData->PartyType[0];
     MemberStats.PartyType[1] = player->m_playerData->PartyType[1];
 
@@ -723,8 +662,10 @@ void PartyMemberFullState::Initialize(Player const* player)
     PhasingHandler::FillPartyMemberPhase(&MemberStats.Phases, player->GetPhaseShift());
 
     // Pet
-    if (::Pet* pet = player->GetPet())
+    if (player->GetPet())
     {
+        ::Pet* pet = player->GetPet();
+
         MemberStats.PetStats.emplace();
 
         MemberStats.PetStats->GUID = pet->GetGUID();
@@ -748,13 +689,9 @@ void PartyMemberFullState::Initialize(Player const* player)
                         aura.Points.push_back(float(aurEff->GetAmount()));
         }
     }
-
-    MemberStats.ChromieTime.ConditionalFlags = player->m_playerData->CtrOptions->ConditionalFlags;
-    MemberStats.ChromieTime.FactionGroup = player->m_playerData->CtrOptions->FactionGroup;
-    MemberStats.ChromieTime.ChromieTimeExpansionMask = player->m_playerData->CtrOptions->ChromieTimeExpansionMask;
 }
 
-WorldPacket const* PartyKillLog::Write()
+WorldPacket const* WorldPackets::Party::PartyKillLog::Write()
 {
     _worldPacket << Player;
     _worldPacket << Victim;
@@ -762,95 +699,47 @@ WorldPacket const* PartyKillLog::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* BroadcastSummonCast::Write()
+WorldPacket const* WorldPackets::Party::BroadcastSummonCast::Write()
 {
     _worldPacket << Target;
 
     return &_worldPacket;
 }
 
-WorldPacket const* BroadcastSummonResponse::Write()
+WorldPacket const* WorldPackets::Party::BroadcastSummonResponse::Write()
 {
     _worldPacket << Target;
-    _worldPacket << Bits<1>(Accepted);
+    _worldPacket.WriteBit(Accepted);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
 }
 
-void SetRestrictPingsToAssistants::Read()
-{
-    _worldPacket >> OptionalInit(PartyIndex);
-    _worldPacket >> As<int32>(RestrictTo);
-    if (PartyIndex)
-        _worldPacket >> *PartyIndex;
-}
-
-void SendPingUnit::Read()
-{
-    _worldPacket >> SenderGUID;
-    _worldPacket >> TargetGUID;
-    _worldPacket >> As<uint8>(Type);
-    _worldPacket >> PinFrameID;
-    _worldPacket >> PingDuration;
-    _worldPacket >> OptionalInit(CreatureID);
-    _worldPacket >> OptionalInit(SpellOverrideNameID);
-    if (CreatureID)
-        _worldPacket >> *CreatureID;
-
-    if (SpellOverrideNameID)
-        _worldPacket >> *SpellOverrideNameID;
-}
-
-WorldPacket const* ReceivePingUnit::Write()
+WorldPacket const* WorldPackets::Party::ReceivePingUnit::Write()
 {
     _worldPacket << SenderGUID;
     _worldPacket << TargetGUID;
     _worldPacket << uint8(Type);
     _worldPacket << uint32(PinFrameID);
-    _worldPacket << PingDuration;
-    _worldPacket << OptionalInit(CreatureID);
-    _worldPacket << OptionalInit(SpellOverrideNameID);
-    _worldPacket.FlushBits();
-
-    if (CreatureID)
-        _worldPacket << uint32(*CreatureID);
-
-    if (SpellOverrideNameID)
-        _worldPacket << uint32(*SpellOverrideNameID);
 
     return &_worldPacket;
 }
 
-void SendPingWorldPoint::Read()
-{
-    _worldPacket >> SenderGUID;
-    _worldPacket >> MapID;
-    _worldPacket >> Point;
-    _worldPacket >> As<int8>(Type);
-    _worldPacket >> PinFrameID;
-    _worldPacket >> Transport;
-    _worldPacket >> PingDuration;
-}
-
-WorldPacket const* ReceivePingWorldPoint::Write()
+WorldPacket const* WorldPackets::Party::ReceivePingWorldPoint::Write()
 {
     _worldPacket << SenderGUID;
     _worldPacket << MapID;
     _worldPacket << Point;
     _worldPacket << uint8(Type);
-    _worldPacket << uint32(PinFrameID);
-    _worldPacket << Transport;
-    _worldPacket << PingDuration;
+    _worldPacket << PinFrameID;
 
     return &_worldPacket;
 }
 
-WorldPacket const* CancelPingPin::Write()
+WorldPacket const* WorldPackets::Party::CancelPingPin::Write()
 {
     _worldPacket << SenderGUID;
     _worldPacket << PinFrameID;
 
     return &_worldPacket;
-}
 }

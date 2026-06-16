@@ -52,13 +52,11 @@ uint32 const EMBLEM_PRICE = 10 * GOLD;
 
 inline uint64 GetGuildBankTabPrice(uint8 tabId)
 {
-    auto bankTab = std::ranges::find(sBankTabStore, std::pair(BankType::Guild, int8(tabId)),
-        [](BankTabEntry const* bankTab) { return std::pair(BankType(bankTab->BankType), bankTab->OrderIndex); });
+    // these prices are in gold units, not copper
+    static uint64 const tabPrices[GUILD_BANK_MAX_TABS] = { 100, 250, 500, 1000, 2500, 5000, 0, 0 };
+    ASSERT(tabId < GUILD_BANK_MAX_TABS);
 
-    if (bankTab != sBankTabStore.end())
-        return bankTab->Cost;
-
-    return 0;
+    return tabPrices[tabId];
 }
 
 void Guild::SendCommandResult(WorldSession* session, GuildCommandType type, GuildCommandError errCode, std::string_view param)
@@ -379,7 +377,7 @@ void Guild::BankTab::LoadFromDB(Field* fields)
 
 bool Guild::BankTab::LoadItemFromDB(Field* fields)
 {
-    uint8 slotId = fields[54].GetUInt8();
+    uint8 slotId = fields[56].GetUInt8();
     ObjectGuid::LowType itemGuid = fields[0].GetUInt64();
     uint32 itemEntry = fields[1].GetUInt32();
     if (slotId >= GUILD_BANK_MAX_SLOTS)
@@ -1367,6 +1365,7 @@ void Guild::HandleRoster(WorldSession* session)
         memberData.Note = member.GetPublicNote();
         if (sendOfficerNote)
             memberData.OfficerNote = member.GetOfficerNote();
+
     }
 
     roster.WelcomeText = m_motd;
@@ -1376,7 +1375,7 @@ void Guild::HandleRoster(WorldSession* session)
     session->SendPacket(roster.Write());
 }
 
-void Guild::HandleQuery(WorldSession* session)
+void Guild::SendQueryResponse(WorldSession* session)
 {
     WorldPackets::Guild::QueryGuildInfoResponse response;
     response.GuildGuid = GetGUID();
@@ -1524,7 +1523,7 @@ void Guild::HandleSetEmblem(WorldSession* session, EmblemInfo const& emblemInfo)
 
         SendSaveEmblemResult(session, ERR_GUILDEMBLEM_SUCCESS); // "Guild Emblem saved."
 
-        HandleQuery(session);
+        SendQueryResponse(session);
     }
 }
 
@@ -1644,9 +1643,6 @@ void Guild::HandleBuyBankTab(WorldSession* session, uint8 tabId)
     if (!member)
         return;
 
-    if (GetLeaderGUID() != player->GetGUID())
-        return;
-
     if (_GetPurchasedTabsSize() >= GUILD_BANK_MAX_TABS)
         return;
 
@@ -1656,19 +1652,18 @@ void Guild::HandleBuyBankTab(WorldSession* session, uint8 tabId)
     if (tabId >= GUILD_BANK_MAX_TABS)
         return;
 
-    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+    // Do not get money for bank tabs that the GM bought, we had to buy them already.
+    // This is just a speedup check, GetGuildBankTabPrice will return 0.
+    if (tabId < GUILD_BANK_MAX_TABS - 2) // 7th tab is actually the 6th
+    {
+        int64 tabCost = GetGuildBankTabPrice(tabId) * GOLD;
+        if (!player->HasEnoughMoney(tabCost))                   // Should not happen, this is checked by client
+            return;
 
-    // Remove money from bank
-    uint64 tabCost = GetGuildBankTabPrice(tabId);
-    if (tabCost && !_ModifyBankMoney(trans, tabCost, false))                   // Should not happen, this is checked by client
-        return;
+        player->ModifyMoney(-tabCost);
+    }
 
-    // Log guild bank event
-    _LogBankEvent(trans, GUILD_BANK_LOG_BUY_TAB, tabId, player->GetGUID().GetCounter(), tabCost);
-
-    _CreateNewBankTab(trans);
-
-    CharacterDatabase.CommitTransaction(trans);
+    _CreateNewBankTab();
 
     WorldPackets::Guild::GuildEventTabAdded packet;
     BroadcastPacket(packet.Write());
@@ -1801,7 +1796,7 @@ void Guild::HandleRemoveMember(WorldSession* session, ObjectGuid guid)
         SendCommandResult(session, GUILD_COMMAND_REMOVE_PLAYER, ERR_GUILD_PERMISSIONS);
     else if (Member* member = GetMember(guid))
     {
-        std::string_view name = member->GetName();
+        std::string name = member->GetName();
 
         // Guild masters cannot be removed
         if (member->IsRank(GuildRankId::GuildMaster))
@@ -1840,7 +1835,7 @@ void Guild::HandleUpdateMemberRank(WorldSession* session, ObjectGuid guid, bool 
     // Promoted player must be a member of guild
     else if (Member* member = GetMember(guid))
     {
-        std::string_view name = member->GetName();
+        std::string name = member->GetName();
         // Player cannot promote himself
         if (member->IsSamePlayer(player->GetGUID()))
         {
@@ -2645,7 +2640,7 @@ void Guild::LoadBankTabFromDB(Field* fields)
 
 bool Guild::LoadBankItemFromDB(Field* fields)
 {
-    uint8 tabId = fields[53].GetUInt8();
+    uint8 tabId = fields[55].GetUInt8();
     if (tabId >= _GetPurchasedTabsSize())
     {
         TC_LOG_ERROR("guild", "Invalid tab for item (GUID: {}, id: #{}) in guild bank, skipped.",
@@ -3149,10 +3144,12 @@ void Guild::_DeleteMemberFromDB(CharacterDatabaseTransaction trans, ObjectGuid::
 }
 
 // Private methods
-void Guild::_CreateNewBankTab(CharacterDatabaseTransaction trans)
+void Guild::_CreateNewBankTab()
 {
     uint8 tabId = _GetPurchasedTabsSize();                      // Next free id
     m_bankTabs.emplace_back(m_id, tabId);
+
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
 
     CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GUILD_BANK_TAB);
     stmt->setUInt64(0, m_id);
@@ -3165,8 +3162,10 @@ void Guild::_CreateNewBankTab(CharacterDatabaseTransaction trans)
     trans->Append(stmt);
 
     ++tabId;
-    for (RankInfo& rank : m_ranks)
-        rank.CreateMissingTabsIfNeeded(tabId, trans, false);
+    for (auto itr = m_ranks.begin(); itr != m_ranks.end(); ++itr)
+        (*itr).CreateMissingTabsIfNeeded(tabId, trans, false);
+
+    CharacterDatabase.CommitTransaction(trans);
 }
 
 void Guild::_CreateDefaultGuildRanks(CharacterDatabaseTransaction trans, LocaleConstant loc)

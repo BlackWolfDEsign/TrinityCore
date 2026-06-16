@@ -21,7 +21,7 @@
 #include "Define.h"
 #include <string>
 
-template<class BasePath>
+template<class Entity, class BasePath>
 class PathMovementBase
 {
     public:

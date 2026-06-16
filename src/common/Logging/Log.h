@@ -53,38 +53,36 @@ class TC_COMMON_API Log
     private:
         Log();
         ~Log();
-
-    public:
         Log(Log const&) = delete;
         Log(Log&&) = delete;
         Log& operator=(Log const&) = delete;
         Log& operator=(Log&&) = delete;
 
-        static Log* instance() noexcept;
+    public:
+        static Log* instance();
 
         void Initialize(Trinity::Asio::IoContext* ioContext);
-        void SetAsynchronous(Trinity::Asio::IoContext* ioContext);
         void SetSynchronous();  // Not threadsafe - should only be called from main() after all threads are joined
         void LoadFromConfig();
         void Close();
-        bool ShouldLog(std::string_view type, LogLevel level) const noexcept;
-        Logger const* GetEnabledLogger(std::string_view type, LogLevel level) const noexcept;
+        bool ShouldLog(std::string_view type, LogLevel level) const;
+        Logger const* GetEnabledLogger(std::string_view type, LogLevel level) const;
         bool SetLogLevel(std::string const& name, int32 level, bool isLogger = true);
 
         template<typename... Args>
-        void OutMessage(std::string_view filter, LogLevel level, Trinity::FormatString<Args...> fmt, Args&&... args) noexcept
+        void OutMessage(std::string_view filter, LogLevel level, Trinity::FormatString<Args...> fmt, Args&&... args)
         {
             this->OutMessageImpl(GetLoggerByType(filter), filter, level, fmt, Trinity::MakeFormatArgs(args...));
         }
 
         template<typename... Args>
-        void OutMessageTo(Logger const* logger, std::string_view filter, LogLevel level, Trinity::FormatString<Args...> fmt, Args&&... args) noexcept
+        void OutMessageTo(Logger const* logger, std::string_view filter, LogLevel level, Trinity::FormatString<Args...> fmt, Args&&... args)
         {
             this->OutMessageImpl(logger, filter, level, fmt, Trinity::MakeFormatArgs(args...));
         }
 
         template<typename... Args>
-        void OutCommand(uint32 account, Trinity::FormatString<Args...> fmt, Args&&... args) noexcept
+        void OutCommand(uint32 account, Trinity::FormatString<Args...> fmt, Args&&... args)
         {
             if (!ShouldLog("commands.gm", LOG_LEVEL_INFO))
                 return;
@@ -92,7 +90,7 @@ class TC_COMMON_API Log
             this->OutCommandImpl(account, fmt, Trinity::MakeFormatArgs(args...));
         }
 
-        void OutCharDump(std::string const& str, uint32 account_id, uint64 guid, std::string const& name) const noexcept;
+        void OutCharDump(std::string const& str, uint32 account_id, uint64 guid, std::string const& name) const;
 
         void SetRealmId(uint32 id);
 
@@ -137,8 +135,8 @@ class TC_COMMON_API Log
         void ReadAppendersFromConfig();
         void ReadLoggersFromConfig();
         void RegisterAppender(uint8 index, AppenderCreatorFn appenderCreateFn);
-        void OutMessageImpl(Logger const* logger, std::string_view filter, LogLevel level, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs) const noexcept;
-        void OutCommandImpl(uint32 account, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs) const noexcept;
+        void OutMessageImpl(Logger const* logger, std::string_view filter, LogLevel level, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs) const;
+        void OutCommandImpl(uint32 account, Trinity::FormatStringView messageFormat, Trinity::FormatArgs messageFormatArgs) const;
 
         std::unordered_map<uint8, AppenderCreatorFn> appenderFactory;
         std::unordered_map<uint8, std::unique_ptr<Appender>> appenders;
@@ -155,16 +153,24 @@ class TC_COMMON_API Log
 
 #define sLog Log::instance()
 
-#ifdef PERFORMANCE_PROFILING
-#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...) ((void)0)
-#else
-#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...)                                                              \
+#define TC_LOG_MESSAGE_BODY_CORE(filterType__, level__, message__, ...)                                                         \
         do {                                                                                                                    \
             Log* logInstance = sLog;                                                                                            \
             if (Logger const* loggerInstance = logInstance->GetEnabledLogger(Log::make_string_view((filterType__)), (level__))) \
                 logInstance->OutMessageTo(loggerInstance, Log::make_string_view((filterType__)), (level__),                     \
                     Log::make_format_string_view((message__)), ## __VA_ARGS__);                                                 \
         } while (0)
+
+#ifdef PERFORMANCE_PROFILING
+#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...) ((void)0)
+#elif TRINITY_PLATFORM != TRINITY_PLATFORM_WINDOWS
+#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...) TC_LOG_MESSAGE_BODY_CORE(filterType__, level__, message__, ## __VA_ARGS__)
+#else
+#define TC_LOG_MESSAGE_BODY(filterType__, level__, message__, ...)                 \
+        __pragma(warning(push))                                                    \
+        __pragma(warning(disable:4127))                                            \
+        TC_LOG_MESSAGE_BODY_CORE(filterType__, level__, message__, ## __VA_ARGS__) \
+        __pragma(warning(pop))
 #endif
 
 #define TC_LOG_TRACE(filterType__, message__, ...) \

@@ -23,7 +23,6 @@
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "GameTime.h"
-#include "GossipDef.h"
 #include "Item.h"
 #include "Language.h"
 #include "Log.h"
@@ -364,11 +363,12 @@ void WorldSession::HandleAuctionPlaceBid(WorldPackets::AuctionHouse::AuctionPlac
     }
 
     // auction house does not deal with copper
-    if (placeBid.BidAmount % SILVER)
-    {
-        SendAuctionCommandResult(placeBid.AuctionID, AuctionCommand::PlaceBid, AuctionResult::BidIncrement, throttle.DelayUntilNext);
-        return;
-    }
+    // But not in Classic
+    //if (placeBid.BidAmount % SILVER)
+    //{
+    //    SendAuctionCommandResult(placeBid.AuctionID, AuctionCommand::PlaceBid, AuctionResult::BidIncrement, throttle.DelayUntilNext);
+    //    return;
+    //}
 
     // remove fake death
     if (GetPlayer()->HasUnitState(UNIT_STATE_DIED))
@@ -618,11 +618,12 @@ void WorldSession::HandleAuctionSellCommodity(WorldPackets::AuctionHouse::Auctio
     }
 
     // auction house does not deal with copper
-    if (sellCommodity.UnitPrice % SILVER)
-    {
-        SendAuctionCommandResult(0, AuctionCommand::SellItem, AuctionResult::DatabaseError, throttle.DelayUntilNext);
-        return;
-    }
+    // But not in Classic
+    //if (sellCommodity.UnitPrice % SILVER)
+    //{
+    //    SendAuctionCommandResult(0, AuctionCommand::SellItem, AuctionResult::DatabaseError, throttle.DelayUntilNext);
+    //    return;
+    //}
 
     Creature* creature = GetPlayer()->GetNPCIfCanInteractWith(sellCommodity.Auctioneer, UNIT_NPC_FLAG_AUCTIONEER, UNIT_NPC_FLAG_2_NONE);
     if (!creature)
@@ -842,11 +843,12 @@ void WorldSession::HandleAuctionSellItem(WorldPackets::AuctionHouse::AuctionSell
     }
 
     // auction house does not deal with copper
-    if (sellItem.MinBid % SILVER || sellItem.BuyoutPrice % SILVER)
-    {
-        SendAuctionCommandResult(0, AuctionCommand::SellItem, AuctionResult::DatabaseError, throttle.DelayUntilNext);
-        return;
-    }
+    // But not in Classic
+    //if (sellItem.MinBid % SILVER || sellItem.BuyoutPrice % SILVER)
+    //{
+    //    SendAuctionCommandResult(0, AuctionCommand::SellItem, AuctionResult::DatabaseError, throttle.DelayUntilNext);
+    //    return;
+    //}
 
     Creature* creature = GetPlayer()->GetNPCIfCanInteractWith(sellItem.Auctioneer, UNIT_NPC_FLAG_AUCTIONEER, UNIT_NPC_FLAG_2_NONE);
     if (!creature)
@@ -1004,8 +1006,6 @@ void WorldSession::SendAuctionHello(ObjectGuid guid, Unit const* unit)
     AuctionHouseEntry const* ahEntry = AuctionHouseMgr::GetAuctionHouseEntry(unit->GetFaction(), nullptr);
     if (!ahEntry)
         return;
-
-    GetPlayer()->PlayerTalkClass->GetInteractionData().StartInteraction(guid, PlayerInteractionType::Auctioneer);
 
     WorldPackets::AuctionHouse::AuctionHelloResponse auctionHelloResponse;
     auctionHelloResponse.Auctioneer = guid;

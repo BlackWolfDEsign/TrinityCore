@@ -15,12 +15,12 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_WORLDSERVER_SERVICE_H
-#define TRINITYCORE_WORLDSERVER_SERVICE_H
+#ifndef WorldserverService_h__
+#define WorldserverService_h__
 
 #include "WorldSession.h"
 
-namespace bgs::protocol { }
+namespace bgs { namespace protocol { } }
 using namespace bgs::protocol;
 
 namespace Battlenet
@@ -42,4 +42,4 @@ namespace Battlenet
     };
 }
 
-#endif // TRINITYCORE_WORLDSERVER_SERVICE_H
+#endif // WorldserverService_h__

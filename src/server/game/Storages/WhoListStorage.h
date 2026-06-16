@@ -68,15 +68,10 @@ typedef std::vector<WhoListPlayerInfo> WhoListInfoVector;
 class TC_GAME_API WhoListStorageMgr
 {
 private:
-    WhoListStorageMgr();
-    ~WhoListStorageMgr();
+    WhoListStorageMgr() { };
+    ~WhoListStorageMgr() { };
 
 public:
-    WhoListStorageMgr(WhoListStorageMgr const&) = delete;
-    WhoListStorageMgr(WhoListStorageMgr&&) = delete;
-    WhoListStorageMgr& operator=(WhoListStorageMgr const&) = delete;
-    WhoListStorageMgr& operator=(WhoListStorageMgr&&) = delete;
-
     static WhoListStorageMgr* instance();
 
     void Update();

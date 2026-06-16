@@ -98,7 +98,7 @@ bool OutdoorPvPSI::HandleAreaTrigger(Player* player, uint32 trigger, bool /*ente
             {
                 TeamApplyBuff(TEAM_ALLIANCE, SI_CENARION_FAVOR);
                 /// @todo: confirm this text
-                m_map->SendZoneText(OutdoorPvPSIBuffZones[0], sObjectMgr->GetTrinityStringForDBCLocale(LANG_OPVP_SI_CAPTURE_A));
+                sWorld->SendZoneText(OutdoorPvPSIBuffZones[0], sObjectMgr->GetTrinityStringForDBCLocale(LANG_OPVP_SI_CAPTURE_A));
                 m_LastController = ALLIANCE;
                 newScore = 0;
                 SetWorldState(SI_GATHERED_H, 0);
@@ -107,7 +107,7 @@ bool OutdoorPvPSI::HandleAreaTrigger(Player* player, uint32 trigger, bool /*ente
             // reward player
             player->CastSpell(player, SI_TRACES_OF_SILITHYST, true);
             // add 19 honor
-            player->RewardHonor(nullptr, 1, 19, HonorGainSource::TeamContribution);
+            player->RewardHonor(nullptr, 1, 19);
             // add 20 cenarion circle repu
             player->GetReputationMgr().ModifyReputation(sFactionStore.LookupEntry(609), 20);
             // complete quest
@@ -124,7 +124,7 @@ bool OutdoorPvPSI::HandleAreaTrigger(Player* player, uint32 trigger, bool /*ente
             {
                 TeamApplyBuff(TEAM_HORDE, SI_CENARION_FAVOR);
                 /// @todo: confirm this text
-                m_map->SendZoneText(OutdoorPvPSIBuffZones[0], sObjectMgr->GetTrinityStringForDBCLocale(LANG_OPVP_SI_CAPTURE_H));
+                sWorld->SendZoneText(OutdoorPvPSIBuffZones[0], sObjectMgr->GetTrinityStringForDBCLocale(LANG_OPVP_SI_CAPTURE_H));
                 m_LastController = HORDE;
                 SetWorldState(SI_GATHERED_A, 0);
                 newScore = 0;
@@ -133,7 +133,7 @@ bool OutdoorPvPSI::HandleAreaTrigger(Player* player, uint32 trigger, bool /*ente
             // reward player
             player->CastSpell(player, SI_TRACES_OF_SILITHYST, true);
             // add 19 honor
-            player->RewardHonor(nullptr, 1, 19, HonorGainSource::TeamContribution);
+            player->RewardHonor(nullptr, 1, 19);
             // add 20 cenarion circle repu
             player->GetReputationMgr().ModifyReputation(sFactionStore.LookupEntry(609), 20);
             // complete quest

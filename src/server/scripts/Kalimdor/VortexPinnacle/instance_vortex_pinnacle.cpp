@@ -20,14 +20,15 @@
 #include "Creature.h"
 #include "InstanceScript.h"
 
-static constexpr ObjectData const creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_GRAND_VIZIER_ERTAN,   BOSS_GRAND_VIZIER_ERTAN },
     { NPC_ALTAIRUS,             BOSS_ALTAIRUS           },
     { NPC_ASAAD,                BOSS_ASAAD              },
+    { 0,                        0                       } // END
 };
 
-static constexpr DungeonEncounterData const encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_GRAND_VIZIER_ERTAN,  {{ 1043 }}  },
     { BOSS_ALTAIRUS,            {{ 1041 }}  },
@@ -35,8 +36,8 @@ static constexpr DungeonEncounterData const encounters[] =
 };
 
 // These StringIds must be set in DB to properly identify the first and second landing zone for the entrance shortcut teleporters
-static constexpr std::string_view SlipStreamLandingZoneStringId1 = "vp_slipstream_landing_zone_1";
-static constexpr std::string_view SlipStreamLandingZoneStringId2 = "vp_slipstream_landing_zone_2";
+constexpr std::string_view SlipStreamLandingZoneStringId1 = "vp_slipstream_landing_zone_1";
+constexpr std::string_view SlipStreamLandingZoneStringId2 = "vp_slipstream_landing_zone_2";
 
 class instance_vortex_pinnacle : public InstanceMapScript
 {
@@ -49,7 +50,7 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDungeonEncounterData(encounters);
         }
 

@@ -17,9 +17,7 @@
 
 #include "VehiclePackets.h"
 
-namespace WorldPackets::Vehicle
-{
-WorldPacket const* MoveSetVehicleRecID::Write()
+WorldPacket const* WorldPackets::Vehicle::MoveSetVehicleRecID::Write()
 {
     _worldPacket << MoverGUID;
     _worldPacket << uint32(SequenceIndex);
@@ -28,13 +26,13 @@ WorldPacket const* MoveSetVehicleRecID::Write()
     return &_worldPacket;
 }
 
-void MoveSetVehicleRecIdAck::Read()
+void WorldPackets::Vehicle::MoveSetVehicleRecIdAck::Read()
 {
     _worldPacket >> Data;
     _worldPacket >> VehicleRecID;
 }
 
-WorldPacket const* SetVehicleRecID::Write()
+WorldPacket const* WorldPackets::Vehicle::SetVehicleRecID::Write()
 {
     _worldPacket << VehicleGUID;
     _worldPacket << int32(VehicleRecID);
@@ -42,31 +40,30 @@ WorldPacket const* SetVehicleRecID::Write()
     return &_worldPacket;
 }
 
-void MoveDismissVehicle::Read()
+void WorldPackets::Vehicle::MoveDismissVehicle::Read()
 {
     _worldPacket >> Status;
 }
 
-void MoveChangeVehicleSeats::Read()
+void WorldPackets::Vehicle::MoveChangeVehicleSeats::Read()
 {
     _worldPacket >> Status;
     _worldPacket >> DstVehicle;
     _worldPacket >> DstSeatIndex;
 }
 
-void RequestVehicleSwitchSeat::Read()
+void WorldPackets::Vehicle::RequestVehicleSwitchSeat::Read()
 {
     _worldPacket >> Vehicle;
     _worldPacket >> SeatIndex;
 }
 
-void RideVehicleInteract::Read()
+void WorldPackets::Vehicle::RideVehicleInteract::Read()
 {
     _worldPacket >> Vehicle;
 }
 
-void EjectPassenger::Read()
+void WorldPackets::Vehicle::EjectPassenger::Read()
 {
     _worldPacket >> Passenger;
-}
 }

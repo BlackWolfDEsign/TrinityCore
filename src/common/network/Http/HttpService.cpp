@@ -130,12 +130,12 @@ void SessionService::InitAndStoreSessionState(std::shared_ptr<SessionState> stat
 
     // Generate session id
     {
-        std::scoped_lock lock{ _sessionsMutex };
+        std::unique_lock lock{ _sessionsMutex };
 
         while (state->Id.is_nil() || _sessions.contains(state->Id))
             std::copy_n(Trinity::Crypto::GetRandomBytes<16>().begin(), 16, state->Id.begin());
 
-        TC_LOG_DEBUG(_logger, "Client at {} created new session {}", address, boost::uuids::to_string(state->Id));
+        TC_LOG_DEBUG(_logger, "Client at {} created new session {}", address.to_string(), boost::uuids::to_string(state->Id));
         _sessions[state->Id] = std::move(state);
     }
 }
@@ -157,11 +157,11 @@ void SessionService::Stop()
 {
     _inactiveSessionsKillTimer = nullptr;
     {
-        std::scoped_lock lock{ _sessionsMutex };
+        std::unique_lock lock{ _sessionsMutex };
         _sessions.clear();
     }
     {
-        std::scoped_lock lock{ _inactiveSessionsMutex };
+        std::unique_lock lock{ _inactiveSessionsMutex };
         _inactiveSessions.clear();
     }
 }
@@ -175,7 +175,7 @@ std::shared_ptr<SessionState> SessionService::FindAndRefreshSessionState(std::st
         auto itr = _sessions.find(boost::uuids::string_generator()(id.begin(), id.end()));
         if (itr == _sessions.end())
         {
-            TC_LOG_DEBUG(_logger, "Client at {} attempted to use a session {} that was expired", address, id);
+            TC_LOG_DEBUG(_logger, "Client at {} attempted to use a session {} that was expired", address.to_string(), id);
             return nullptr; // no session
         }
 
@@ -185,12 +185,12 @@ std::shared_ptr<SessionState> SessionService::FindAndRefreshSessionState(std::st
     if (state->RemoteAddress != address)
     {
         TC_LOG_ERROR(_logger, "Client at {} attempted to use a session {} that was last accessed from {}, denied access",
-            address, id, state->RemoteAddress);
+            address.to_string(), id, state->RemoteAddress.to_string());
         return nullptr;
     }
 
     {
-        std::scoped_lock inactiveSessionsLock{ _inactiveSessionsMutex };
+        std::unique_lock inactiveSessionsLock{ _inactiveSessionsMutex };
         _inactiveSessions.erase(state->Id);
     }
 
@@ -201,7 +201,7 @@ void SessionService::MarkSessionInactive(boost::uuids::uuid const& id)
 {
     bool wasActive = true;
     {
-        std::scoped_lock inactiveSessionsLock{ _inactiveSessionsMutex };
+        std::unique_lock inactiveSessionsLock{ _inactiveSessionsMutex };
         wasActive = _inactiveSessions.insert(id).second;
     }
 
@@ -222,7 +222,7 @@ void SessionService::KillInactiveSessions()
     std::set<boost::uuids::uuid> inactiveSessions;
 
     {
-        std::scoped_lock lock{ _inactiveSessionsMutex };
+        std::unique_lock lock{ _inactiveSessionsMutex };
         std::swap(_inactiveSessions, inactiveSessions);
     }
 
@@ -230,7 +230,7 @@ void SessionService::KillInactiveSessions()
         TimePoint now = TimePoint::clock::now();
         std::size_t inactiveSessionsCount = inactiveSessions.size();
 
-        std::scoped_lock lock{ _sessionsMutex };
+        std::unique_lock lock{ _sessionsMutex };
         for (auto itr = inactiveSessions.begin(); itr != inactiveSessions.end(); )
         {
             auto sessionItr = _sessions.find(*itr);
@@ -248,7 +248,7 @@ void SessionService::KillInactiveSessions()
 
     {
         // restore sessions not killed to inactive queue
-        std::scoped_lock lock{ _inactiveSessionsMutex };
+        std::unique_lock lock{ _inactiveSessionsMutex };
         for (auto itr = inactiveSessions.begin(); itr != inactiveSessions.end(); )
         {
             auto node = inactiveSessions.extract(itr++);

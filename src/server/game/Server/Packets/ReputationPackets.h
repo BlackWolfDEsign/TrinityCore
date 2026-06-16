@@ -15,10 +15,11 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_REPUTATION_PACKETS_H
-#define TRINITYCORE_REPUTATION_PACKETS_H
+#ifndef ReputationPackets_h__
+#define ReputationPackets_h__
 
 #include "Packet.h"
+#include <array>
 
 namespace WorldPackets
 {
@@ -51,6 +52,7 @@ namespace WorldPackets
         struct FactionStandingData
         {
             FactionStandingData() { }
+            FactionStandingData(int32 index, int32 standing) : Index(index), Standing(standing) { }
             FactionStandingData(int32 index, int32 standing, int32 factionId) : Index(index), Standing(standing), FactionID(factionId) { }
 
             int32 Index = 0;
@@ -72,4 +74,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_REPUTATION_PACKETS_H
+#endif // ReputationPackets_h__

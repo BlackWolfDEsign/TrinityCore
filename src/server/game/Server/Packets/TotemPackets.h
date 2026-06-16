@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_TOTEM_PACKETS_H
-#define TRINITYCORE_TOTEM_PACKETS_H
+#ifndef TotemPackets_h__
+#define TotemPackets_h__
 
 #include "ObjectGuid.h"
 #include "Packet.h"
@@ -29,7 +29,7 @@ namespace WorldPackets
         class TotemDestroyed final : public ClientPacket
         {
         public:
-            explicit TotemDestroyed(WorldPacket&& packet) : ClientPacket(CMSG_TOTEM_DESTROYED, std::move(packet)) { }
+            TotemDestroyed(WorldPacket&& packet) : ClientPacket(CMSG_TOTEM_DESTROYED, std::move(packet)) { }
 
             void Read() override;
 
@@ -40,7 +40,7 @@ namespace WorldPackets
         class TotemCreated final : public ServerPacket
         {
         public:
-            explicit TotemCreated() : ServerPacket(SMSG_TOTEM_CREATED, 25) { }
+            TotemCreated() : ServerPacket(SMSG_TOTEM_CREATED, 25) { }
 
             WorldPacket const* Write() override;
 
@@ -55,7 +55,7 @@ namespace WorldPackets
         class TotemMoved final : public ServerPacket
         {
         public:
-            explicit TotemMoved() : ServerPacket(SMSG_TOTEM_MOVED, 18) { }
+            TotemMoved() : ServerPacket(SMSG_TOTEM_MOVED, 18) { }
 
             WorldPacket const* Write() override;
 
@@ -66,4 +66,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_TOTEM_PACKETS_H
+#endif // TotemPackets_h__

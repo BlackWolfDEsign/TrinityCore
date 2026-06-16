@@ -20,8 +20,10 @@
 
 #include "Position.h"
 #include <G3D/Vector3.h>
+#include "Errors.h"
 
-inline constexpr auto PositionToVector3 = [](Position const& p) -> G3D::Vector3 { return { p.m_positionX, p.m_positionY, p.m_positionZ }; };
-inline constexpr auto Vector3ToPosition = [](G3D::Vector3 const& v) -> Position { return { v.x, v.y, v.z }; };
+inline G3D::Vector3 PositionToVector3(Position p) { return { p.m_positionX, p.m_positionY, p.m_positionZ }; }
+inline G3D::Vector3 PositionToVector3(Position const* p) { return { ASSERT_NOTNULL(p)->m_positionX, p->m_positionY, p->m_positionZ }; }
+inline Position Vector3ToPosition(G3D::Vector3 v) { return { v.x, v.y, v.z }; }
 
 #endif

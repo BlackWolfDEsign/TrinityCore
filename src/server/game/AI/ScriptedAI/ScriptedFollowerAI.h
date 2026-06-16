@@ -35,7 +35,7 @@ enum FollowerState : uint32
 class TC_GAME_API FollowerAI : public ScriptedAI
 {
     public:
-        explicit FollowerAI(Creature* creature) noexcept;
+        explicit FollowerAI(Creature* creature);
         ~FollowerAI() { }
 
         void MoveInLineOfSight(Unit*) override;

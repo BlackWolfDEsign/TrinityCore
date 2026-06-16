@@ -16,6 +16,7 @@
  */
 
 #include "icecrown_citadel.h"
+#include "CommonHelpers.h"
 #include "Containers.h"
 #include "DB2Stores.h"
 #include "GridNotifiers.h"
@@ -648,7 +649,7 @@ struct npc_spinestalker : public ScriptedAI
         // Increase add count
         if (!me->isDead())
         {
-            _instance->SetData64(DATA_SINDRAGOSA_FROSTWYRMS, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+            _instance->SetGuidData(DATA_SINDRAGOSA_FROSTWYRMS, ObjectGuid::Create<HighGuid::Creature>(631, me->GetEntry(), me->GetSpawnId()));  // this cannot be in Reset because reset also happens on evade
             Reset();
         }
     }
@@ -670,7 +671,7 @@ struct npc_spinestalker : public ScriptedAI
     void JustAppeared() override
     {
         ScriptedAI::JustAppeared();
-        _instance->SetData64(DATA_SINDRAGOSA_FROSTWYRMS, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+        _instance->SetGuidData(DATA_SINDRAGOSA_FROSTWYRMS, ObjectGuid::Create<HighGuid::Creature>(631, me->GetEntry(), me->GetSpawnId()));  // this cannot be in Reset because reset also happens on evade
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -773,7 +774,7 @@ struct npc_rimefang_icc : public ScriptedAI
         // Increase add count
         if (!me->isDead())
         {
-            _instance->SetData64(DATA_SINDRAGOSA_FROSTWYRMS, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+            _instance->SetGuidData(DATA_SINDRAGOSA_FROSTWYRMS, ObjectGuid::Create<HighGuid::Creature>(631, me->GetEntry(), me->GetSpawnId()));  // this cannot be in Reset because reset also happens on evade
             Reset();
         }
     }
@@ -795,7 +796,7 @@ struct npc_rimefang_icc : public ScriptedAI
     void JustAppeared() override
     {
         ScriptedAI::JustAppeared();
-        _instance->SetData64(DATA_SINDRAGOSA_FROSTWYRMS, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+        _instance->SetGuidData(DATA_SINDRAGOSA_FROSTWYRMS, ObjectGuid::Create<HighGuid::Creature>(631, me->GetEntry(), me->GetSpawnId()));  // this cannot be in Reset because reset also happens on evade
     }
 
     void JustDied(Unit* /*killer*/) override
@@ -929,7 +930,7 @@ struct npc_sindragosa_trash : public ScriptedAI
         if (!me->isDead())
         {
             if (me->GetEntry() == NPC_FROSTWING_WHELP)
-                _instance->SetData64(_frostwyrmId, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+                _instance->SetGuidData(_frostwyrmId, ObjectGuid::Create<HighGuid::Creature>(631, me->GetEntry(), me->GetSpawnId()));  // this cannot be in Reset because reset also happens on evade
             Reset();
         }
     }
@@ -952,7 +953,7 @@ struct npc_sindragosa_trash : public ScriptedAI
 
         // Increase add count
         if (me->GetEntry() == NPC_FROSTWING_WHELP)
-            _instance->SetData64(_frostwyrmId, me->GetSpawnId());  // this cannot be in Reset because reset also happens on evade
+            _instance->SetGuidData(_frostwyrmId, ObjectGuid::Create<HighGuid::Creature>(631, me->GetEntry(), me->GetSpawnId()));  // this cannot be in Reset because reset also happens on evade
     }
 
     void SetData(uint32 type, uint32 data) override
@@ -1058,7 +1059,7 @@ class spell_sindragosa_s_fury : public SpellScript
         uint32 minResistFactor = uint32((resistance / (resistance + 510.0f)) * 10.0f) * 2;
         uint32 randomResist = urand(0, (9 - minResistFactor) * 100) / 100 + minResistFactor;
 
-        uint32 damage = (uint32(GetEffectValueAsInt() / _targetCount) * randomResist) / 10;
+        uint32 damage = (uint32(GetEffectValue() / _targetCount) * randomResist) / 10;
 
         SpellNonMeleeDamage damageInfo(GetCaster(), GetHitUnit(), GetSpellInfo(), GetSpell()->m_SpellVisual, GetSpellInfo()->SchoolMask);
         damageInfo.damage = damage;
@@ -1089,18 +1090,30 @@ class spell_sindragosa_unchained_magic : public SpellScript
             if (!player)
                 continue;
 
-            ChrSpecializationEntry const* specialization = player->GetPrimarySpecializationEntry();
-            if (!specialization)
-                continue;
-
-            if (specialization->GetRole() == ChrSpecializationRole::Healer)
+            if (Trinity::Helpers::Entity::IsPlayerHealer(player))
             {
                 healers.push_back(target);
                 continue;
             }
 
-            if (specialization->GetFlags().HasFlag(ChrSpecializationFlag::Caster))
-                casters.push_back(target);
+            switch (player->GetClass())
+            {
+                case CLASS_PRIEST:
+                case CLASS_MAGE:
+                case CLASS_WARLOCK:
+                    casters.push_back(target);
+                    break;
+                case CLASS_SHAMAN:
+                    if (Trinity::Helpers::Entity::GetPlayerSpecialization(player) != SPEC_SHAMAN_ENHANCEMENT)
+                        casters.push_back(target);
+                    break;
+                case CLASS_DRUID:
+                    if (Trinity::Helpers::Entity::GetPlayerSpecialization(player) != SPEC_DRUID_FERAL)
+                        casters.push_back(target);
+                    break;
+                default:
+                    break;
+            }
         }
 
         targets.clear();
@@ -1378,7 +1391,7 @@ class spell_frostwarden_handler_order_whelp : public SpellScript
         if (unitList.empty())
             return;
 
-        Trinity::Containers::SelectRandomContainerElement(unitList)->CastSpell(GetHitUnit(), uint32(GetEffectValueAsInt()), true);
+        Trinity::Containers::SelectRandomContainerElement(unitList)->CastSpell(GetHitUnit(), uint32(GetEffectValue()), true);
     }
 
     void Register() override
@@ -1394,7 +1407,7 @@ class spell_frostwarden_handler_focus_fire : public SpellScript
     void HandleScript(SpellEffIndex effIndex)
     {
         PreventHitDefaultEffect(effIndex);
-        GetCaster()->GetThreatManager().AddThreat(GetHitUnit(), GetEffectValue(), GetSpellInfo(), true, true);
+        GetCaster()->GetThreatManager().AddThreat(GetHitUnit(), float(GetEffectValue()), GetSpellInfo(), true, true);
         GetCaster()->GetAI()->SetData(DATA_WHELP_MARKER, 1);
     }
 

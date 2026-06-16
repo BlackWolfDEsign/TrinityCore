@@ -76,8 +76,6 @@ struct CreatureTemplate;
 struct CreatureData;
 struct ItemTemplate;
 struct MapEntry;
-struct PlayerChoice;
-struct PlayerChoiceResponse;
 struct Position;
 struct QuestObjective;
 struct SceneTemplate;
@@ -86,7 +84,7 @@ struct WorldStateTemplate;
 namespace Trinity::ChatCommands { struct ChatCommandBuilder; }
 
 enum BattlegroundTypeId : uint32;
-enum Difficulty : int16;
+enum Difficulty : uint8;
 enum DuelCompleteType : uint8;
 enum Emote : uint32;
 enum QuestStatus : uint8;
@@ -190,7 +188,7 @@ class TC_GAME_API ScriptObject
 
     protected:
 
-        explicit ScriptObject(char const* name) noexcept;
+        ScriptObject(char const* name);
         virtual ~ScriptObject();
 
     private:
@@ -202,7 +200,7 @@ class TC_GAME_API SpellScriptLoader : public ScriptObject
 {
     protected:
 
-        explicit SpellScriptLoader(char const* name) noexcept;
+        explicit SpellScriptLoader(char const* name);
 
     public:
 
@@ -217,7 +215,7 @@ class TC_GAME_API ServerScript : public ScriptObject
 {
     protected:
 
-        explicit ServerScript(char const* name) noexcept;
+        explicit ServerScript(char const* name);
 
     public:
 
@@ -249,7 +247,7 @@ class TC_GAME_API WorldScript : public ScriptObject
 {
     protected:
 
-        explicit WorldScript(char const* name) noexcept;
+        explicit WorldScript(char const* name);
 
     public:
 
@@ -284,7 +282,7 @@ class TC_GAME_API FormulaScript : public ScriptObject
 {
     protected:
 
-        explicit FormulaScript(char const* name) noexcept;
+        explicit FormulaScript(char const* name);
 
     public:
 
@@ -319,14 +317,9 @@ class TC_GAME_API MapScript
 
     protected:
 
-        explicit MapScript(MapEntry const* mapEntry) noexcept;
+        explicit MapScript(MapEntry const* mapEntry);
 
     public:
-
-        MapScript(MapScript const& right) = delete;
-        MapScript(MapScript&& right) = delete;
-        MapScript& operator=(MapScript const& right) = delete;
-        MapScript& operator=(MapScript&& right) = delete;
 
         // Gets the MapEntry structure associated with this script. Can return NULL.
         MapEntry const* GetEntry() const;
@@ -350,7 +343,7 @@ class TC_GAME_API WorldMapScript : public ScriptObject, public MapScript<Map>
 {
     protected:
 
-        explicit WorldMapScript(char const* name, uint32 mapId) noexcept;
+        explicit WorldMapScript(char const* name, uint32 mapId);
 
     public:
 
@@ -361,7 +354,7 @@ class TC_GAME_API InstanceMapScript : public ScriptObject, public MapScript<Inst
 {
     protected:
 
-        explicit InstanceMapScript(char const* name, uint32 mapId) noexcept;
+        explicit InstanceMapScript(char const* name, uint32 mapId);
 
     public:
 
@@ -375,7 +368,7 @@ class TC_GAME_API BattlegroundMapScript : public ScriptObject, public MapScript<
 {
     protected:
 
-        explicit BattlegroundMapScript(char const* name, uint32 mapId) noexcept;
+        explicit BattlegroundMapScript(char const* name, uint32 mapId);
 
     public:
 
@@ -389,7 +382,7 @@ class TC_GAME_API ItemScript : public ScriptObject
 {
     protected:
 
-        explicit ItemScript(char const* name) noexcept;
+        explicit ItemScript(char const* name);
 
     public:
 
@@ -415,7 +408,7 @@ class TC_GAME_API UnitScript : public ScriptObject
 {
     protected:
 
-        explicit UnitScript(char const* name) noexcept;
+        explicit UnitScript(char const* name);
 
     public:
 
@@ -441,7 +434,7 @@ class TC_GAME_API CreatureScript : public ScriptObject
 {
     protected:
 
-        explicit CreatureScript(char const* name) noexcept;
+        explicit CreatureScript(char const* name);
 
     public:
 
@@ -455,7 +448,7 @@ class TC_GAME_API GameObjectScript : public ScriptObject
 {
     protected:
 
-        explicit GameObjectScript(char const* name) noexcept;
+        explicit GameObjectScript(char const* name);
 
     public:
 
@@ -469,7 +462,7 @@ class TC_GAME_API AreaTriggerScript : public ScriptObject
 {
     protected:
 
-        explicit AreaTriggerScript(char const* name) noexcept;
+        explicit AreaTriggerScript(char const* name);
 
     public:
 
@@ -503,7 +496,7 @@ class TC_GAME_API BattlefieldScript : public ScriptObject
 {
     protected:
 
-        explicit BattlefieldScript(char const* name) noexcept;
+        explicit BattlefieldScript(char const* name);
 
     public:
 
@@ -516,7 +509,7 @@ class TC_GAME_API OutdoorPvPScript : public ScriptObject
 {
     protected:
 
-        explicit OutdoorPvPScript(char const* name) noexcept;
+        explicit OutdoorPvPScript(char const* name);
 
     public:
 
@@ -530,21 +523,21 @@ class TC_GAME_API CommandScript : public ScriptObject
 {
     protected:
 
-        explicit CommandScript(char const* name) noexcept;
+        explicit CommandScript(char const* name);
 
     public:
 
         ~CommandScript();
 
         // Should return a pointer to a valid command table (ChatCommand array) to be used by ChatHandler.
-        virtual std::span<Trinity::ChatCommands::ChatCommandBuilder const> GetCommands() const = 0;
+        virtual std::vector<Trinity::ChatCommands::ChatCommandBuilder> GetCommands() const = 0;
 };
 
 class TC_GAME_API WeatherScript : public ScriptObject
 {
     protected:
 
-        explicit WeatherScript(char const* name) noexcept;
+        explicit WeatherScript(char const* name);
 
     public:
 
@@ -560,7 +553,7 @@ class TC_GAME_API AuctionHouseScript : public ScriptObject
 {
     protected:
 
-        explicit AuctionHouseScript(char const* name) noexcept;
+        explicit AuctionHouseScript(char const* name);
 
     public:
 
@@ -583,7 +576,7 @@ class TC_GAME_API ConditionScript : public ScriptObject
 {
     protected:
 
-        explicit ConditionScript(char const* name) noexcept;
+        explicit ConditionScript(char const* name);
 
     public:
 
@@ -597,7 +590,7 @@ class TC_GAME_API VehicleScript : public ScriptObject
 {
     protected:
 
-        explicit VehicleScript(char const* name) noexcept;
+        explicit VehicleScript(char const* name);
 
     public:
 
@@ -626,7 +619,7 @@ class TC_GAME_API DynamicObjectScript : public ScriptObject
 {
     protected:
 
-        explicit DynamicObjectScript(char const* name) noexcept;
+        explicit DynamicObjectScript(char const* name);
 
     public:
 
@@ -639,7 +632,7 @@ class TC_GAME_API TransportScript : public ScriptObject
 {
     protected:
 
-        explicit TransportScript(char const* name) noexcept;
+        explicit TransportScript(char const* name);
 
     public:
 
@@ -664,7 +657,7 @@ class TC_GAME_API AchievementScript : public ScriptObject
 {
     protected:
 
-        explicit AchievementScript(char const* name) noexcept;
+        explicit AchievementScript(char const* name);
 
     public:
 
@@ -678,7 +671,7 @@ class TC_GAME_API AchievementCriteriaScript : public ScriptObject
 {
     protected:
 
-        explicit AchievementCriteriaScript(char const* name) noexcept;
+        explicit AchievementCriteriaScript(char const* name);
 
     public:
 
@@ -692,7 +685,7 @@ class TC_GAME_API PlayerScript : public ScriptObject
 {
     protected:
 
-        explicit PlayerScript(char const* name) noexcept;
+        explicit PlayerScript(char const* name);
 
     public:
 
@@ -714,7 +707,7 @@ class TC_GAME_API PlayerScript : public ScriptObject
         virtual void OnFreeTalentPointsChanged(Player* player, uint32 points);
 
         // Called when a player's talent points are reset (right before the reset is done)
-        virtual void OnTalentsReset(Player* player, bool involuntarily);
+        virtual void OnTalentsReset(Player* player, bool noCost);
 
         // Called when a player's money is modified (before the modification is done)
         virtual void OnMoneyChanged(Player* player, int64& amount);
@@ -791,13 +784,16 @@ class TC_GAME_API PlayerScript : public ScriptObject
 
         // Called when a player completes a movie
         virtual void OnMovieComplete(Player* player, uint32 movieId);
+
+        // Called when a player choose a response from a PlayerChoice
+        virtual void OnPlayerChoiceResponse(Player* player, uint32 choiceId, uint32 responseId);
 };
 
 class TC_GAME_API AccountScript : public ScriptObject
 {
     protected:
 
-        explicit AccountScript(char const* name) noexcept;
+        explicit AccountScript(char const* name);
 
     public:
 
@@ -826,7 +822,7 @@ class TC_GAME_API GuildScript : public ScriptObject
 {
     protected:
 
-        explicit GuildScript(char const* name) noexcept;
+        explicit GuildScript(char const* name);
 
     public:
 
@@ -869,7 +865,7 @@ class TC_GAME_API GroupScript : public ScriptObject
 {
     protected:
 
-        explicit GroupScript(char const* name) noexcept;
+        explicit GroupScript(char const* name);
 
     public:
 
@@ -895,7 +891,7 @@ class TC_GAME_API AreaTriggerEntityScript : public ScriptObject
 {
     protected:
 
-        explicit AreaTriggerEntityScript(char const* name) noexcept;
+        explicit AreaTriggerEntityScript(char const* name);
 
     public:
 
@@ -909,7 +905,7 @@ class TC_GAME_API ConversationScript : public ScriptObject
 {
     protected:
 
-        explicit ConversationScript(char const* name) noexcept;
+        explicit ConversationScript(char const* name);
 
     public:
 
@@ -923,7 +919,7 @@ class TC_GAME_API SceneScript : public ScriptObject
 {
     protected:
 
-        explicit SceneScript(char const* name) noexcept;
+        explicit SceneScript(char const* name);
 
     public:
 
@@ -946,7 +942,7 @@ class TC_GAME_API QuestScript : public ScriptObject
 {
     protected:
 
-        explicit QuestScript(char const* name) noexcept;
+        explicit QuestScript(char const* name);
 
     public:
 
@@ -966,7 +962,7 @@ class TC_GAME_API WorldStateScript : public ScriptObject
 {
     protected:
 
-        explicit WorldStateScript(char const* name) noexcept;
+        explicit WorldStateScript(char const* name);
 
     public:
 
@@ -980,7 +976,7 @@ class TC_GAME_API EventScript : public ScriptObject
 {
     protected:
 
-        explicit EventScript(char const* name) noexcept;
+        explicit EventScript(char const* name);
 
     public:
 
@@ -988,26 +984,6 @@ class TC_GAME_API EventScript : public ScriptObject
 
         // Called when a game event is triggered
         virtual void OnTrigger(WorldObject* object, WorldObject* invoker, uint32 eventId);
-};
-
-class TC_GAME_API PlayerChoiceScript : public ScriptObject
-{
-    protected:
-
-        explicit PlayerChoiceScript(char const* name) noexcept;
-
-    public:
-
-        ~PlayerChoiceScript();
-
-        /**
-         * @param object           Source object of the PlayerChoice (can be nullptr)
-         * @param player           Player making the choice
-         * @param choice           Database template of PlayerChoice
-         * @param response         Database template of selected PlayerChoice response
-         * @param clientIdentifier Dynamically generated identifier of the response, changes every time PlayerChoice is sent to player
-         */
-        virtual void OnResponse(WorldObject* object, Player* player, PlayerChoice const* choice, PlayerChoiceResponse const* response, uint16 clientIdentifier);
 };
 
 // Manages registration, loading, and execution of scripts.
@@ -1218,7 +1194,7 @@ class TC_GAME_API ScriptMgr
         void OnPlayerKilledByCreature(Creature* killer, Player* killed);
         void OnPlayerLevelChanged(Player* player, uint8 oldLevel);
         void OnPlayerFreeTalentPointsChanged(Player* player, uint32 newPoints);
-        void OnPlayerTalentsReset(Player* player, bool involuntarily);
+        void OnPlayerTalentsReset(Player* player, bool noCost);
         void OnPlayerMoneyChanged(Player* player, int64& amount);
         void OnPlayerMoneyLimit(Player* player, int64 amount);
         void OnGivePlayerXP(Player* player, uint32& amount, Unit* victim);
@@ -1245,7 +1221,7 @@ class TC_GAME_API ScriptMgr
         void OnQuestStatusChange(Player* player, uint32 questId);
         void OnPlayerRepop(Player* player);
         void OnMovieComplete(Player* player, uint32 movieId);
-        void OnPlayerChoiceResponse(WorldObject* object, Player* player, PlayerChoice const* choice, PlayerChoiceResponse const* response, uint16 clientIdentifier);
+        void OnPlayerChoiceResponse(Player* player, uint32 choiceId, uint32 responseId);
 
     public: /* AccountScript */
 
@@ -1351,7 +1327,7 @@ template <Trinity::SpellScripts::IsSpellOrAuraScript Script1, Trinity::SpellScri
 class GenericSpellAndAuraScriptLoader : public SpellScriptLoader
 {
 public:
-    GenericSpellAndAuraScriptLoader(char const* name, ArgsType&& args) noexcept : SpellScriptLoader(name), _args(std::move(args)) { }
+    GenericSpellAndAuraScriptLoader(char const* name, ArgsType&& args) : SpellScriptLoader(name), _args(std::move(args)) { }
 
 private:
     SpellScript* GetSpellScript() const override
@@ -1386,7 +1362,7 @@ template <class AI>
 class GenericCreatureScript : public CreatureScript
 {
     public:
-        GenericCreatureScript(char const* name) noexcept : CreatureScript(name) { }
+        GenericCreatureScript(char const* name) : CreatureScript(name) { }
         CreatureAI* GetAI(Creature* me) const override { return new AI(me); }
 };
 #define RegisterCreatureAI(ai_name) new GenericCreatureScript<ai_name>(#ai_name)
@@ -1395,7 +1371,7 @@ template <class AI, AI* (*AIFactory)(Creature*)>
 class FactoryCreatureScript : public CreatureScript
 {
     public:
-        FactoryCreatureScript(char const* name) noexcept : CreatureScript(name) { }
+        FactoryCreatureScript(char const* name) : CreatureScript(name) { }
         CreatureAI* GetAI(Creature* me) const override { return AIFactory(me); }
 };
 #define RegisterCreatureAIWithFactory(ai_name, factory_fn) new FactoryCreatureScript<ai_name, &factory_fn>(#ai_name)
@@ -1404,7 +1380,7 @@ template <class AI>
 class GenericGameObjectScript : public GameObjectScript
 {
     public:
-        GenericGameObjectScript(char const* name) noexcept : GameObjectScript(name) { }
+        GenericGameObjectScript(char const* name) : GameObjectScript(name) { }
         GameObjectAI* GetAI(GameObject* go) const override { return new AI(go); }
 };
 #define RegisterGameObjectAI(ai_name) new GenericGameObjectScript<ai_name>(#ai_name)
@@ -1413,7 +1389,7 @@ template <class AI, AI* (*AIFactory)(GameObject*)>
 class FactoryGameObjectScript : public GameObjectScript
 {
     public:
-        FactoryGameObjectScript(char const* name) noexcept : GameObjectScript(name) { }
+        FactoryGameObjectScript(char const* name) : GameObjectScript(name) { }
         GameObjectAI* GetAI(GameObject* me) const override { return AIFactory(me); }
 };
 #define RegisterGameObjectAIWithFactory(ai_name, factory_fn) new FactoryGameObjectScript<ai_name, &factory_fn>(#ai_name)
@@ -1422,7 +1398,7 @@ template <class AI>
 class GenericAreaTriggerEntityScript : public AreaTriggerEntityScript
 {
     public:
-        GenericAreaTriggerEntityScript(char const* name) noexcept : AreaTriggerEntityScript(name) { }
+        GenericAreaTriggerEntityScript(char const* name) : AreaTriggerEntityScript(name) { }
         AreaTriggerAI* GetAI(AreaTrigger* at) const override { return new AI(at); }
 };
 #define RegisterAreaTriggerAI(ai_name) new GenericAreaTriggerEntityScript<ai_name>(#ai_name)
@@ -1431,7 +1407,7 @@ template <class AI>
 class GenericConversationScript : public ConversationScript
 {
 public:
-    GenericConversationScript(char const* name) noexcept : ConversationScript(name) {}
+    GenericConversationScript(char const* name) : ConversationScript(name) {}
     ConversationAI* GetAI(Conversation* conversation) const override { return new AI(conversation); }
 };
 #define RegisterConversationAI(ai_name) new GenericConversationScript<ai_name>(#ai_name)
@@ -1440,7 +1416,7 @@ template<class Script>
 class GenericBattlegroundMapScript : public BattlegroundMapScript
 {
 public:
-    GenericBattlegroundMapScript(char const* name, uint32 mapId) noexcept : BattlegroundMapScript(name, mapId) { }
+    GenericBattlegroundMapScript(char const* name, uint32 mapId) : BattlegroundMapScript(name, mapId) { }
 
     BattlegroundScript* GetBattlegroundScript(BattlegroundMap* map) const override { return new Script(map); }
 };

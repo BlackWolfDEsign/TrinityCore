@@ -32,7 +32,7 @@
 #include "ItemBonusMgr.h"
 #include "Language.h"
 #include "MiscPackets.h"
-#include "MMapManager.h"
+#include "MMapFactory.h"
 #include "MotionMaster.h"
 #include "MovementDefines.h"
 #include "ObjectAccessor.h"
@@ -49,7 +49,7 @@
 #include "World.h"
 #include "WorldSession.h"
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
@@ -60,7 +60,7 @@ class misc_commandscript : public CommandScript
 public:
     misc_commandscript() : CommandScript("misc_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable commandTable =
         {
@@ -258,7 +258,7 @@ public:
 
         uint32 haveMap = TerrainInfo::ExistMap(mapId, gridX, gridY) ? 1 : 0;
         uint32 haveVMap = TerrainInfo::ExistVMap(mapId, gridX, gridY) ? 1 : 0;
-        uint32 haveMMap = (DisableMgr::IsPathfindingEnabled(mapId) && MMAP::MMapManager::instance()->GetNavMesh(object->GetMapId(), object->GetInstanceId())) ? 1 : 0;
+        uint32 haveMMap = (DisableMgr::IsPathfindingEnabled(mapId) && MMAP::MMapFactory::createOrGetMMapManager()->GetNavMesh(handler->GetSession()->GetPlayer()->GetMapId())) ? 1 : 0;
 
         if (haveVMap)
         {
@@ -372,6 +372,16 @@ public:
                     handler->SetSentErrorMessage(true);
                     return false;
                 }
+                // if both players are in different bgs
+                else if (_player->GetBattlegroundId() && _player->GetBattlegroundId() != target->GetBattlegroundId())
+                    _player->LeaveBattleground(false); // Note: should be changed so _player gets no Deserter debuff
+
+                // all's well, set bg id
+                // when porting out from the bg, it will be reset to 0
+                _player->SetBattlegroundId(target->GetBattlegroundId(), target->GetBattlegroundTypeId(), BATTLEGROUND_QUEUE_NONE); // unsure
+                // remember current position as entry point for return at bg end teleportation
+                if (!_player->GetMap()->IsBattlegroundOrArena())
+                    _player->SetBattlegroundEntryPoint();
             }
             else if (map->IsDungeon())
             {
@@ -410,19 +420,6 @@ public:
 
             handler->PSendSysMessage(LANG_APPEARING_AT, chrNameLink.c_str());
 
-            if (_player->GetBattlegroundId() && _player->GetBattlegroundId() != target->GetBattlegroundId())
-                _player->LeaveBattleground(false, true);
-
-            if (map->IsBattlegroundOrArena())
-            {
-                // all's well, set bg id
-                // when porting out from the bg, it will be reset to 0
-                _player->SetBattlegroundId(target->GetBattlegroundId(), target->GetBattlegroundTypeId(), BATTLEGROUND_QUEUE_NONE);
-                // remember current position as entry point for return at bg end teleportation
-                if (!_player->GetMap()->IsBattlegroundOrArena())
-                    _player->SetBattlegroundEntryPoint();
-            }
-
             // stop flight if need
             if (_player->IsInFlight())
                 _player->FinishTaxiFlight();
@@ -453,9 +450,6 @@ public:
             bool in_flight;
             if (!Player::LoadPositionFromDB(map, x, y, z, o, in_flight, targetGuid))
                 return false;
-
-            if (_player->GetBattlegroundId())
-                _player->LeaveBattleground(false, true);
 
             // stop flight if need
             if (_player->IsInFlight())
@@ -511,6 +505,16 @@ public:
                     handler->SetSentErrorMessage(true);
                     return false;
                 }
+                // if both players are in different bgs
+                else if (target->GetBattlegroundId() && _player->GetBattlegroundId() != target->GetBattlegroundId())
+                    target->LeaveBattleground(false); // Note: should be changed so target gets no Deserter debuff
+
+                // all's well, set bg id
+                // when porting out from the bg, it will be reset to 0
+                target->SetBattlegroundId(_player->GetBattlegroundId(), _player->GetBattlegroundTypeId(), BATTLEGROUND_QUEUE_NONE); // unsure about this
+                // remember current position as entry point for return at bg end teleportation
+                if (!target->GetMap()->IsBattlegroundOrArena())
+                    target->SetBattlegroundEntryPoint();
             }
             else if (map->IsDungeon())
             {
@@ -540,19 +544,6 @@ public:
             handler->PSendSysMessage(LANG_SUMMONING, nameLink.c_str(), "");
             if (handler->needReportToTarget(target))
                 ChatHandler(target->GetSession()).PSendSysMessage(LANG_SUMMONED_BY, handler->playerLink(_player->GetName()).c_str());
-
-            if (target->GetBattlegroundId() && _player->GetBattlegroundId() != target->GetBattlegroundId())
-                target->LeaveBattleground(false, true);
-
-            if (map->IsBattlegroundOrArena())
-            {
-                // all's well, set bg id
-                // when porting out from the bg, it will be reset to 0
-                target->SetBattlegroundId(_player->GetBattlegroundId(), _player->GetBattlegroundTypeId(), BATTLEGROUND_QUEUE_NONE);
-                // remember current position as entry point for return at bg end teleportation
-                if (!target->GetMap()->IsBattlegroundOrArena())
-                    target->SetBattlegroundEntryPoint();
-            }
 
             // stop flight if need
             if (_player->IsInFlight())
@@ -1262,7 +1253,7 @@ public:
             return false;
         }
 
-        Item* item = playerTarget->StoreNewItem(dest, itemId, true, GenerateItemRandomBonusListId(itemId), GuidSet(), itemContext,
+        Item* item = playerTarget->StoreNewItem(dest, itemId, true, GenerateItemRandomBonusListId(itemId), GenerateItemRandomPropertiesId(itemId), GuidSet(), itemContext,
             bonusListIDs.empty() ? nullptr : &bonusListIDs);
 
         // remove binding (let GM give it to another player later)
@@ -1356,7 +1347,7 @@ public:
                     bonusListIDsForItem.insert(bonusListIDsForItem.begin(), contextBonuses.begin(), contextBonuses.end());
                 }
 
-                Item* item = playerTarget->StoreNewItem(dest, itemTemplatePair.first, true, {}, GuidSet(), itemContext,
+                Item* item = playerTarget->StoreNewItem(dest, itemTemplatePair.first, true, {}, {}, GuidSet(), itemContext,
                     bonusListIDsForItem.empty() ? nullptr : &bonusListIDsForItem);
                 if (!item)
                     continue;
@@ -1982,6 +1973,8 @@ public:
             target->GetSession()->m_muteTime = 0;
         }
 
+        using namespace std::string_view_literals;
+
         LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_MUTE_TIME);
         stmt->setInt64(0, 0);
         stmt->setString(1, ""sv);
@@ -2205,7 +2198,7 @@ public:
 
         // non-melee damage
 
-        SpellNonMeleeDamage damageInfo(attacker, target, *spellInfo, { (*spellInfo)->GetSpellXSpellVisualId(handler->GetSession()->GetPlayer()), 0 }, (*spellInfo)->SchoolMask);
+        SpellNonMeleeDamage damageInfo(attacker, target, *spellInfo, { (*spellInfo)->GetSpellXSpellVisualId(handler->GetSession()->GetPlayer()) }, (*spellInfo)->SchoolMask);
         damageInfo.damage = damage;
         Unit::DealDamageMods(damageInfo.attacker, damageInfo.target, damageInfo.damage, &damageInfo.absorb);
         target->DealSpellDamage(&damageInfo, true);

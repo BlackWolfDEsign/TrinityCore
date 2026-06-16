@@ -61,7 +61,6 @@ Pet::Pet(Player* owner, PetType type) :
     }
 
     m_name = "Pet";
-    m_focusRegenTimer = PET_FOCUS_REGEN_INTERVAL;
 }
 
 Pet::~Pet() = default;
@@ -411,8 +410,6 @@ bool Pet::LoadPetFromDB(Player* owner, uint32 petEntry, uint32 petnumber, bool c
         TC_LOG_DEBUG("entities.pet", "New Pet has {}", GetGUID().ToString());
 
         uint16 specId = specializationId;
-        if (ChrSpecializationEntry const* petSpec = sChrSpecializationStore.LookupEntry(specId))
-            specId = sDB2Manager.GetChrSpecializationByIndex(owner->HasAuraType(SPELL_AURA_OVERRIDE_PET_SPECS) ? PET_SPEC_OVERRIDE_CLASS_INDEX : 0, petSpec->OrderIndex)->ID;
 
         SetSpecialization(specId);
 
@@ -667,39 +664,6 @@ void Pet::Update(uint32 diff)
                     return;
                 }
             }
-
-            //regenerate focus for hunter pets or energy for deathknight's ghoul
-            if (m_focusRegenTimer)
-            {
-                if (m_focusRegenTimer > diff)
-                    m_focusRegenTimer -= diff;
-                else
-                {
-                    switch (GetPowerType())
-                    {
-                        case POWER_FOCUS:
-                            Regenerate(POWER_FOCUS);
-                            m_focusRegenTimer += PET_FOCUS_REGEN_INTERVAL - diff;
-                            if (!m_focusRegenTimer) ++m_focusRegenTimer;
-
-                            // Reset if large diff (lag) causes focus to get 'stuck'
-                            if (m_focusRegenTimer > PET_FOCUS_REGEN_INTERVAL)
-                                m_focusRegenTimer = PET_FOCUS_REGEN_INTERVAL;
-
-                            break;
-
-                        // in creature::update
-                        //case POWER_ENERGY:
-                        //    Regenerate(POWER_ENERGY);
-                        //    m_regenTimer += CREATURE_REGEN_INTERVAL - diff;
-                        //    if (!m_regenTimer) ++m_regenTimer;
-                        //    break;
-                        default:
-                            m_focusRegenTimer = 0;
-                            break;
-                    }
-                }
-            }
             break;
         }
         default:
@@ -905,18 +869,22 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
     {
         // remove elite bonuses included in DB values
         CreatureBaseStats const* stats = sObjectMgr->GetCreatureBaseStats(petlevel, cinfo->unit_class);
-        ApplyLevelScaling();
+        float healthmod = GetHealthMod(cinfo->Classification);
+        uint32 basehp = stats->GenerateHealth(m_creatureDifficulty);
+        uint32 health = uint32(basehp * healthmod);
+        uint32 mana = stats->GenerateMana(m_creatureDifficulty);
 
-        CreatureDifficulty const* creatureDifficulty = GetCreatureDifficulty();
-        SetCreateHealth(std::max(sDB2Manager.EvaluateExpectedStat(ExpectedStatType::CreatureHealth, petlevel, creatureDifficulty->GetHealthScalingExpansion(), m_unitData->ContentTuningID, Classes(cinfo->unit_class), 0) * creatureDifficulty->HealthModifier * GetHealthMod(cinfo->Classification), 1.0f));
-        SetCreateMana(stats->BaseMana);
+        SetCreateHealth(health);
+        SetCreateMana(mana);
         SetCreateStat(STAT_STRENGTH, 22);
         SetCreateStat(STAT_AGILITY, 22);
         SetCreateStat(STAT_STAMINA, 25);
         SetCreateStat(STAT_INTELLECT, 28);
+        SetCreateStat(STAT_SPIRIT, 27);
     }
 
     // Power
+    RegisterPowerTypes();
     SetPowerType(powerType, true, true);
 
     // Damage
@@ -1068,7 +1036,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                      * should be copied here (or moved to another method or if that function should be called here
                      * or not just for this default case)
                      */
-                    float basedamage = GetBaseDamageForLevel(petlevel);
+                    CreatureBaseStats const* stats = sObjectMgr->GetCreatureBaseStats(petlevel, cinfo->unit_class);
+                    float basedamage = stats->GenerateBaseDamage(m_creatureDifficulty);
 
                     float weaponBaseMinDamage = basedamage;
                     float weaponBaseMaxDamage = basedamage * 1.5f;
@@ -1199,8 +1168,8 @@ void Pet::_LoadAuras(PreparedQueryResult auraResult, PreparedQueryResult effectR
 
                 AuraKey key{ casterGuid, itemGuid, fields[1].GetUInt32(), fields[2].GetUInt32() };
                 AuraLoadEffectInfo& info = effectInfo[key];
-                info.Amounts[effectIndex] = fields[4].GetDouble();
-                info.BaseAmounts[effectIndex] = fields[5].GetDouble();
+                info.Amounts[effectIndex] = fields[4].GetInt32();
+                info.BaseAmounts[effectIndex] = fields[5].GetInt32();
             }
         } while (effectResult->NextRow());
     }
@@ -1337,8 +1306,8 @@ void Pet::_SaveAuras(CharacterDatabaseTransaction trans)
             stmt->setUInt32(index++, key.SpellId);
             stmt->setUInt32(index++, key.EffectMask);
             stmt->setUInt8(index++, effect->GetEffIndex());
-            stmt->setDouble(index++, effect->GetAmount());
-            stmt->setDouble(index++, effect->GetBaseAmount());
+            stmt->setInt32(index++, effect->GetAmount());
+            stmt->setInt32(index++, effect->GetBaseAmount());
             trans->Append(stmt);
         }
     }
@@ -1683,8 +1652,9 @@ bool Pet::Create(ObjectGuid::LowType guidlow, Map* map, uint32 Entry, uint32 /*p
     SetMap(map);
 
     // TODO: counter should be constructed as (summon_count << 32) | petNumber
-    _Create(ObjectGuid::Create<HighGuid::Pet>(map->GetId(), Entry, guidlow));
+    Object::_Create(ObjectGuid::Create<HighGuid::Pet>(map->GetId(), Entry, guidlow));
 
+    m_spawnId = guidlow;
     m_originalEntry = Entry;
 
     if (!InitEntry(Entry))
@@ -1851,6 +1821,7 @@ void Pet::LearnSpecializationSpells()
 {
     std::vector<uint32> learnedSpells;
 
+    /*
     if (std::vector<SpecializationSpellsEntry const*> const* specSpells = sDB2Manager.GetSpecializationSpells(m_petSpecialization))
     {
         for (size_t j = 0; j < specSpells->size(); ++j)
@@ -1863,6 +1834,7 @@ void Pet::LearnSpecializationSpells()
             learnedSpells.push_back(specSpell->SpellID);
         }
     }
+    */
 
     learnSpells(learnedSpells);
 }
@@ -1871,6 +1843,7 @@ void Pet::RemoveSpecializationSpells(bool clearActionBar)
 {
     std::vector<uint32> unlearnedSpells;
 
+    /*
     for (uint32 i = 0; i < MAX_SPECIALIZATIONS; ++i)
     {
         if (ChrSpecializationEntry const* specialization = sDB2Manager.GetChrSpecializationByIndex(0, i))
@@ -1897,6 +1870,7 @@ void Pet::RemoveSpecializationSpells(bool clearActionBar)
             }
         }
     }
+    */
 
     unlearnSpells(unlearnedSpells, true, clearActionBar);
 }
@@ -1909,7 +1883,7 @@ void Pet::SetSpecialization(uint16 spec)
     // remove all the old spec's specalization spells, set the new spec, then add the new spec's spells
     // clearActionBars is false because we'll be updating the pet actionbar later so we don't have to do it now
     RemoveSpecializationSpells(false);
-    if (!sChrSpecializationStore.LookupEntry(spec))
+    //if (!sChrSpecializationStore.LookupEntry(spec))
     {
         m_petSpecialization = 0;
         return;

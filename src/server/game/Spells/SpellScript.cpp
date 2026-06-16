@@ -21,6 +21,7 @@
 #include "Spell.h"
 #include "SpellAuras.h"
 #include "SpellMgr.h"
+#include "StringConvert.h"
 #include "Unit.h"
 #include <string>
 
@@ -34,7 +35,7 @@ bool SpellScriptBase::_Validate(SpellInfo const* entry)
     return true;
 }
 
-SpellScriptBase::SpellScriptBase() noexcept : m_scriptSpellId(0), m_currentScriptState(SPELL_SCRIPT_STATE_NONE)
+SpellScriptBase::SpellScriptBase(): m_currentScriptState(SPELL_SCRIPT_STATE_NONE), m_scriptSpellId(0)
 {
 }
 
@@ -99,13 +100,6 @@ void SpellScriptBase::_Init(std::string const& scriptname, uint32 spellId)
 std::string_view SpellScriptBase::GetScriptName() const
 {
     return m_scriptName;
-}
-
-template <typename T>
-SpellScriptBase::HookList<T>& SpellScriptBase::HookList<T>::operator+=(T&& t) noexcept
-{
-    ::HookList<T>::operator+=(std::move(t));
-    return *this;
 }
 
 SpellScriptBase::EffectHook::EffectHook(uint8 effIndex)
@@ -254,20 +248,7 @@ bool SpellScript::TargetHook::CheckEffect(SpellInfo const* spellInfo, uint8 effI
     return false;
 }
 
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::CastHandler>& SpellScriptBase::HookList<SpellScript::CastHandler>::operator+=(SpellScript::CastHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::CheckCastHandler>& SpellScriptBase::HookList<SpellScript::CheckCastHandler>::operator+=(SpellScript::CheckCastHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::EffectHandler>& SpellScriptBase::HookList<SpellScript::EffectHandler>::operator+=(SpellScript::EffectHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::BeforeHitHandler>& SpellScriptBase::HookList<SpellScript::BeforeHitHandler>::operator+=(SpellScript::BeforeHitHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::HitHandler>& SpellScriptBase::HookList<SpellScript::HitHandler>::operator+=(SpellScript::HitHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::OnCalcCritChanceHandler>& SpellScriptBase::HookList<SpellScript::OnCalcCritChanceHandler>::operator+=(SpellScript::OnCalcCritChanceHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::ObjectAreaTargetSelectHandler>& SpellScriptBase::HookList<SpellScript::ObjectAreaTargetSelectHandler>::operator+=(SpellScript::ObjectAreaTargetSelectHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::ObjectTargetSelectHandler>& SpellScriptBase::HookList<SpellScript::ObjectTargetSelectHandler>::operator+=(SpellScript::ObjectTargetSelectHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::DestinationTargetSelectHandler>& SpellScriptBase::HookList<SpellScript::DestinationTargetSelectHandler>::operator+=(SpellScript::DestinationTargetSelectHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::DamageAndHealingCalcHandler>& SpellScriptBase::HookList<SpellScript::DamageAndHealingCalcHandler>::operator+=(SpellScript::DamageAndHealingCalcHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::OnCalculateResistAbsorbHandler>& SpellScriptBase::HookList<SpellScript::OnCalculateResistAbsorbHandler>::operator+=(SpellScript::OnCalculateResistAbsorbHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<SpellScript::EmpowerStageCompletedHandler>& SpellScriptBase::HookList<SpellScript::EmpowerStageCompletedHandler>::operator+=(SpellScript::EmpowerStageCompletedHandler&& hook) noexcept;
-
-SpellScript::SpellScript() noexcept : m_spell(nullptr), m_hitPreventEffectMask(0), m_hitPreventDefaultEffectMask(0)
+SpellScript::SpellScript(): m_spell(nullptr), m_hitPreventEffectMask(0), m_hitPreventDefaultEffectMask(0)
 {
 }
 
@@ -486,17 +467,6 @@ int64 SpellScript::GetUnitTargetCountForEffect(SpellEffIndex effect) const
     return m_spell->GetUnitTargetCountForEffect(effect);
 }
 
-int32 SpellScript::GetUnitTargetIndexForEffect(ObjectGuid const& target, SpellEffIndex effect) const
-{
-    if (!IsAfterTargetSelectionPhase())
-    {
-        TC_LOG_ERROR("scripts", "Script: `{}` Spell: `{}`: function SpellScript::GetUnitTargetIndexForEffect was called, but function has no effect in current hook! (spell has not selected targets yet)",
-            m_scriptName, m_scriptSpellId);
-        return 0;
-    }
-    return m_spell->GetUnitTargetIndexForEffect(target, effect);
-}
-
 int64 SpellScript::GetGameObjectTargetCountForEffect(SpellEffIndex effect) const
 {
     if (!IsAfterTargetSelectionPhase())
@@ -653,14 +623,17 @@ bool SpellScript::IsHitCrit() const
     }
     if (Unit* hitUnit = GetHitUnit())
     {
-        auto itr = std::ranges::find(m_spell->m_UniqueTargetInfo, hitUnit->GetGUID(), &Spell::TargetInfo::TargetGUID);
+        auto itr = std::find_if(m_spell->m_UniqueTargetInfo.begin(), m_spell->m_UniqueTargetInfo.end(), [hitUnit](Spell::TargetInfo const& targetInfo)
+        {
+            return targetInfo.TargetGUID == hitUnit->GetGUID();
+        });
         ASSERT(itr != m_spell->m_UniqueTargetInfo.end());
         return itr->IsCrit;
     }
     return false;
 }
 
-Aura* SpellScript::GetHitAura(bool dynObjAura /*= false*/, bool withRemoved /*= false*/) const
+Aura* SpellScript::GetHitAura(bool dynObjAura /*= false*/) const
 {
     if (!IsInTargetHook())
     {
@@ -672,7 +645,7 @@ Aura* SpellScript::GetHitAura(bool dynObjAura /*= false*/, bool withRemoved /*= 
     if (dynObjAura)
         aura = m_spell->_dynObjAura;
 
-    if (!aura || (aura->IsRemoved() && !withRemoved))
+    if (!aura || aura->IsRemoved())
         return nullptr;
 
     return aura;
@@ -719,12 +692,7 @@ SpellEffectInfo const& SpellScript::GetEffectInfo() const
     return *m_spell->effectInfo;
 }
 
-int32 SpellScript::GetEffectValueAsInt() const
-{
-    return static_cast<int32>(GetEffectValue());
-}
-
-SpellEffectValue SpellScript::GetEffectValue() const
+int32 SpellScript::GetEffectValue() const
 {
     if (!IsInEffectHook())
     {
@@ -732,10 +700,10 @@ SpellEffectValue SpellScript::GetEffectValue() const
         return 0;
     }
 
-    return m_spell->effectValue;
+    return m_spell->damage;
 }
 
-void SpellScript::SetEffectValue(SpellEffectValue value)
+void SpellScript::SetEffectValue(int32 value)
 {
     if (!IsInEffectHook())
     {
@@ -743,7 +711,7 @@ void SpellScript::SetEffectValue(SpellEffectValue value)
         return;
     }
 
-    m_spell->effectValue = std::clamp(value, SpellEffectInfo::MinValue, SpellEffectInfo::MaxValue);
+    m_spell->damage = value;
 }
 
 float SpellScript::GetEffectVariance() const
@@ -804,25 +772,6 @@ Difficulty SpellScript::GetCastDifficulty() const
 {
     return m_spell->GetCastDifficulty();
 }
-
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::CheckAreaTargetHandler>& SpellScriptBase::HookList<AuraScript::CheckAreaTargetHandler>::operator+=(AuraScript::CheckAreaTargetHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::AuraDispelHandler>& SpellScriptBase::HookList<AuraScript::AuraDispelHandler>::operator+=(AuraScript::AuraDispelHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::AuraHeartbeatHandler>& SpellScriptBase::HookList<AuraScript::AuraHeartbeatHandler>::operator+=(AuraScript::AuraHeartbeatHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectApplyHandler>& SpellScriptBase::HookList<AuraScript::EffectApplyHandler>::operator+=(AuraScript::EffectApplyHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectPeriodicHandler>& SpellScriptBase::HookList<AuraScript::EffectPeriodicHandler>::operator+=(AuraScript::EffectPeriodicHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectUpdatePeriodicHandler>& SpellScriptBase::HookList<AuraScript::EffectUpdatePeriodicHandler>::operator+=(AuraScript::EffectUpdatePeriodicHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectCalcAmountHandler>& SpellScriptBase::HookList<AuraScript::EffectCalcAmountHandler>::operator+=(AuraScript::EffectCalcAmountHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectCalcPeriodicHandler>& SpellScriptBase::HookList<AuraScript::EffectCalcPeriodicHandler>::operator+=(AuraScript::EffectCalcPeriodicHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectCalcSpellModHandler>& SpellScriptBase::HookList<AuraScript::EffectCalcSpellModHandler>::operator+=(AuraScript::EffectCalcSpellModHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectCalcCritChanceHandler>& SpellScriptBase::HookList<AuraScript::EffectCalcCritChanceHandler>::operator+=(AuraScript::EffectCalcCritChanceHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectCalcDamageAndHealingHandler>& SpellScriptBase::HookList<AuraScript::EffectCalcDamageAndHealingHandler>::operator+=(AuraScript::EffectCalcDamageAndHealingHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectAbsorbHandler>& SpellScriptBase::HookList<AuraScript::EffectAbsorbHandler>::operator+=(AuraScript::EffectAbsorbHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectAbsorbHealHandler>& SpellScriptBase::HookList<AuraScript::EffectAbsorbHealHandler>::operator+=(AuraScript::EffectAbsorbHealHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::CheckProcHandler>& SpellScriptBase::HookList<AuraScript::CheckProcHandler>::operator+=(AuraScript::CheckProcHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::CheckEffectProcHandler>& SpellScriptBase::HookList<AuraScript::CheckEffectProcHandler>::operator+=(AuraScript::CheckEffectProcHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::AuraProcHandler>& SpellScriptBase::HookList<AuraScript::AuraProcHandler>::operator+=(AuraScript::AuraProcHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EffectProcHandler>& SpellScriptBase::HookList<AuraScript::EffectProcHandler>::operator+=(AuraScript::EffectProcHandler&& hook) noexcept;
-template TC_GAME_API SpellScriptBase::HookList<AuraScript::EnterLeaveCombatHandler>& SpellScriptBase::HookList<AuraScript::EnterLeaveCombatHandler>::operator+=(AuraScript::EnterLeaveCombatHandler&& hook) noexcept;
 
 bool AuraScript::_Validate(SpellInfo const* entry)
 {
@@ -963,7 +912,7 @@ std::string AuraScript::EffectBase::ToString() const
     }
 }
 
-AuraScript::AuraScript() noexcept : m_aura(nullptr), m_auraApplication(nullptr), m_defaultActionPrevented(false)
+AuraScript::AuraScript(): SpellScriptBase(), m_aura(nullptr), m_auraApplication(nullptr), m_defaultActionPrevented(false)
 {
 }
 

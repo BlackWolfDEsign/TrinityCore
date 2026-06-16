@@ -18,7 +18,6 @@
 #ifndef WMO_H
 #define WMO_H
 
-#include "Define.h"
 #include "vec3d.h"
 #include <memory>
 #include <string>

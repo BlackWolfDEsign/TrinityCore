@@ -62,7 +62,7 @@ enum RBACPermissions
     RBAC_PERM_CANNOT_EARN_REALM_FIRST_ACHIEVEMENTS           = 9,
     RBAC_PERM_USE_CHARACTER_TEMPLATES                        = 10,
     RBAC_PERM_LOG_GM_TRADE                                   = 11,
-    RBAC_PERM_SKIP_CHECK_CHARACTER_CREATION_DEMON_HUNTER     = 12,
+    // 12 previously used, do not reuse
     RBAC_PERM_SKIP_CHECK_INSTANCE_REQUIRED_BOSSES            = 13,
     RBAC_PERM_SKIP_CHECK_CHARACTER_CREATION_TEAMMASK         = 14,
     RBAC_PERM_SKIP_CHECK_CHARACTER_CREATION_CLASSMASK        = 15,
@@ -97,13 +97,11 @@ enum RBACPermissions
     RBAC_PERM_RECEIVE_GLOBAL_GM_TEXTMESSAGE                  = 44,
     RBAC_PERM_SILENTLY_JOIN_CHANNEL                          = 45,
     RBAC_PERM_CHANGE_CHANNEL_NOT_MODERATOR                   = 46,
-    RBAC_PERM_CAN_IGNORE_LOWER_SECURITY_CHECK                = 47,
+    RBAC_PERM_CHECK_FOR_LOWER_SECURITY                       = 47,
     RBAC_PERM_COMMANDS_PINFO_CHECK_PERSONAL_DATA             = 48,
     RBAC_PERM_EMAIL_CONFIRM_FOR_PASS_CHANGE                  = 49,
     RBAC_PERM_MAY_CHECK_OWN_EMAIL                            = 50,
     RBAC_PERM_ALLOW_TWO_SIDE_TRADE                           = 51,
-    RBAC_PERM_NO_BATTLEGROUND_DESERTER_DEBUFF                = 52,
-    RBAC_PERM_CAN_AFK_ON_BATTLEGROUND                        = 53,
 
     // Free space for core permissions (till 149)
     // Roles (Permissions with delegated permissions) use 199 and descending
@@ -711,7 +709,7 @@ enum RBACPermissions
     RBAC_PERM_COMMAND_PET_LEVEL                              = 838,
     RBAC_PERM_COMMAND_SERVER_SHUTDOWN_FORCE                  = 839,
     RBAC_PERM_COMMAND_SERVER_RESTART_FORCE                   = 840,
-    // 841 previously used, do not reuse
+    RBAC_PERM_COMMAND_NEARGRAVEYARD                          = 841,
     RBAC_PERM_COMMAND_RELOAD_CHARACTER_TEMPLATE              = 842,
     RBAC_PERM_COMMAND_RELOAD_QUEST_GREETING                  = 843,
     RBAC_PERM_COMMAND_SCENE                                  = 844,
@@ -751,8 +749,6 @@ enum RBACPermissions
     RBAC_PERM_COMMAND_RELOAD_VEHICLE_TEMPLATE                = 881,
     RBAC_PERM_COMMAND_RELOAD_SPELL_SCRIPT_NAMES              = 882,
     RBAC_PERM_COMMAND_QUEST_OBJECTIVE_COMPLETE               = 883,
-    RBAC_PERM_COMMAND_BG_START                               = 884,
-    RBAC_PERM_COMMAND_BG_STOP                                = 885,
     //
     // IF YOU ADD NEW PERMISSIONS, ADD THEM IN 3.3.5 BRANCH AS WELL!
     //
@@ -775,12 +771,8 @@ typedef std::set<uint32> RBACPermissionContainer;
 class TC_GAME_API RBACPermission
 {
     public:
-        RBACPermission(uint32 id = 0, std::string const& name = "");
-        RBACPermission(RBACPermission const& other);
-        RBACPermission(RBACPermission&& other) noexcept;
-        RBACPermission& operator=(RBACPermission const& right);
-        RBACPermission& operator=(RBACPermission&& right) noexcept;
-        ~RBACPermission();
+        RBACPermission(uint32 id = 0, std::string const& name = ""):
+            _id(id), _name(name), _perms() { }
 
         /// Gets the Name of the Object
         std::string const& GetName() const { return _name; }
@@ -814,12 +806,9 @@ class TC_GAME_API RBACPermission
 class TC_GAME_API RBACData
 {
     public:
-        RBACData(uint32 id, std::string const& name, int32 realmId, uint8 secLevel = 255);
-        RBACData(RBACData const& other);
-        RBACData(RBACData&& other) noexcept;
-        RBACData& operator=(RBACData const& right);
-        RBACData& operator=(RBACData&& right) noexcept;
-        ~RBACData();
+        RBACData(uint32 id, std::string const& name, int32 realmId, uint8 secLevel = 255):
+            _id(id), _name(name), _realmId(realmId), _secLevel(secLevel),
+            _grantedPerms(), _deniedPerms(), _globalPerms() { }
 
         /// Gets the Name of the Object
         std::string const& GetName() const { return _name; }
@@ -844,7 +833,7 @@ class TC_GAME_API RBACData
          */
         bool HasPermission(uint32 permission) const
         {
-            return _globalPerms.contains(permission);
+            return _globalPerms.find(permission) != _globalPerms.end();
         }
 
         // Functions enabled to be used by command system
@@ -967,13 +956,13 @@ class TC_GAME_API RBACData
         /// Checks if a permission is granted
         bool HasGrantedPermission(uint32 permissionId) const
         {
-            return _grantedPerms.contains(permissionId);
+            return _grantedPerms.find(permissionId) != _grantedPerms.end();
         }
 
         /// Checks if a permission is denied
         bool HasDeniedPermission(uint32 permissionId) const
         {
-            return _deniedPerms.contains(permissionId);
+            return _deniedPerms.find(permissionId) != _deniedPerms.end();
         }
 
         /// Adds a new granted permission

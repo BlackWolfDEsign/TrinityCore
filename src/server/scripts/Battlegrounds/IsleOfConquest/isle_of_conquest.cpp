@@ -20,11 +20,12 @@
 #include "Battleground.h"
 #include "GameObject.h"
 #include "GameObjectAI.h"
+#include "Map.h"
+#include "MotionMaster.h"
 #include "ObjectAccessor.h"
 #include "PassiveAI.h"
 #include "Player.h"
 #include "ScriptedCreature.h"
-#include "Spell.h"
 #include "SpellInfo.h"
 #include "SpellScript.h"
 #include "Vehicle.h"
@@ -165,7 +166,7 @@ struct go_ioc_contested_object : public go_ioc_capturable_object
     void Reset() override
     {
         go_ioc_capturable_object::Reset();
-        _scheduler.Schedule(1min, [&](TaskContext const&)
+        _scheduler.Schedule(1min, [&](TaskContext)
         {
             if (ZoneScript* zonescript = me->GetZoneScript())
                 zonescript->DoAction(ACTION_IOC_CAPTURE_CAPTURABLE_OBJECT, me, me);
@@ -242,58 +243,45 @@ class spell_ioc_parachute_ic : public AuraScript
 class StartLaunchEvent : public BasicEvent
 {
     public:
-        StartLaunchEvent(Unit* target, Position const& pos, float speedXY, float speedZ)
-            : _target(target), _pos(pos), _speedXY(speedXY), _speedZ(speedZ)
+        StartLaunchEvent(Map const* map, Position const& pos, ObjectGuid const& guid) : _map(map), _pos(pos), _guid(guid)
         {
         }
 
         bool Execute(uint64 /*time*/, uint32 /*diff*/) override
         {
-            _target->KnockbackFrom(_pos, _speedXY, _speedZ, 0);
+            Player* player = ObjectAccessor::GetPlayer(_map, _guid);
+            if (!player || !player->GetVehicle())
+                return true;
+
+            player->AddAura(SPELL_LAUNCH_NO_FALLING_DAMAGE, player); // prevents falling damage
+            float speedZ = 10.0f;
+            float dist = player->GetExactDist2d(&_pos);
+
+            player->ExitVehicle();
+            player->GetMotionMaster()->MoveJump(_pos, dist, speedZ, EVENT_JUMP, _pos.GetOrientation());
             return true;
         }
 
     private:
-        Unit* _target;
+        Map const* _map;
         Position _pos;
-        float _speedXY;
-        float _speedZ;
+        ObjectGuid _guid;
 };
 
 // 66218 - Launch
 class spell_ioc_launch : public SpellScript
 {
-    void Launch() const
+    void Launch()
     {
-        if (!GetExplTargetDest())
+        if (!GetCaster()->IsCreature() || !GetExplTargetDest())
             return;
 
-        Unit* caster = GetCaster();
-        Unit* target = GetHitUnit();
-
-        caster->CastSpell(caster, SPELL_LAUNCH_NO_FALLING_DAMAGE, true);
-
-        target->m_Events.AddEventAtOffset(new StartLaunchEvent(target, *GetExplTargetDest(),
-            GetSpell()->m_targets.GetSpeedXY(), GetSpell()->m_targets.GetSpeedZ()), 2500ms);
+        GetCaster()->m_Events.AddEventAtOffset(new StartLaunchEvent(GetCaster()->GetMap(), *GetExplTargetDest(), GetHitUnit()->GetGUID()), 2500ms);
     }
 
     void Register() override
     {
         AfterHit += SpellHitFn(spell_ioc_launch::Launch);
-    }
-};
-
-// 66251 - Launch
-class spell_ioc_launch_exit_vehicle : public SpellScript
-{
-    void ExitVehicle() const
-    {
-        GetHitUnit()->ExitVehicle();
-    }
-
-    void Register() override
-    {
-        AfterHit += SpellHitFn(spell_ioc_launch_exit_vehicle::ExitVehicle);
     }
 };
 
@@ -321,10 +309,9 @@ class spell_ioc_seaforium_blast_credit : public SpellScript
         if (!caster)
             return;
 
-        uint32 spellId = GetSpellInfo()->Id;
-        if (spellId == SPELL_SEAFORIUM_BLAST)
+        if (GetSpellInfo()->Id == SPELL_SEAFORIUM_BLAST)
             _creditSpell = SPELL_A_BOMB_INABLE_CREDIT;
-        else if (spellId == SPELL_HUGE_SEAFORIUM_BLAST)
+        else if (GetSpellInfo()->Id == SPELL_HUGE_SEAFORIUM_BLAST)
             _creditSpell = SPELL_A_BOMB_INATION_CREDIT;
 
         if (GetHitGObj() && GetHitGObj()->IsDestructibleBuilding())
@@ -365,18 +352,18 @@ public:
         /// @hack: this spell should be cast by npc 22515 (World Trigger) and not by the player
         if (player->GetBGTeam() == HORDE && trigger->ID == AT_ALLIANCE_KEEP)
         {
-            bool keepClosed = WorldStateMgr::GetValue(BG_IC_GATE_EAST_A_WS_CLOSED, player->GetMap()) == 1
-                && WorldStateMgr::GetValue(BG_IC_GATE_WEST_A_WS_CLOSED, player->GetMap()) == 1
-                && WorldStateMgr::GetValue(BG_IC_GATE_FRONT_A_WS_CLOSED, player->GetMap()) == 1;
+            bool keepClosed = sWorldStateMgr->GetValue(BG_IC_GATE_EAST_A_WS_CLOSED, player->GetMap()) == 1
+                && sWorldStateMgr->GetValue(BG_IC_GATE_WEST_A_WS_CLOSED, player->GetMap()) == 1
+                && sWorldStateMgr->GetValue(BG_IC_GATE_FRONT_A_WS_CLOSED, player->GetMap()) == 1;
 
             if (keepClosed)
                 player->CastSpell(player, SPELL_BACK_DOOR_JOB_ACHIEVEMENT, true);
         }
         else if (player->GetBGTeam() == ALLIANCE && trigger->ID == AT_HORDE_KEEP)
         {
-            bool keepClosed = WorldStateMgr::GetValue(BG_IC_GATE_EAST_H_WS_CLOSED, player->GetMap()) == 1
-                && WorldStateMgr::GetValue(BG_IC_GATE_WEST_H_WS_CLOSED, player->GetMap()) == 1
-                && WorldStateMgr::GetValue(BG_IC_GATE_FRONT_H_WS_CLOSED, player->GetMap()) == 1;
+            bool keepClosed = sWorldStateMgr->GetValue(BG_IC_GATE_EAST_H_WS_CLOSED, player->GetMap()) == 1
+                && sWorldStateMgr->GetValue(BG_IC_GATE_WEST_H_WS_CLOSED, player->GetMap()) == 1
+                && sWorldStateMgr->GetValue(BG_IC_GATE_FRONT_H_WS_CLOSED, player->GetMap()) == 1;
 
             if (keepClosed)
                 player->CastSpell(player, SPELL_BACK_DOOR_JOB_ACHIEVEMENT, true);
@@ -397,7 +384,6 @@ void AddSC_isle_of_conquest()
     RegisterSpellScript(spell_ioc_gunship_portal);
     RegisterSpellScript(spell_ioc_parachute_ic);
     RegisterSpellScript(spell_ioc_launch);
-    RegisterSpellScript(spell_ioc_launch_exit_vehicle);
     RegisterSpellScript(spell_ioc_seaforium_blast_credit);
     new at_ioc_exploit();
     new at_ioc_backdoor_job();

@@ -22,7 +22,6 @@
 #include "ObjectMgr.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
-#include "TransmogMgr.h"
 
 static constexpr char HYPERLINK_DATA_DELIMITER = ':';
 
@@ -107,30 +106,6 @@ bool Trinity::Hyperlinks::LinkTags::api::StoreTo(ApiLinkData& val, std::string_v
     return true;
 }
 
-bool Trinity::Hyperlinks::LinkTags::apower::StoreTo(ArtifactPowerLinkData& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 artifactPowerId;
-    if (!(t.TryConsumeTo(artifactPowerId) && t.TryConsumeTo(val.PurchasedRank) && t.TryConsumeTo(val.CurrentRankWithBonus) && t.IsEmpty()))
-        return false;
-    if (!sArtifactPowerStore.LookupEntry(artifactPowerId))
-        return false;
-    val.ArtifactPower = sDB2Manager.GetArtifactPowerRank(artifactPowerId, std::max<uint8>(val.CurrentRankWithBonus, 1));
-    if (val.ArtifactPower)
-        return false;
-    return true;
-}
-
-bool Trinity::Hyperlinks::LinkTags::azessence::StoreTo(AzeriteEssenceLinkData& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 azeriteEssenceId;
-    if (!t.TryConsumeTo(azeriteEssenceId))
-        return false;
-    return (val.Essence = sAzeriteEssenceStore.LookupEntry(azeriteEssenceId)) && t.TryConsumeTo(val.Rank)
-        && sDB2Manager.GetAzeriteEssencePower(azeriteEssenceId, val.Rank) && t.IsEmpty();
-}
-
 bool Trinity::Hyperlinks::LinkTags::battlepet::StoreTo(BattlePetLinkData& val, std::string_view text)
 {
     HyperlinkDataTokenizer t(text);
@@ -153,24 +128,6 @@ bool Trinity::Hyperlinks::LinkTags::battlePetAbil::StoreTo(BattlePetAbilLinkData
     return (val.Ability = sBattlePetAbilityStore.LookupEntry(battlePetAbilityId))
         && t.TryConsumeTo(val.MaxHealth) && t.TryConsumeTo(val.Power) && t.TryConsumeTo(val.Speed)
         && t.IsEmpty();
-}
-
-bool Trinity::Hyperlinks::LinkTags::conduit::StoreTo(SoulbindConduitRankEntry const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 soulbindConduitId, rank;
-    if (!(t.TryConsumeTo(soulbindConduitId) && t.TryConsumeTo(rank) && t.IsEmpty()))
-        return false;
-    return !!(val = sDB2Manager.GetSoulbindConduitRank(soulbindConduitId, rank));
-}
-
-bool Trinity::Hyperlinks::LinkTags::curio::StoreTo(SpellInfo const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 spellId;
-    if (!(t.TryConsumeTo(spellId) && t.IsEmpty()))
-        return false;
-    return !!(val = sSpellMgr->GetSpellInfo(spellId, DIFFICULTY_NONE));
 }
 
 bool Trinity::Hyperlinks::LinkTags::currency::StoreTo(CurrencyLinkData& val, std::string_view text)
@@ -219,52 +176,6 @@ bool Trinity::Hyperlinks::LinkTags::enchant::StoreTo(SpellInfo const*& val, std:
     if (!(t.TryConsumeTo(spellId) && t.IsEmpty()))
         return false;
     return !!(val = sSpellMgr->GetSpellInfo(spellId, DIFFICULTY_NONE)) && val->HasAttribute(SPELL_ATTR0_IS_TRADESKILL);
-}
-
-bool Trinity::Hyperlinks::LinkTags::garrfollower::StoreTo(GarrisonFollowerLinkData& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 garrFollowerId;
-    if (!t.TryConsumeTo(garrFollowerId))
-        return false;
-
-    val.Follower = sGarrFollowerStore.LookupEntry(garrFollowerId);
-    if (!val.Follower || !t.TryConsumeTo(val.Quality) || val.Quality >= MAX_ITEM_QUALITY || !t.TryConsumeTo(val.Level) || !t.TryConsumeTo(val.ItemLevel)
-        || !t.TryConsumeTo(val.Abilities[0]) || !t.TryConsumeTo(val.Abilities[1]) || !t.TryConsumeTo(val.Abilities[2]) || !t.TryConsumeTo(val.Abilities[3])
-        || !t.TryConsumeTo(val.Traits[0]) || !t.TryConsumeTo(val.Traits[1]) || !t.TryConsumeTo(val.Traits[2]) || !t.TryConsumeTo(val.Traits[3])
-        || !t.TryConsumeTo(val.Specialization) || !t.IsEmpty())
-        return false;
-
-    for (uint32 ability : val.Abilities)
-        if (ability && !sGarrAbilityStore.LookupEntry(ability))
-            return false;
-
-    for (uint32 trait : val.Traits)
-        if (trait && !sGarrAbilityStore.LookupEntry(trait))
-            return false;
-
-    if (val.Specialization && !sGarrAbilityStore.LookupEntry(val.Specialization))
-        return false;
-
-    return true;
-}
-
-bool Trinity::Hyperlinks::LinkTags::garrfollowerability::StoreTo(GarrAbilityEntry const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 garrAbilityId;
-    if (!t.TryConsumeTo(garrAbilityId))
-        return false;
-    return !!(val = sGarrAbilityStore.LookupEntry(garrAbilityId)) && t.IsEmpty();
-}
-
-bool Trinity::Hyperlinks::LinkTags::garrmission::StoreTo(GarrisonMissionLinkData& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 garrMissionId;
-    if (!t.TryConsumeTo(garrMissionId))
-        return false;
-    return !!(val.Mission = sGarrMissionStore.LookupEntry(garrMissionId)) && t.TryConsumeTo(val.DbID) && t.IsEmpty();
 }
 
 bool Trinity::Hyperlinks::LinkTags::instancelock::StoreTo(InstanceLockLinkData& val, std::string_view text)
@@ -416,15 +327,6 @@ bool Trinity::Hyperlinks::LinkTags::keystone::StoreTo(KeystoneLinkData& val, std
     return true;
 }
 
-bool Trinity::Hyperlinks::LinkTags::mawpower::StoreTo(MawPowerEntry const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 mawPowerId;
-    if (!t.TryConsumeTo(mawPowerId))
-        return false;
-    return !!(val = sMawPowerStore.LookupEntry(mawPowerId)) && t.IsEmpty();
-}
-
 bool Trinity::Hyperlinks::LinkTags::mount::StoreTo(MountLinkData& val, std::string_view text)
 {
     HyperlinkDataTokenizer t(text);
@@ -434,26 +336,6 @@ bool Trinity::Hyperlinks::LinkTags::mount::StoreTo(MountLinkData& val, std::stri
     if (!t.TryConsumeTo(val.DisplayId) || !sCreatureDisplayInfoStore.LookupEntry(val.DisplayId))
         return false;
     return t.TryConsumeTo(val.Customizations) && t.IsEmpty();
-}
-
-bool Trinity::Hyperlinks::LinkTags::perksactivity::StoreTo(PerksActivityEntry const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 perksActivityId;
-    if (!t.TryConsumeTo(perksActivityId))
-        return false;
-    return !!(val = sPerksActivityStore.LookupEntry(perksActivityId)) && t.IsEmpty();
-}
-
-bool Trinity::Hyperlinks::LinkTags::pvptal::StoreTo(PvpTalentEntry const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 pvpTalentId;
-    if (!(t.TryConsumeTo(pvpTalentId) && t.IsEmpty()))
-        return false;
-    if (!(val = sPvpTalentStore.LookupEntry(pvpTalentId)))
-        return false;
-    return true;
 }
 
 bool Trinity::Hyperlinks::LinkTags::quest::StoreTo(QuestLinkData& val, std::string_view text)
@@ -486,19 +368,6 @@ bool Trinity::Hyperlinks::LinkTags::talent::StoreTo(TalentEntry const*& val, std
     return true;
 }
 
-bool Trinity::Hyperlinks::LinkTags::talentbuild::StoreTo(TalentBuildLinkData& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 chrSpecializationId;
-    if (!t.TryConsumeTo(chrSpecializationId))
-        return false;
-    if (!(val.Spec = sChrSpecializationStore.LookupEntry(chrSpecializationId)))
-        return false;
-    if (!t.TryConsumeTo(val.Level) || !t.TryConsumeTo(val.ImportString))
-        return false;
-    return true;
-}
-
 bool Trinity::Hyperlinks::LinkTags::trade::StoreTo(TradeskillLinkData& val, std::string_view text)
 {
     HyperlinkDataTokenizer t(text);
@@ -519,16 +388,6 @@ bool Trinity::Hyperlinks::LinkTags::transmogappearance::StoreTo(ItemModifiedAppe
     if (!t.TryConsumeTo(itemModifiedAppearanceId))
         return false;
     return !!(val = sItemModifiedAppearanceStore.LookupEntry(itemModifiedAppearanceId)) && t.IsEmpty();
-}
-
-bool Trinity::Hyperlinks::LinkTags::transmogillusion::StoreTo(SpellItemEnchantmentEntry const*& val, std::string_view text)
-{
-    HyperlinkDataTokenizer t(text);
-    uint32 spellItemEnchantmentId;
-    if (!t.TryConsumeTo(spellItemEnchantmentId))
-        return false;
-    return !!(val = sSpellItemEnchantmentStore.LookupEntry(spellItemEnchantmentId))
-        && TransmogMgr::GetTransmogIllusionForSpellItemEnchantment(spellItemEnchantmentId) && t.IsEmpty();
 }
 
 bool Trinity::Hyperlinks::LinkTags::transmogset::StoreTo(TransmogSetEntry const*& val, std::string_view text)

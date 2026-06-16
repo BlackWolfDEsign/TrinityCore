@@ -20,7 +20,7 @@
 #include "InstanceScript.h"
 #include "the_slave_pens.h"
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_AHUNE,                    DATA_AHUNE             },
     { NPC_FROZEN_CORE,              DATA_FROZEN_CORE       },
@@ -32,9 +32,10 @@ static constexpr ObjectData creatureData[] =
     { NPC_SHAMAN_BEAM_BUNNY_001,    DATA_BEAM_BUNNY_001    },
     { NPC_SHAMAN_BEAM_BUNNY_002,    DATA_BEAM_BUNNY_002    },
     { NPC_LUMA_SKYMOTHER,           DATA_LUMA_SKYMOTHER    },
+    { 0,                            0,                     }
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_MENNU_THE_BETRAYER, {{ 1939 }} },
     { DATA_ROKMAR_THE_CRACKLER, {{ 1941 }} },
@@ -52,7 +53,7 @@ public:
         {
             counter = DATA_FLAMECALLER_000;
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDungeonEncounterData(encounters);
         }
 

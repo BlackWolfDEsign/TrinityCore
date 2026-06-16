@@ -85,21 +85,24 @@ void OutdoorPvP::Update(uint32 diff)
 
 int32 OutdoorPvP::GetWorldState(int32 worldStateId) const
 {
-    return WorldStateMgr::GetValue(worldStateId, m_map);
+    return sWorldStateMgr->GetValue(worldStateId, m_map);
 }
 
 void OutdoorPvP::SetWorldState(int32 worldStateId, int32 value)
 {
-    WorldStateMgr::SetValue(worldStateId, value, false, m_map);
+    sWorldStateMgr->SetValue(worldStateId, value, false, m_map);
 }
 
 void OutdoorPvP::HandleKill(Player* killer, Unit* killed)
 {
     if (Group* group = killer->GetGroup())
     {
-        for (GroupReference const& itr : group->GetMembers())
+        for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
         {
-            Player* groupGuy = itr.GetSource();
+            Player* groupGuy = itr->GetSource();
+
+            if (!groupGuy)
+                continue;
 
             // skip if too far away
             if (!groupGuy->IsAtGroupRewardDistance(killed))

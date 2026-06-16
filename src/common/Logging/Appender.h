@@ -22,7 +22,6 @@
 #include "LogCommon.h"
 #include <stdexcept>
 #include <string>
-#include <string_view>
 
 struct LogMessage;
 
@@ -44,7 +43,7 @@ class TC_COMMON_API Appender
 
         void setLogLevel(LogLevel);
         void write(LogMessage* message);
-        static std::string_view getLogLevelString(LogLevel level);
+        static char const* getLogLevelString(LogLevel level);
         virtual void setRealmId(uint32 /*realmId*/) { }
 
     private:

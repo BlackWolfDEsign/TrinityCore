@@ -29,7 +29,7 @@
 
 void WorldSession::HandleLfgJoinOpcode(WorldPackets::LFG::DFJoin& dfJoin)
 {
-    if (!sLFGMgr->isOptionEnabled(lfg::LFG_OPTION_ENABLE_DUNGEON_FINDER | lfg::LFG_OPTION_ENABLE_RAID_BROWSER) ||
+    if (!sLFGMgr->isOptionEnabled(lfg::LFG_OPTION_ENABLE_DUNGEON_FINDER | lfg::LFG_OPTION_ENABLE_RAID_FINDER) ||
         (GetPlayer()->GetGroup() && GetPlayer()->GetGroup()->GetLeaderGUID() != GetPlayer()->GetGUID() &&
         (GetPlayer()->GetGroup()->GetMembersCount() == MAX_GROUP_SIZE || !GetPlayer()->GetGroup()->isLFGGroup())))
         return;
@@ -137,20 +137,27 @@ void WorldSession::HandleDFGetJoinStatus(WorldPackets::LFG::DFGetJoinStatus& /*d
     }
 }
 
+void WorldSession::HandleLfgListGetStatus(WorldPackets::LFG::LFGListGetStatus& /*lfgListGetStatus*/)
+{
+}
+
+void WorldSession::HandleLfgRequestLFGListBlacklist(WorldPackets::LFG::LFGRequestLFGListBlacklist& /*lfgListGetStatus*/)
+{
+}
+
 void WorldSession::SendLfgPlayerLockInfo()
 {
     TC_LOG_DEBUG("lfg", "SMSG_LFG_PLAYER_INFO {}", GetPlayerInfo());
 
     // Get Random dungeons that can be done at a certain level and expansion
     uint8 level = GetPlayer()->GetLevel();
-    std::span<uint32 const> contentTuningReplacementConditionMask = GetPlayer()->m_playerData->CtrOptions->ConditionalFlags;
-    lfg::LfgDungeonSet const& randomDungeons = sLFGMgr->GetRandomAndSeasonalDungeons(level, GetExpansion(), contentTuningReplacementConditionMask);
+    lfg::LfgDungeonSet const& randomDungeons = sLFGMgr->GetRandomAndSeasonalDungeons(level, GetExpansion());
 
     WorldPackets::LFG::LfgPlayerInfo lfgPlayerInfo;
 
     // Get player locked Dungeons
     for (auto const& lock : sLFGMgr->GetLockedDungeons(_player->GetGUID()))
-        lfgPlayerInfo.BlackList.Slot.emplace_back(lock.first, lock.second.lockStatus, lock.second.requiredItemLevel, lock.second.currentItemLevel, 0);
+        lfgPlayerInfo.BlackList.Slot.emplace_back(lock.first, lock.second.lockStatus, lock.second.requiredItemLevel, lock.second.currentItemLevel, AsUnderlyingType(lock.second.softLock));
 
     for (uint32 slot : randomDungeons)
     {
@@ -209,9 +216,12 @@ void WorldSession::SendLfgPartyLockInfo()
     WorldPackets::LFG::LfgPartyInfo lfgPartyInfo;
 
     // Get the locked dungeons of the other party members
-    for (GroupReference const& itr : group->GetMembers())
+    for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
     {
-        Player* plrg = itr.GetSource();
+        Player* plrg = itr->GetSource();
+        if (!plrg)
+            continue;
+
         ObjectGuid pguid = plrg->GetGUID();
         if (pguid == guid)
             continue;
@@ -472,7 +482,7 @@ void WorldSession::SendLfgUpdateProposal(lfg::LfgProposal const& proposal)
     lfgProposalUpdate.CompletedMask = proposal.encounters;
     lfgProposalUpdate.ValidCompletedMask = true;
     lfgProposalUpdate.ProposalSilent = silent;
-    lfgProposalUpdate.FailedByMyParty = !proposal.isNew;
+    lfgProposalUpdate.IsRequeue = !proposal.isNew;
 
     for (auto const& player : proposal.players)
     {

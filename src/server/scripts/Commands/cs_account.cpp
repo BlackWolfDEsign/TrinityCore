@@ -48,7 +48,7 @@ class account_commandscript : public CommandScript
 public:
     account_commandscript() : CommandScript("account_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable accountSetCommandTable =
         {
@@ -291,7 +291,7 @@ public:
 
     /// Delete a user account and all associated characters in this realm
     /// @todo This function has to be enhanced to respect the login/realm split (delete char, delete account chars in realm then delete account)
-    static bool HandleAccountDeleteCommand(ChatHandler* handler, std::string& accountName)
+    static bool HandleAccountDeleteCommand(ChatHandler* handler, std::string accountName)
     {
         if (!Utf8ToUpperOnlyLatin(accountName))
         {
@@ -343,7 +343,7 @@ public:
         return HandleAccountOnlineListCommandWithParameters(handler, {}, {}, {}, {});
     }
 
-    static bool HandleAccountOnlineListWithIpFilterCommand(ChatHandler* handler, std::string_view ipAddress)
+    static bool HandleAccountOnlineListWithIpFilterCommand(ChatHandler* handler, std::string ipAddress)
     {
         return HandleAccountOnlineListCommandWithParameters(handler, ipAddress, {}, {}, {});
     }
@@ -363,7 +363,7 @@ public:
         return HandleAccountOnlineListCommandWithParameters(handler, {}, {}, {}, zoneId);
     }
 
-    static bool HandleAccountOnlineListCommandWithParameters(ChatHandler* handler, Optional<std::string_view> const& ipAddress, Optional<uint32> limit, Optional<uint32> mapId, Optional<uint32> zoneId)
+    static bool HandleAccountOnlineListCommandWithParameters(ChatHandler* handler, Optional<std::string> ipAddress, Optional<uint32> limit, Optional<uint32> mapId, Optional<uint32> zoneId)
     {
         size_t sessionsMatchCount = 0;
 
@@ -381,15 +381,15 @@ public:
             uint32 playerZoneId = player->GetZoneId();
 
             // Apply optional ipAddress filter
-            if (ipAddress && *ipAddress != session->GetRemoteAddress())
+            if (ipAddress && ipAddress != session->GetRemoteAddress())
                 continue;
 
             // Apply optional mapId filter
-            if (mapId && *mapId != playerMapId)
+            if (mapId && mapId != playerMapId)
                 continue;
 
             // Apply optional zoneId filter
-            if (zoneId && *zoneId != playerZoneId)
+            if (zoneId && zoneId != playerZoneId)
                 continue;
 
             if (!sessionsMatchCount)
@@ -448,6 +448,8 @@ public:
         }
         else
         {
+            using namespace std::string_view_literals;
+
             LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_UPD_ACCOUNT_LOCK_COUNTRY);
             stmt->setString(0, "00"sv);
             stmt->setUInt32(1, handler->GetSession()->GetAccountId());
@@ -634,6 +636,7 @@ public:
         // Email display if sufficient rights
         if (handler->HasPermission(rbac::RBAC_PERM_MAY_CHECK_OWN_EMAIL))
         {
+            std::string emailoutput;
             uint32 accountId = handler->GetSession()->GetAccountId();
 
             LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_GET_EMAIL_BY_ID);
@@ -641,14 +644,17 @@ public:
             PreparedQueryResult result = LoginDatabase.Query(stmt);
 
             if (result)
-                handler->PSendSysMessage(LANG_COMMAND_EMAIL_OUTPUT, (*result)[0].GetCString());
+            {
+                emailoutput = (*result)[0].GetString();
+                handler->PSendSysMessage(LANG_COMMAND_EMAIL_OUTPUT, emailoutput.c_str());
+            }
         }
 
         return true;
     }
 
     /// Set/Unset the expansion level for an account
-    static bool HandleAccountSetAddonCommand(ChatHandler* handler, Optional<std::string>& accountName, uint8 expansion)
+    static bool HandleAccountSetAddonCommand(ChatHandler* handler, Optional<std::string> accountName, uint8 expansion)
     {
         uint32 accountId;
         if (accountName)
@@ -676,7 +682,8 @@ public:
                 return false;
 
             accountId = player->GetSession()->GetAccountId();
-            AccountMgr::GetName(accountId, accountName.emplace());
+            accountName.emplace();
+            AccountMgr::GetName(accountId, *accountName);
         }
 
         // Let set addon state only for lesser (strong) security level
@@ -699,7 +706,7 @@ public:
         return true;
     }
 
-    static bool HandleAccountSetSecLevelCommand(ChatHandler* handler, Optional<std::string>& accountName, uint8 securityLevel, Optional<int32> realmId)
+    static bool HandleAccountSetSecLevelCommand(ChatHandler* handler, Optional<std::string> accountName, uint8 securityLevel, Optional<int32> realmId)
     {
         uint32 accountId;
         if (accountName)
@@ -782,15 +789,14 @@ public:
             return false;
         }
 
-        WorldSession const* session = sWorld->FindSession(accountId);
-        sAccountMgr->UpdateAccountAccess(session ? session->GetRBACData() : nullptr, accountId, securityLevel, realmID);
+        sAccountMgr->UpdateAccountAccess(nullptr, accountId, securityLevel, realmID);
 
         handler->PSendSysMessage(LANG_YOU_CHANGE_SECURITY, accountName->c_str(), securityLevel);
         return true;
     }
 
     /// Set password for account
-    static bool HandleAccountSetPasswordCommand(ChatHandler* handler, std::string& accountName, std::string const& password, std::string const& confirmPassword)
+    static bool HandleAccountSetPasswordCommand(ChatHandler* handler, std::string accountName, std::string const& password, std::string const& confirmPassword)
     {
         if (!Utf8ToUpperOnlyLatin(accountName))
         {
@@ -841,7 +847,7 @@ public:
         return true;
     }
 
-    static bool HandleAccountSet2FACommand(ChatHandler* handler, std::string& accountName, std::string_view secret)
+    static bool HandleAccountSet2FACommand(ChatHandler* handler, std::string accountName, std::string secret)
     {
         if (!Utf8ToUpperOnlyLatin(accountName))
         {
@@ -905,7 +911,7 @@ public:
     }
 
     /// Set normal email for account
-    static bool HandleAccountSetEmailCommand(ChatHandler* handler, std::string& accountName, std::string const& email, std::string const& confirmEmail)
+    static bool HandleAccountSetEmailCommand(ChatHandler* handler, std::string accountName, std::string const& email, std::string const& confirmEmail)
     {
         if (!Utf8ToUpperOnlyLatin(accountName))
         {
@@ -960,7 +966,7 @@ public:
     }
 
     /// Change registration email for account
-    static bool HandleAccountSetRegEmailCommand(ChatHandler* handler, std::string& accountName, std::string const& email, std::string const& confirmEmail)
+    static bool HandleAccountSetRegEmailCommand(ChatHandler* handler, std::string accountName, std::string const& email, std::string const& confirmEmail)
     {
         if (!Utf8ToUpperOnlyLatin(accountName))
         {

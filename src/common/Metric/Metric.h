@@ -15,20 +15,29 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_METRIC_H
-#define TRINITYCORE_METRIC_H
+#ifndef METRIC_H__
+#define METRIC_H__
 
-#include "AsioHacksFwd.h"
 #include "Define.h"
 #include "Duration.h"
-#include "Hash.h"
 #include "MPSCQueue.h"
+#include "Optional.h"
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <variant>
+
+namespace Trinity
+{
+    namespace Asio
+    {
+        class IoContext;
+        class DeadlineTimer;
+    }
+}
 
 enum MetricDataType
 {
@@ -37,16 +46,15 @@ enum MetricDataType
 };
 
 using MetricTag = std::pair<std::string, std::string>;
-using MetricTags = std::variant<std::monostate, std::array<MetricTag, 2>, std::vector<MetricTag>>;
 
 struct MetricData
 {
     std::string Category;
     SystemTimePoint Timestamp;
-    MetricDataType Type = METRIC_DATA_VALUE;
+    MetricDataType Type;
 
     // LogValue-specific fields
-    MetricTags Tags;
+    Optional<std::variant<std::array<MetricTag, 2>, std::vector<MetricTag>>> Tags;
 
     // LogEvent-specific fields
     std::string Title;
@@ -60,10 +68,8 @@ struct MetricData
 class TC_COMMON_API Metric
 {
 private:
-    using iostream = boost::asio::basic_socket_iostream<boost::asio::ip::tcp, std::chrono::steady_clock, boost::asio::wait_traits<std::chrono::steady_clock>>;
-
-    iostream& GetDataStream() { return *_dataStream; }
-    std::unique_ptr<iostream> _dataStream;
+    std::iostream& GetDataStream() { return *_dataStream; }
+    std::unique_ptr<std::iostream> _dataStream;
     MPSCQueue<MetricData, &MetricData::QueueLink> _queuedData;
     std::unique_ptr<Trinity::Asio::DeadlineTimer> _batchTimer;
     std::unique_ptr<Trinity::Asio::DeadlineTimer> _overallStatusTimer;
@@ -76,7 +82,7 @@ private:
     std::string _databaseName;
     std::function<void()> _overallStatusLogger;
     std::string _realmName;
-    std::unordered_map<std::string, int64, Trinity::TransparentHash<std::string_view>, std::equal_to<>> _thresholds;
+    std::unordered_map<std::string, int64> _thresholds;
 
     bool Connect();
     void SendBatch();
@@ -84,7 +90,7 @@ private:
     void ScheduleOverallStatusLog();
 
     static std::string FormatInfluxDBValue(bool value);
-    template <class T> requires std::integral<T> && (!std::same_as<T, bool>)
+    template <class T>
     static std::string FormatInfluxDBValue(T value);
     static std::string FormatInfluxDBValue(std::string const& value);
     static std::string FormatInfluxDBValue(char const* value);
@@ -99,59 +105,42 @@ private:
 public:
     Metric();
     ~Metric();
-    Metric(Metric const&) = delete;
-    Metric(Metric&&) = delete;
-    Metric& operator=(Metric const&) = delete;
-    Metric& operator=(Metric&&) = delete;
     static Metric* instance();
 
     void Initialize(std::string const& realmName, Trinity::Asio::IoContext& ioContext, std::function<void()> overallStatusLogger);
     void LoadFromConfigs();
     void Update();
-    bool ShouldLog(std::string_view category, int64 value) const;
+    bool ShouldLog(std::string const& category, int64 value) const;
 
     template<class T, class... TagsList>
-    void LogValue(std::string_view category, T value, TagsList&&... tags) noexcept
+    void LogValue(std::string category, T value, TagsList&&... tags)
     {
-        using TagsType = std::conditional_t<(sizeof...(tags) > 2),
-            std::vector<MetricTag>,
-            std::conditional_t<(sizeof...(tags) > 0),
-                std::array<MetricTag, 2>,
-                std::monostate>>;
+        using namespace std::chrono;
 
-        MetricData* data = new MetricData
+        MetricData* data = new MetricData;
+        data->Category = std::move(category);
+        data->Timestamp = system_clock::now();
+        data->Type = METRIC_DATA_VALUE;
+        data->ValueOrEventText = FormatInfluxDBValue(value);
+        if constexpr (sizeof...(tags) > 0)
         {
-            .Category = std::string(category),
-            .Timestamp = std::chrono::system_clock::now(),
-            .Type = METRIC_DATA_VALUE,
-            .Tags = MetricTags{ std::in_place_type<TagsType> },
-            .ValueOrEventText = FormatInfluxDBValue(value)
-        };
-        if constexpr (sizeof...(tags) > 2)
-        {
-            TagsType& tagsVector = std::get<TagsType>(data->Tags);
-            (tagsVector.emplace_back(std::forward<TagsList>(tags)), ...);
-        }
-        else if constexpr (sizeof...(tags) == 2)
-        {
-            [](TagsType& tagsArray, auto const& tag1, auto const& tag2)
+            data->Tags.emplace();
+            if constexpr (sizeof...(tags) > 2)
             {
-                tagsArray[0] = tag1;
-                tagsArray[1] = tag2;
-            }(std::get<TagsType>(data->Tags), std::forward<TagsList>(tags)...);
-        }
-        else if constexpr (sizeof...(tags) == 1)
-        {
-            [](TagsType& tagsArray, auto const& tag1)
+                decltype(auto) tagsVector = data->Tags->emplace<1>();
+                (tagsVector.emplace_back(std::move(tags)), ...);
+            }
+            else
             {
-                tagsArray[0] = tag1;
-            }(std::get<TagsType>(data->Tags), std::forward<TagsList>(tags)...);
+                decltype(auto) tagsArray = data->Tags->emplace<0>();
+                tagsArray = { std::move(tags)... };
+            }
         }
 
         _queuedData.Enqueue(data);
     }
 
-    void LogEvent(std::string_view category, std::string_view title, std::string description);
+    void LogEvent(std::string category, std::string title, std::string description);
 
     void Unload();
     bool IsEnabled() const { return _enabled; }
@@ -159,32 +148,36 @@ public:
 
 #define sMetric Metric::instance()
 
-struct MetricStopWatchBase
+template<typename LoggerType>
+class MetricStopWatch
 {
-    void Enable(Metric* metric) noexcept
+public:
+    MetricStopWatch(LoggerType&& loggerFunc) :
+        _logger(std::forward<LoggerType>(loggerFunc)),
+        _startTime(std::chrono::steady_clock::now())
     {
-        MetricInstance = metric;
-        StartTime = std::chrono::steady_clock::now();
     }
 
-    Metric* MetricInstance = nullptr;
-    TimePoint StartTime = { };
-};
-
-template<typename LoggerType>
-struct MetricStopWatch : public LoggerType, public MetricStopWatchBase
-{
     ~MetricStopWatch()
     {
-        if (MetricInstance)
-            LoggerType::operator()(MetricInstance, StartTime);
+        _logger(_startTime);
     }
+
+private:
+    LoggerType _logger;
+    TimePoint _startTime;
 };
 
 template<typename LoggerType>
-MetricStopWatch(LoggerType) -> MetricStopWatch<LoggerType>;
+Optional<MetricStopWatch<LoggerType>> MakeMetricStopWatch(LoggerType&& loggerFunc)
+{
+    if (!sMetric->IsEnabled())
+        return {};
 
-#define TC_METRIC_TAG(name, value) std::pair<std::string_view, std::string_view>(name, value)
+    return Optional<MetricStopWatch<LoggerType>>(std::in_place, std::forward<LoggerType>(loggerFunc));
+}
+
+#define TC_METRIC_TAG(name, value) MetricTag(name, value)
 
 #define TC_METRIC_DO_CONCAT(a, b) a ## b
 #define TC_METRIC_CONCAT(a, b) TC_METRIC_DO_CONCAT(a, b)
@@ -198,42 +191,50 @@ MetricStopWatch(LoggerType) -> MetricStopWatch<LoggerType>;
 #define TC_METRIC_DETAILED_TIMER(category, ...) ((void)0)
 #define TC_METRIC_DETAILED_NO_THRESHOLD_TIMER(category, ...) ((void)0)
 #else
+#  if TRINITY_PLATFORM != TRINITY_PLATFORM_WINDOWS
 #define TC_METRIC_EVENT(category, title, description)                  \
         do {                                                           \
-            if (Metric* metric = sMetric; metric->IsEnabled())         \
-                metric->LogEvent(category, title, description);        \
-        } while (false)
+            if (sMetric->IsEnabled())                                  \
+                sMetric->LogEvent(category, title, description);       \
+        } while (0)
 #define TC_METRIC_VALUE(category, value, ...)                          \
         do {                                                           \
-            if (Metric* metric = sMetric; metric->IsEnabled())         \
-                metric->LogValue(category, value, ## __VA_ARGS__);     \
-        } while (false)
-#define TC_METRIC_TIMER_IMPL(variable, category, ...)                                               \
-        MetricStopWatch variable{ [&](Metric* metric, TimePoint start)                              \
-        {                                                                                           \
-            metric->LogValue(category, std::chrono::steady_clock::now() - start, ## __VA_ARGS__);   \
-        } };                                                                                        \
-        do                                                                                          \
-        {                                                                                           \
-            if (Metric* metric = sMetric; metric->IsEnabled())                                      \
-                variable.Enable(metric);                                                            \
-        } while (false)
-#define TC_METRIC_TIMER(category, ...) TC_METRIC_TIMER_IMPL(TC_METRIC_UNIQUE_NAME(tc_metric_stop_watch_), category, ## __VA_ARGS__)
+            if (sMetric->IsEnabled())                                  \
+                sMetric->LogValue(category, value, ##__VA_ARGS__);     \
+        } while (0)
+#  else
+#define TC_METRIC_EVENT(category, title, description)                  \
+        __pragma(warning(push))                                        \
+        __pragma(warning(disable:4127))                                \
+        do {                                                           \
+            if (sMetric->IsEnabled())                                  \
+                sMetric->LogEvent(category, title, description);       \
+        } while (0)                                                    \
+        __pragma(warning(pop))
+#define TC_METRIC_VALUE(category, value, ...)                          \
+        __pragma(warning(push))                                        \
+        __pragma(warning(disable:4127))                                \
+        do {                                                           \
+            if (sMetric->IsEnabled())                                  \
+                sMetric->LogValue(category, value, ##__VA_ARGS__);     \
+        } while (0)                                                    \
+        __pragma(warning(pop))
+#  endif
+#define TC_METRIC_TIMER(category, ...)                                                                           \
+        auto TC_METRIC_UNIQUE_NAME(__tc_metric_stop_watch) = MakeMetricStopWatch([&](TimePoint start)            \
+        {                                                                                                        \
+            sMetric->LogValue(category, std::chrono::steady_clock::now() - start, ##__VA_ARGS__);                \
+        });
 #  if defined WITH_DETAILED_METRICS
-#define TC_METRIC_DETAILED_TIMER_IMPL(variable, category, ...)                                                      \
-        MetricStopWatch variable{ [&](Metric* metric, TimePoint start)                                              \
-        {                                                                                                           \
-            int64 duration = int64(duration_cast<Milliseconds>(std::chrono::steady_clock::now() - start).count());  \
-            if (metric->ShouldLog(category, duration))                                                              \
-                metric->LogValue(category, duration, ## __VA_ARGS__);                                               \
-        } };                                                                                                        \
-        do                                                                                                          \
-        {                                                                                                           \
-            if (Metric* metric = sMetric; metric->IsEnabled())                                                      \
-                variable.Enable(metric);                                                                            \
-        } while (false)
-#define TC_METRIC_DETAILED_TIMER(category, ...) TC_METRIC_DETAILED_TIMER_IMPL(TC_METRIC_UNIQUE_NAME(tc_metric_stop_watch_), category, ## __VA_ARGS__)
-#define TC_METRIC_DETAILED_NO_THRESHOLD_TIMER(category, ...) TC_METRIC_TIMER(category, ## __VA_ARGS__)
+#define TC_METRIC_DETAILED_TIMER(category, ...)                                                                  \
+        auto TC_METRIC_UNIQUE_NAME(__tc_metric_stop_watch) = MakeMetricStopWatch([&](TimePoint start)            \
+        {                                                                                                        \
+            int64 duration = int64(std::chrono::duration_cast<Milliseconds>(std::chrono::steady_clock::now() - start).count()); \
+            std::string category2 = category;                                                                    \
+            if (sMetric->ShouldLog(category2, duration))                                                         \
+                sMetric->LogValue(std::move(category2), duration, ##__VA_ARGS__);                                \
+        });
+#define TC_METRIC_DETAILED_NO_THRESHOLD_TIMER(category, ...) TC_METRIC_TIMER(category, ##__VA_ARGS__)
 #define TC_METRIC_DETAILED_EVENT(category, title, description) TC_METRIC_EVENT(category, title, description)
 #  else
 #define TC_METRIC_DETAILED_EVENT(category, title, description) ((void)0)
@@ -243,4 +244,4 @@ MetricStopWatch(LoggerType) -> MetricStopWatch<LoggerType>;
 
 #endif
 
-#endif // TRINITYCORE_METRIC_H
+#endif // METRIC_H__

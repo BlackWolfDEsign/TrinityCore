@@ -15,13 +15,16 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_ASYNC_CALLBACK_PROCESSOR_H
-#define TRINITYCORE_ASYNC_CALLBACK_PROCESSOR_H
+#ifndef AsyncCallbackProcessor_h__
+#define AsyncCallbackProcessor_h__
 
-#include "AsyncCallbackProcessorFwd.h"
+#include <algorithm>
 #include <vector>
 
-template<AsyncCallback T>
+//template <class T>
+//concept AsyncCallback = requires(T t) { { t.InvokeIfReady() } -> std::convertible_to<bool> };
+
+template<typename T> // requires AsyncCallback<T>
 class AsyncCallbackProcessor
 {
 public:
@@ -30,7 +33,8 @@ public:
 
     T& AddCallback(T&& query)
     {
-        return _callbacks.emplace_back(std::move(query));
+        _callbacks.emplace_back(std::move(query));
+        return _callbacks.back();
     }
 
     void ProcessReadyCallbacks()
@@ -40,22 +44,12 @@ public:
 
         std::vector<T> updateCallbacks{ std::move(_callbacks) };
 
-        std::erase_if(updateCallbacks, [](T& callback)
+        updateCallbacks.erase(std::remove_if(updateCallbacks.begin(), updateCallbacks.end(), [](T& callback)
         {
-            return InvokeAsyncCallbackIfReady(callback);
-        });
+            return callback.InvokeIfReady();
+        }), updateCallbacks.end());
 
         _callbacks.insert(_callbacks.end(), std::make_move_iterator(updateCallbacks.begin()), std::make_move_iterator(updateCallbacks.end()));
-    }
-
-    bool Empty() const
-    {
-        return _callbacks.empty();
-    }
-
-    void CancelAll()
-    {
-        _callbacks.clear();
     }
 
 private:
@@ -65,4 +59,4 @@ private:
     std::vector<T> _callbacks;
 };
 
-#endif // TRINITYCORE_ASYNC_CALLBACK_PROCESSOR_H
+#endif // AsyncCallbackProcessor_h__

@@ -16,11 +16,9 @@
  */
 
 #include "ScenePackets.h"
-#include "PacketOperators.h"
+#include "PacketUtilities.h"
 
-namespace WorldPackets::Scenes
-{
-WorldPacket const* PlayScene::Write()
+WorldPacket const* WorldPackets::Scenes::PlayScene::Write()
 {
     _worldPacket << int32(SceneID);
     _worldPacket << uint32(PlaybackFlags);
@@ -35,30 +33,26 @@ WorldPacket const* PlayScene::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* CancelScene::Write()
+WorldPacket const* WorldPackets::Scenes::CancelScene::Write()
 {
     _worldPacket << int32(SceneInstanceID);
 
     return &_worldPacket;
 }
 
-void SceneTriggerEvent::Read()
+void WorldPackets::Scenes::SceneTriggerEvent::Read()
 {
-    _worldPacket >> SizedString::BitsSize<6>(Event);
+    uint32 len = _worldPacket.ReadBits(6);
     _worldPacket >> SceneInstanceID;
-
-    _worldPacket >> SizedString::Data(Event);
+    Event = _worldPacket.ReadString(len);
 }
 
-void ScenePlaybackComplete::Read()
+void WorldPackets::Scenes::ScenePlaybackComplete::Read()
 {
     _worldPacket >> SceneInstanceID;
-    _worldPacket >> TimePassed;
 }
 
-void ScenePlaybackCanceled::Read()
+void WorldPackets::Scenes::ScenePlaybackCanceled::Read()
 {
     _worldPacket >> SceneInstanceID;
-    _worldPacket >> TimePassed;
-}
 }

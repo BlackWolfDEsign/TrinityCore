@@ -502,7 +502,8 @@ static std::array<Position, NUM_POSITIONS> const ArthasPositions =
     }
 };
 
-G3D::Vector3 const ChromieSplinePos[] =
+uint32 const chromiePathSize = 3;
+G3D::Vector3 const ChromieSplinePos[chromiePathSize] =
 {
     { 2320.632f, 1507.193f, 152.5081f },
     { 2319.823f, 1506.605f, 152.5081f },
@@ -1467,9 +1468,10 @@ public:
                             chromie->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP | UNIT_NPC_FLAG_QUESTGIVER);
                             std::function<void(Movement::MoveSplineInit&)> initializer = [](Movement::MoveSplineInit& init)
                             {
+                                Movement::PointsArray path(ChromieSplinePos, ChromieSplinePos + chromiePathSize);
                                 init.SetFly();
                                 init.SetWalk(true);
-                                init.MovebyPath(ChromieSplinePos);
+                                init.MovebyPath(path, 0);
                             };
                             chromie->GetMotionMaster()->LaunchMoveSpline(std::move(initializer), 0, MOTION_PRIORITY_NORMAL, POINT_MOTION_TYPE);
                         }

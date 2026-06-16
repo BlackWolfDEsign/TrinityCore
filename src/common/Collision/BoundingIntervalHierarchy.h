@@ -23,6 +23,9 @@
 #include <G3D/AABox.h>
 #include <G3D/Ray.h>
 #include <G3D/Vector3.h>
+#include <algorithm>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 
 #define MAX_STACK_SIZE 64
@@ -61,13 +64,13 @@ class TC_COMMON_API BIH
                 return;
             }
 
-            objects.resize(primitives.size());
-
             buildData dat;
             dat.maxPrims = leafSize;
             dat.numPrims = uint32(primitives.size());
-            dat.indices = objects.data();
+            dat.indices = new uint32[dat.numPrims];
             dat.primBound = static_cast<G3D::AABox*>(::operator new[](dat.numPrims * sizeof(G3D::AABox)));
+            std::uninitialized_fill_n(dat.primBound, dat.numPrims, G3D::AABox::empty());
+            getBounds(primitives[0], bounds);
             for (uint32 i = 0; i < dat.numPrims; ++i)
             {
                 dat.indices[i] = i;
@@ -80,8 +83,11 @@ class TC_COMMON_API BIH
             if (printStats)
                 stats.printStats();
 
+            objects.resize(dat.numPrims);
+            std::ranges::copy_n(dat.indices, dat.numPrims, objects.begin());
             tree = tempTree;    // copy instead of move to allocate exactly tempTree.size() elements and avoid shrink_to_fit
-            ::operator delete[](dat.primBound);
+            delete[] dat.primBound;
+            delete[] dat.indices;
         }
         uint32 primCount() const { return uint32(objects.size()); }
         G3D::AABox const& bound() const { return bounds; }

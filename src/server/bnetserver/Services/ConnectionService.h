@@ -15,15 +15,17 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_CONNECTION_SERVICE_H
-#define TRINITYCORE_CONNECTION_SERVICE_H
+#ifndef ConnectionService_h__
+#define ConnectionService_h__
 
 #include "Service.h"
-#include "Client/connection_service.pb.h"
+#include "connection_service.pb.h"
 
-namespace Battlenet::Services
+namespace Battlenet
 {
-    namespace V1
+    class Session;
+
+    namespace Services
     {
         class Connection : public Service<connection::v1::ConnectionService>
         {
@@ -39,4 +41,4 @@ namespace Battlenet::Services
     }
 }
 
-#endif // TRINITYCORE_CONNECTION_SERVICE_H
+#endif // ConnectionService_h__

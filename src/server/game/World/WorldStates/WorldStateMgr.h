@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_WORLD_STATE_MGR_H
-#define TRINITYCORE_WORLD_STATE_MGR_H
+#ifndef WorldStateMgr_h__
+#define WorldStateMgr_h__
 
 #include "Define.h"
 #include "WorldStateDefines.h"
@@ -28,22 +28,25 @@ namespace WorldPackets::WorldState
     class InitWorldStates;
 }
 
-namespace WorldStateMgr
+class TC_GAME_API WorldStateMgr
 {
+public:
+    static WorldStateMgr* instance();
+
     void LoadFromDB();
 
-    void Update();
+    WorldStateTemplate const* GetWorldStateTemplate(int32 worldStateId) const;
 
-    TC_GAME_API WorldStateTemplate const* GetWorldStateTemplate(int32 worldStateId);
+    int32 GetValue(int32 worldStateId, Map const* map) const;
+    void SetValue(int32 worldStateId, int32 value, bool hidden, Map* map);
+    void SaveValueInDb(int32 worldStateId, int32 value);
+    void SetValueAndSaveInDb(int32 worldStateId, int32 value, bool hidden, Map* map);
 
-    TC_GAME_API int32 GetValue(int32 worldStateId, Map const* map);
-    TC_GAME_API void SetValue(int32 worldStateId, int32 value, bool hidden, Map* map);
-    TC_GAME_API void SaveValueInDb(int32 worldStateId, int32 value);
-    TC_GAME_API void SetValueAndSaveInDb(int32 worldStateId, int32 value, bool hidden, Map* map);
+    WorldStateValueContainer GetInitialWorldStatesForMap(Map const* map) const;
 
-    WorldStateValueContainer GetInitialWorldStatesForMap(Map const* map);
-
-    void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& initWorldStates, Map const* map, uint32 playerAreaId);
+    void FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& initWorldStates, Map const* map, uint32 playerAreaId) const;
 };
+
+#define sWorldStateMgr WorldStateMgr::instance()
 
 #endif

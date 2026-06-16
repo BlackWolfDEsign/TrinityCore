@@ -125,6 +125,7 @@ enum SpellSpecificType
     SPELL_SPECIFIC_MAGE_ARMOR                    = 9,
     SPELL_SPECIFIC_ELEMENTAL_SHIELD              = 10,
     SPELL_SPECIFIC_MAGE_POLYMORPH                = 11,
+    SPELL_SPECIFIC_WARLOCK_CORRUPTION            = 17,
     SPELL_SPECIFIC_FOOD                          = 19,
     SPELL_SPECIFIC_DRINK                         = 20,
     SPELL_SPECIFIC_FOOD_AND_DRINK                = 21,
@@ -166,7 +167,6 @@ enum SpellCustomAttributes
     SPELL_ATTR0_CU_DEPRECATED_LIQUID_AURA        = 0x00400000, // DO NOT REUSE
     SPELL_ATTR0_CU_IS_TALENT                     = 0x00800000,
     SPELL_ATTR0_CU_AURA_CANNOT_BE_SAVED          = 0x01000000,
-    SPELL_ATTR0_CU_CAN_TARGET_ANY_PRIVATE_OBJECT = 0x02000000,
 };
 
 uint32 GetTargetFlagMask(SpellTargetObjectTypes objType);
@@ -212,7 +212,7 @@ class TC_GAME_API SpellEffectInfo
     SpellInfo const* _spellInfo;
 public:
     SpellEffIndex EffectIndex;
-    SpellEffects Effect;
+    SpellEffectName Effect;
     AuraType  ApplyAuraName;
     uint32    ApplyAuraPeriod;
     float     BasePoints;
@@ -230,6 +230,7 @@ public:
     SpellRadiusEntry const* TargetARadiusEntry;
     SpellRadiusEntry const* TargetBRadiusEntry;
     int32     ChainTargets;
+    int32     DieSides;
     uint32    ItemType;
     uint32    TriggerSpell;
     flag128   SpellClassMask;
@@ -239,7 +240,6 @@ public:
     // SpellScalingEntry
     struct ScalingInfo
     {
-        int32 Class;
         float Coefficient;
         float Variance;
         float ResourceCoefficient;
@@ -254,26 +254,21 @@ public:
     ~SpellEffectInfo();
 
     bool IsEffect() const;
-    bool IsEffect(SpellEffects effectName) const;
+    bool IsEffect(SpellEffectName effectName) const;
     bool IsAura() const;
     bool IsAura(AuraType aura) const;
     bool IsTargetingArea() const;
     bool IsAreaAuraEffect() const;
     bool IsUnitOwnedAuraEffect() const;
 
-    uint32 GetPeriodicTickCount() const;
-
-    static constexpr SpellEffectValue MinValue = -2000000000.0;
-    static constexpr SpellEffectValue MaxValue = 2000000000.0;
-
-    int32 CalcValueAsInt(WorldObject const* caster = nullptr, SpellEffectValue const* basePoints = nullptr, Unit const* target = nullptr, float* variance = nullptr, uint32 castItemId = 0, int32 itemLevel = -1) const;
-    SpellEffectValue CalcValue(WorldObject const* caster = nullptr, SpellEffectValue const* basePoints = nullptr, Unit const* target = nullptr, float* variance = nullptr, uint32 castItemId = 0, int32 itemLevel = -1) const;
-    SpellEffectValue CalcBaseValue(WorldObject const* caster, Unit const* target, uint32 itemId, int32 itemLevel) const;
+    int32 CalcValue(WorldObject const* caster = nullptr, int32 const* basePoints = nullptr, Unit const* target = nullptr, float* variance = nullptr) const;
+    int32 CalcBaseValue(WorldObject const* caster, Unit const* target) const;
     float CalcValueMultiplier(WorldObject* caster, Spell* spell = nullptr) const;
     float CalcDamageMultiplier(WorldObject* caster, Spell* spell = nullptr) const;
 
     bool HasRadius(SpellTargetIndex targetIndex) const;
-    SpellRange CalcRadius(WorldObject const* caster = nullptr, SpellTargetIndex targetIndex = SpellTargetIndex::TargetA, Spell* spell = nullptr) const;
+    float CalcRadius(WorldObject* caster = nullptr, SpellTargetIndex targetIndex = SpellTargetIndex::TargetA, Spell* spell = nullptr) const;
+    Optional<std::pair<float, float>> CalcRadiusBounds(WorldObject* caster, SpellTargetIndex targetIndex, Spell* spell) const;
 
     uint32 GetProvidedTargetMask() const;
     uint32 GetMissingTargetMask(bool srcSet = false, bool dstSet = false, uint32 mask = 0) const;
@@ -346,7 +341,6 @@ class TC_GAME_API SpellInfo
         uint32 AttributesEx13 = 0;
         uint32 AttributesEx14 = 0;
         uint32 AttributesEx15 = 0;
-        uint32 AttributesEx16 = 0;
         uint32 AttributesCu = 0;
         std::bitset<MAX_SPELL_EFFECTS> NegativeEffects;
         uint64 Stances = 0;
@@ -363,10 +357,6 @@ class TC_GAME_API SpellInfo
         uint32 TargetAuraSpell = 0;
         uint32 ExcludeCasterAuraSpell = 0;
         uint32 ExcludeTargetAuraSpell = 0;
-        AuraType CasterAuraType = SPELL_AURA_NONE;
-        AuraType TargetAuraType = SPELL_AURA_NONE;
-        AuraType ExcludeCasterAuraType = SPELL_AURA_NONE;
-        AuraType ExcludeTargetAuraType = SPELL_AURA_NONE;
         SpellCastTimesEntry const* CastTimeEntry = nullptr;
         uint32 RecoveryTime = 0;
         uint32 CategoryRecoveryTime = 0;
@@ -419,13 +409,19 @@ class TC_GAME_API SpellInfo
         uint32 SchoolMask = 0;
         uint32 ChargeCategoryId = 0;
         std::unordered_set<uint32> Labels;
-        std::vector<Milliseconds> EmpowerStageThresholds;
 
         // SpellScalingEntry
         struct ScalingInfo
         {
+            int32 CastTimeMin = 0;
+            int32 CastTimeMax = 0;
+            int32 CastTimeMaxLevel = 0;
+            int32 Class = 0;
+            float NerfFactor = 0.0f;
+            int32 NerfMaxLevel = 0;
             uint32 MinScalingLevel = 0;
             uint32 MaxScalingLevel = 0;
+            uint32 ScalesFromItemLevel = 0;
         } Scaling;
 
         uint32 ExplicitTargetMask = 0;
@@ -447,7 +443,7 @@ class TC_GAME_API SpellInfo
         SpellInfo& operator=(SpellInfo&&) noexcept = delete;
 
         uint32 GetCategory() const;
-        bool HasEffect(SpellEffects effect) const;
+        bool HasEffect(SpellEffectName effect) const;
         bool HasAura(AuraType aura) const;
         bool HasAreaAuraEffect() const;
         bool HasOnlyDamageEffects() const;
@@ -469,7 +465,6 @@ class TC_GAME_API SpellInfo
         bool HasAttribute(SpellAttr13 attribute) const { return !!(AttributesEx13 & attribute); }
         bool HasAttribute(SpellAttr14 attribute) const { return !!(AttributesEx14 & attribute); }
         bool HasAttribute(SpellAttr15 attribute) const { return !!(AttributesEx15 & attribute); }
-        bool HasAttribute(SpellAttr16 attribute) const { return !!(AttributesEx16 & attribute); }
         bool HasAttribute(SpellCustomAttributes customAttribute) const { return !!(AttributesCu & customAttribute); }
 
         bool CanBeInterrupted(WorldObject const* interruptCaster, Unit const* interruptTarget, bool ignoreImmunity = false) const;
@@ -501,7 +496,6 @@ class TC_GAME_API SpellInfo
         bool IsMultiSlotAura() const;
         bool IsStackableOnOneSlotWithDifferentCasters() const;
         bool IsCooldownStartedOnEvent() const;
-        bool IsCooldownStartedOnEventAfterCombat() const;
         bool IsDeathPersistent() const;
         bool IsRequiringDeadTarget() const;
         bool IsAllowingDeadTarget() const;
@@ -514,9 +508,9 @@ class TC_GAME_API SpellInfo
         bool IsNextMeleeSwingSpell() const;
         bool IsRangedWeaponSpell() const;
         bool IsAutoRepeatRangedSpell() const;
-        bool IsEmpowerSpell() const;
         bool HasInitialAggro() const;
         bool HasHitDelay() const;
+        bool IsFinishingMove() const;
 
         WeaponAttackType GetAttackType() const;
 
@@ -525,7 +519,7 @@ class TC_GAME_API SpellInfo
         bool IsAffected(uint32 familyName, flag128 const& familyFlags) const;
 
         bool IsAffectedBySpellMods() const;
-        int32 IsAffectedBySpellMod(SpellModifier const* mod) const;
+        uint32 IsAffectedBySpellMod(SpellModifier const* mod) const;
         bool IsUpdatingTemporaryAuraValuesBySpellMod() const;
 
         bool CanPierceImmuneAura(SpellInfo const* auraSpellInfo) const;
@@ -555,12 +549,13 @@ class TC_GAME_API SpellInfo
         SpellSpecificType GetSpellSpecific() const;
 
         float GetMinRange(bool positive = false) const;
-        float GetMaxRange(bool positive = false, WorldObject const* caster = nullptr, Spell* spell = nullptr) const;
-        SpellRange GetMinMaxRange(bool positive = false, WorldObject const* caster = nullptr, Spell* spell = nullptr) const;
+        float GetMaxRange(bool positive = false, WorldObject* caster = nullptr, Spell* spell = nullptr) const;
 
         int32 CalcDuration(WorldObject const* caster = nullptr) const;
         int32 GetDuration() const;
         int32 GetMaxDuration() const;
+
+        uint32 GetMaxTicks() const;
 
         uint32 CalcCastTime(Spell* spell = nullptr) const;
         uint32 GetRecoveryTime() const;
@@ -570,6 +565,8 @@ class TC_GAME_API SpellInfo
         std::vector<SpellPowerCost> CalcPowerCost(WorldObject const* caster, SpellSchoolMask schoolMask, Spell* spell = nullptr) const;
 
         float CalcProcPPM(Unit* caster, int32 itemLevel) const;
+
+        float GetSpellScalingMultiplier(int32 targetLevel, bool isPowerCostRelated /*= false*/) const;
 
         bool IsRanked() const;
         uint8 GetRank() const;

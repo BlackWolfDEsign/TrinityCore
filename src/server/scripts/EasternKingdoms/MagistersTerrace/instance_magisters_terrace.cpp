@@ -24,6 +24,7 @@
 #include "Map.h"
 #include "MotionMaster.h"
 #include "TemporarySummon.h"
+#include <sstream>
 
 /*
 0  - Selin Fireheart
@@ -32,7 +33,7 @@
 3  - Kael'thas Sunstrider
 */
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { BOSS_SELIN_FIREHEART,         DATA_SELIN_FIREHEART        },
     { BOSS_VEXALLUS,                DATA_VEXALLUS               },
@@ -40,23 +41,26 @@ static constexpr ObjectData creatureData[] =
     { BOSS_KAELTHAS_SUNSTRIDER,     DATA_KAELTHAS_SUNSTRIDER    },
     { NPC_KALECGOS,                 DATA_KALECGOS               },
     { NPC_HUMAN_KALECGOS,           DATA_KALECGOS               },
+    { 0,                            0                           } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_ESCAPE_ORB,                DATA_ESCAPE_ORB             },
+    { 0,                            0                           } // END
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_SUNWELL_RAID_GATE_2  , DATA_SELIN_FIREHEART,       EncounterDoorBehavior::OpenWhenDone },
     { GO_ASSEMBLY_CHAMBER_DOOR, DATA_SELIN_FIREHEART,       EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_SUNWELL_RAID_GATE_5,   DATA_VEXALLUS,              EncounterDoorBehavior::OpenWhenDone },
     { GO_SUNWELL_RAID_GATE_4,   DATA_PRIESTESS_DELRISSA,    EncounterDoorBehavior::OpenWhenDone },
     { GO_ASYLUM_DOOR,           DATA_KAELTHAS_SUNSTRIDER,   EncounterDoorBehavior::OpenWhenNotInProgress },
+    { 0,                        0,                          EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_SELIN_FIREHEART, {{ 1897 }} },
     { DATA_VEXALLUS, {{ 1898 }} },
@@ -64,8 +68,8 @@ static constexpr DungeonEncounterData encounters[] =
     { DATA_KAELTHAS_SUNSTRIDER, {{ 1894 }} }
 };
 
-static constexpr Position KalecgosSpawnPos = { 164.3747f, -397.1197f, 2.151798f, 1.66219f };
-static constexpr Position KaelthasTrashGroupDistanceComparisonPos = { 150.0f, 141.0f, -14.4f };
+Position const KalecgosSpawnPos = { 164.3747f, -397.1197f, 2.151798f, 1.66219f };
+Position const KaelthasTrashGroupDistanceComparisonPos = { 150.0f, 141.0f, -14.4f };
 
 class instance_magisters_terrace : public InstanceMapScript
 {

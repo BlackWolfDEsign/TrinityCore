@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_SCENARIO_PACKETS_H
-#define TRINITYCORE_SCENARIO_PACKETS_H
+#ifndef ScenarioPackets_h__
+#define ScenarioPackets_h__
 
 #include "Packet.h"
 #include "PacketUtilities.h"
@@ -43,15 +43,14 @@ struct ScenarioSpellUpdate
 class ScenarioState final : public ServerPacket
 {
 public:
-    explicit ScenarioState() : ServerPacket(SMSG_SCENARIO_STATE) { }
+    ScenarioState() : ServerPacket(SMSG_SCENARIO_STATE) { }
 
     WorldPacket const* Write() override;
 
     ObjectGuid ScenarioGUID;
     int32 ScenarioID = 0;
     int32 CurrentStep = -1;
-    bool ScenarioComplete = false;
-    int16 DifficultyID = 0;
+    uint32 DifficultyID = 0;
     uint32 WaveCurrent = 0;
     uint32 WaveMax = 0;
     uint32 TimerDuration = 0;
@@ -60,12 +59,13 @@ public:
     std::vector<uint32> PickedSteps;
     std::vector<ScenarioSpellUpdate> Spells;
     ObjectGuid PlayerGUID;
+    bool ScenarioComplete = false;
 };
 
 class ScenarioProgressUpdate final : public ServerPacket
 {
 public:
-    explicit ScenarioProgressUpdate() : ServerPacket(SMSG_SCENARIO_PROGRESS_UPDATE) { }
+    ScenarioProgressUpdate() : ServerPacket(SMSG_SCENARIO_PROGRESS_UPDATE) { }
 
     WorldPacket const* Write() override;
 
@@ -75,7 +75,7 @@ public:
 class ScenarioCompleted final : public ServerPacket
 {
 public:
-    explicit ScenarioCompleted(uint32 scenarioId) : ServerPacket(SMSG_SCENARIO_COMPLETED, 4), ScenarioID(scenarioId) { }
+    ScenarioCompleted(uint32 scenarioId) : ServerPacket(SMSG_SCENARIO_COMPLETED, 4), ScenarioID(scenarioId) { }
 
     WorldPacket const* Write() override;
 
@@ -85,24 +85,14 @@ public:
 class ScenarioVacate final : public ServerPacket
 {
 public:
-    explicit ScenarioVacate() : ServerPacket(SMSG_SCENARIO_VACATE, 4 + 4 + 1) { }
+    ScenarioVacate() : ServerPacket(SMSG_SCENARIO_VACATE, 4 + 4 + 1) { }
 
     WorldPacket const* Write() override;
 
     ObjectGuid ScenarioGUID;
     int32 ScenarioID = 0;
-    int32 TimeRemain = 0;
-    uint8 Reason = 0;
-};
-
-class QueryScenarioPOI final : public ClientPacket
-{
-public:
-    explicit QueryScenarioPOI(WorldPacket&& packet) : ClientPacket(CMSG_QUERY_SCENARIO_POI, std::move(packet)) { }
-
-    void Read() override;
-
-    Array<int32, MAX_ALLOWED_SCENARIO_POI_QUERY_SIZE> MissingScenarioPOIs;
+    int32 Unk1 = 0;
+    uint8 Unk2 = 0;
 };
 
 struct ScenarioPOIData
@@ -114,7 +104,7 @@ struct ScenarioPOIData
 class ScenarioPOIs final : public ServerPacket
 {
 public:
-    explicit ScenarioPOIs() : ServerPacket(SMSG_SCENARIO_POIS) { }
+    ScenarioPOIs() : ServerPacket(SMSG_SCENARIO_POIS) { }
 
     WorldPacket const* Write() override;
 
@@ -122,4 +112,4 @@ public:
 };
 }
 
-#endif // TRINITYCORE_SCENARIO_PACKETS_H
+#endif // ScenarioPackets_h__

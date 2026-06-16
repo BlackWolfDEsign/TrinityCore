@@ -17,7 +17,6 @@
 
 #include "WorldSession.h"
 #include "AchievementMgr.h"
-#include "AzeriteItem.h"
 #include "Guild.h"
 #include "GuildMgr.h"
 #include "InspectPackets.h"
@@ -48,19 +47,17 @@ void WorldSession::HandleInspectOpcode(WorldPackets::Inspect::Inspect& inspect)
 
     if (GetPlayer()->CanBeGameMaster() || sWorld->getIntConfig(CONFIG_TALENTS_INSPECTING) + (GetPlayer()->GetEffectiveTeam() == player->GetEffectiveTeam()) > 1)
     {
-        PlayerTalentMap const* talents = player->GetTalentMap(player->GetActiveTalentGroup());
-        for (PlayerTalentMap::value_type const& v : *talents)
-            if (v.second != PLAYERSPELL_REMOVED)
-                inspectResult.Talents.push_back(v.first);
+        //PlayerTalentMap const* talents = player->GetTalentMap(player->GetActiveTalentGroup());
+        //for (PlayerTalentMap::value_type const& v : *talents)
+        //    if (v.second != PLAYERSPELL_REMOVED)
+        //        inspectResult.Talents.push_back(v.first);
 
-        PlayerPvpTalentMap const& pvpTalents = player->GetPvpTalentMap(player->GetActiveTalentGroup());
-        for (std::size_t i = 0; i < pvpTalents.size(); ++i)
-            inspectResult.PvpTalents[i] = pvpTalents[i];
-
-        inspectResult.TraitsInfo.PlayerLevel = player->GetLevel();
-        inspectResult.TraitsInfo.SpecID = AsUnderlyingType(player->GetPrimarySpecialization());
+        /*
+        inspectResult.TalentTraits.Level = player->GetLevel();
+        inspectResult.TalentTraits.ChrSpecializationID = AsUnderlyingType(player->GetPrimarySpecialization());
         if (UF::TraitConfig const* traitConfig = player->GetTraitConfig(player->m_activePlayerData->ActiveCombatTraitConfigID))
-            inspectResult.TraitsInfo.ActiveCombatTraits = WorldPackets::Traits::TraitConfig(*traitConfig);
+            inspectResult.TalentTraits.Config = WorldPackets::Traits::TraitConfig(*traitConfig);
+        */
     }
 
     if (Guild* guild = sGuildMgr->GetGuildById(player->GetGuildId()))
@@ -70,10 +67,6 @@ void WorldSession::HandleInspectOpcode(WorldPackets::Inspect::Inspect& inspect)
         inspectResult.GuildData->NumGuildMembers = guild->GetMembersCount();
         inspectResult.GuildData->AchievementPoints = guild->GetAchievementMgr().GetAchievementPoints();
     }
-
-    if (Item const* heartOfAzeroth = player->GetItemByEntry(ITEM_ID_HEART_OF_AZEROTH, ItemSearchLocation::Everywhere))
-        if (AzeriteItem const* azeriteItem = heartOfAzeroth->ToAzeriteItem())
-            inspectResult.AzeriteLevel = azeriteItem->GetEffectiveLevel();
 
     inspectResult.ItemLevel = int32(player->GetAverageItemLevel());
     inspectResult.LifetimeMaxRank = player->m_activePlayerData->LifetimeMaxRank;

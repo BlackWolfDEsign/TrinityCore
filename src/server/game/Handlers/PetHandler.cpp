@@ -70,7 +70,7 @@ void WorldSession::HandlePetAction(WorldPackets::Pet::PetAction& packet)
     ObjectGuid guid2 = packet.TargetGUID; //tag guid
 
     uint32 spellid = UNIT_ACTION_BUTTON_ACTION(packet.Action);
-    uint8 flag = UNIT_ACTION_BUTTON_TYPE(packet.Action); //delete = 0x07 CastSpell = C1
+    uint16 flag = UNIT_ACTION_BUTTON_TYPE(packet.Action); //delete = 0x07 CastSpell = C1
 
     // used also for charmed creature
     Unit* pet = ObjectAccessor::GetUnit(*_player, guid1);
@@ -219,8 +219,8 @@ void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spe
                                 AI->AttackStart(TargetUnit);
 
                             // 10% chance to play special pet attack talk, else growl
-                            if (pet->IsPet() && pet->ToPet()->getPetType() == SUMMON_PET && pet != TargetUnit && roll_chance(10))
-                                pet->SendPetActionSound(PET_ACTION_ATTACK);
+                            if (pet->IsPet() && ((Pet*)pet)->getPetType() == SUMMON_PET && pet != TargetUnit && urand(0, 100) < 10)
+                                pet->SendPetTalk((uint32)PET_TALK_ATTACK);
                             else
                             {
                                 // 90% chance for pet and 100% chance for charmed creature
@@ -249,13 +249,10 @@ void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spe
                         ASSERT(pet->GetTypeId() == TYPEID_UNIT);
                         if (pet->IsPet())
                         {
-                            if (pet->ToPet()->getPetType() == HUNTER_PET)
-                                GetPlayer()->RemovePet(pet->ToPet(), PET_SAVE_AS_DELETED);
+                            if (((Pet*)pet)->getPetType() == HUNTER_PET)
+                                GetPlayer()->RemovePet((Pet*)pet, PET_SAVE_AS_DELETED);
                             else
-                            {
-                                pet->SendPetDismissSound();
-                                GetPlayer()->RemovePet(pet->ToPet(), PET_SAVE_NOT_IN_SLOT);
-                            }
+                                GetPlayer()->RemovePet((Pet*)pet, PET_SAVE_NOT_IN_SLOT);
                         }
                         else if (pet->HasUnitTypeMask(UNIT_MASK_MINION))
                         {
@@ -292,9 +289,9 @@ void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spe
                     break;
             }
             break;
-        case ACT_DISABLED: // 0x81 spell (disabled), ignore
+        case ACT_DISABLED: // 0x101 spell (disabled), ignore
         case ACT_PASSIVE: // 0x01
-        case ACT_ENABLED: // 0xC1 spell
+        case ACT_ENABLED: // 0x181 spell
         {
             Unit* unit_target = nullptr;
 
@@ -364,8 +361,8 @@ void WorldSession::HandlePetActionHelper(Unit* pet, ObjectGuid guid1, uint32 spe
 
                 // 10% chance to play special pet attack talk, else growl
                 // actually this only seems to happen on special spells, fire shield for imp, torment for voidwalker, but it's stupid to check every spell
-                if (pet->IsPet() && pet->ToPet()->getPetType() == SUMMON_PET && pet != unit_target && roll_chance(10))
-                    pet->SendPetActionSound(PET_ACTION_SPECIAL_SPELL);
+                if (pet->IsPet() && (((Pet*)pet)->getPetType() == SUMMON_PET) && (pet != unit_target) && (urand(0, 100) < 10))
+                    pet->SendPetTalk((uint32)PET_TALK_SPECIAL_SPELL);
                 else
                 {
                     pet->SendPetAIReaction(guid1);
@@ -492,7 +489,7 @@ void WorldSession::HandlePetSetAction(WorldPackets::Pet::PetSetAction& packet)
     uint32 actionData = packet.Action;
 
     uint32 spell_id = UNIT_ACTION_BUTTON_ACTION(actionData);
-    uint8 act_state = UNIT_ACTION_BUTTON_TYPE(actionData);
+    uint16 act_state = UNIT_ACTION_BUTTON_TYPE(actionData);
 
     TC_LOG_DEBUG("entities.pet", "Player {} has changed pet spell action. Position: {}, Spell: {}, State: 0x{:X}",
         _player->GetName(), position, spell_id, uint32(act_state));
@@ -620,19 +617,6 @@ void WorldSession::HandlePetAbandon(WorldPackets::Pet::PetAbandon& packet)
     }
 }
 
-void WorldSession::HandlePetAbandonByNumber(WorldPackets::Pet::PetAbandonByNumber const& petAbandonByNumber)
-{
-    if (Pet* pet = _player->GetPet())
-    {
-        if (pet->IsHunterPet() && pet->m_unitData->PetNumber == petAbandonByNumber.PetNumber)
-            _player->RemovePet(pet, PET_SAVE_AS_DELETED);
-    }
-    else
-    {
-        _player->DeletePetFromDB(petAbandonByNumber.PetNumber);
-    }
-}
-
 void WorldSession::HandlePetSpellAutocastOpcode(WorldPackets::Pet::PetSpellAutocast& packet)
 {
     Creature* pet = ObjectAccessor::GetCreatureOrPetOrVehicle(*_player, packet.PetGUID);
@@ -730,13 +714,11 @@ void WorldSession::HandlePetCastSpellOpcode(WorldPackets::Spells::PetCastSpell& 
             return;
     }
 
-    if (petCastSpell.Cast.MoveUpdate)
-        HandleMovementOpcode(CMSG_MOVE_STOP, *petCastSpell.Cast.MoveUpdate);
-
     Spell* spell = new Spell(caster, spellInfo, triggerCastFlags);
     spell->m_fromClient = true;
-    std::ranges::copy(petCastSpell.Cast.Misc, std::ranges::begin(spell->m_misc.Raw.Data));
-    spell->InitExplicitTargets(targets);
+    spell->m_misc.Raw.Data[0] = petCastSpell.Cast.Misc[0];
+    spell->m_misc.Raw.Data[1] = petCastSpell.Cast.Misc[1];
+    spell->m_targets = targets;
 
     SpellCastResult result = spell->CheckPetCast(nullptr);
 
@@ -746,10 +728,10 @@ void WorldSession::HandlePetCastSpellOpcode(WorldPackets::Spells::PetCastSpell& 
         {
             if (Pet* pet = creature->ToPet())
             {
-                // 10% chance to play special pet attack sound, else growl
+                // 10% chance to play special pet attack talk, else growl
                 // actually this only seems to happen on special spells, fire shield for imp, torment for voidwalker, but it's stupid to check every spell
-                if (pet->getPetType() == SUMMON_PET && roll_chance(10))
-                    pet->SendPetActionSound(PET_ACTION_SPECIAL_SPELL);
+                if (pet->getPetType() == SUMMON_PET && (urand(0, 100) < 10))
+                    pet->SendPetTalk(PET_TALK_SPECIAL_SPELL);
                 else
                     pet->SendPetAIReaction(petCastSpell.PetGUID);
             }

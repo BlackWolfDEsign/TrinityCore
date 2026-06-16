@@ -19,23 +19,25 @@
 #include "blackwing_descent.h"
 #include "InstanceScript.h"
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_MAGMAW,       BOSS_MAGMAW         },
     { NPC_CHIMAERON,    BOSS_CHIMAERON      },
     { NPC_ATRAMEDES,    BOSS_ATRAMEDES      },
     { NPC_MALORIAK,     BOSS_MAGMAW         },
     { NPC_NEFARIAN,     BOSS_NEFARIANS_END  },
+    { 0,                0                   } // END
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_INNER_CHAMBER_DOOR,    BOSS_MAGMAW,                    EncounterDoorBehavior::OpenWhenDone             },
     { GO_INNER_CHAMBER_DOOR,    BOSS_OMNOTRON_DEFENSE_SYSTEM,   EncounterDoorBehavior::OpenWhenDone             },
     { GO_ATHENAEUM_DOOR,        BOSS_ATRAMEDES,                 EncounterDoorBehavior::OpenWhenInProgress       },
+    { 0,                        0,                              EncounterDoorBehavior::OpenWhenNotInProgress    }  // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_MAGMAW,                  {{ 1024 }}  },
     { BOSS_OMNOTRON_DEFENSE_SYSTEM, {{ 1027 }}  },
@@ -56,7 +58,7 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDoorData(doorData);
             LoadDungeonEncounterData(encounters);
         }

@@ -15,33 +15,17 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_AUTHENTICATION_SERVICE_H
-#define TRINITYCORE_AUTHENTICATION_SERVICE_H
+#ifndef AuthenticationService_h__
+#define AuthenticationService_h__
 
 #include "Service.h"
-#include "Client/authentication_service.pb.h"
+#include "authentication_service.pb.h"
 
 namespace Battlenet
 {
-struct AccountInfo;
-}
+    class Session;
 
-namespace Battlenet::Services
-{
-    namespace Shared
-    {
-        class Authentication
-        {
-        public:
-            static uint32 HandleLogon(Session* session, std::string_view program, std::string_view platform,
-                std::string_view locale, uint32 applicationVersion, std::string_view deviceId);
-            static uint32 HandleVerifyAuthToken(Session* session, std::string_view authToken,
-                std::function<void(uint32)> sendResponse, std::function<void(AccountInfo const*, std::string_view)> sendLogonComplete);
-            static uint32 HandleGenerateAuthToken(Session* session, std::function<void(std::string_view)> sendResponse);
-        };
-    }
-
-    namespace V1
+    namespace Services
     {
         class Authentication : public Service<authentication::v1::AuthenticationService>
         {
@@ -53,11 +37,8 @@ namespace Battlenet::Services
             uint32 HandleLogon(authentication::v1::LogonRequest const* request, NoData* response, std::function<void(ServiceBase*, uint32, ::google::protobuf::Message const*)>& continuation) override;
             uint32 HandleVerifyWebCredentials(authentication::v1::VerifyWebCredentialsRequest const* request, NoData* response, std::function<void(ServiceBase*, uint32, ::google::protobuf::Message const*)>& continuation) override;
             uint32 HandleGenerateWebCredentials(authentication::v1::GenerateWebCredentialsRequest const* request, authentication::v1::GenerateWebCredentialsResponse* response, std::function<void(ServiceBase*, uint32, google::protobuf::Message const*)>& continuation) override;
-
-        private:
-            uint32 HandleVerifyWebCredentials(std::string_view webCredentials, std::function<void(ServiceBase*, uint32, ::google::protobuf::Message const*)>& continuation);
         };
     }
 }
 
-#endif // TRINITYCORE_AUTHENTICATION_SERVICE_H
+#endif // AuthenticationService_h__

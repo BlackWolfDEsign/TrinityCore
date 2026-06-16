@@ -28,11 +28,11 @@
 #include "Player.h"
 #include "StringConvert.h"
 #include "UpdateData.h"
-#include "WorldPacket.h"
 #include <sstream>
 
 Corpse::Corpse(CorpseType type) : WorldObject(type != CORPSE_BONES), m_type(type)
 {
+    m_objectType |= TYPEMASK_CORPSE;
     m_objectTypeId = TYPEID_CORPSE;
 
     m_updateFlag.Stationary = true;
@@ -66,7 +66,7 @@ void Corpse::RemoveFromWorld()
 
 bool Corpse::Create(ObjectGuid::LowType guidlow, Map* map)
 {
-    _Create(ObjectGuid::Create<HighGuid::Corpse>(map->GetId(), 0, guidlow));
+    Object::_Create(ObjectGuid::Create<HighGuid::Corpse>(map->GetId(), 0, guidlow));
     return true;
 }
 
@@ -83,7 +83,7 @@ bool Corpse::Create(ObjectGuid::LowType guidlow, Player* owner)
         return false;
     }
 
-    _Create(ObjectGuid::Create<HighGuid::Corpse>(owner->GetMapId(), 0, guidlow));
+    Object::_Create(ObjectGuid::Create<HighGuid::Corpse>(owner->GetMapId(), 0, guidlow));
 
     SetObjectScale(1.0f);
     SetOwnerGUID(owner->GetGUID());
@@ -191,7 +191,7 @@ bool Corpse::LoadCorpseFromDB(ObjectGuid::LowType guid, Field* fields)
     float o      = fields[3].GetFloat();
     uint32 mapId = fields[4].GetUInt16();
 
-    _Create(ObjectGuid::Create<HighGuid::Corpse>(mapId, 0, guid));
+    Object::_Create(ObjectGuid::Create<HighGuid::Corpse>(mapId, 0, guid));
 
     SetObjectScale(1.0f);
     SetDisplayId(fields[5].GetUInt32());
@@ -240,25 +240,25 @@ bool Corpse::IsExpired(time_t t) const
         return m_time < t - 3 * DAY;
 }
 
-void Corpse::BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const
+void Corpse::BuildValuesCreate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const
 {
-    m_objectData->WriteCreate(flags, data, target, this);
-    m_corpseData->WriteCreate(flags, data, target, this);
+    m_objectData->WriteCreate(*data, flags, this, target);
+    m_corpseData->WriteCreate(*data, flags, this, target);
 }
 
-void Corpse::BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const
+void Corpse::BuildValuesUpdate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const
 {
-    data << uint32(m_values.GetChangedObjectTypeMask());
+    *data << uint32(m_values.GetChangedObjectTypeMask());
 
     if (m_values.HasChanged(TYPEID_OBJECT))
-        m_objectData->WriteUpdate(flags, data, target, this);
+        m_objectData->WriteUpdate(*data, flags, this, target);
 
     if (m_values.HasChanged(TYPEID_CORPSE))
-        m_corpseData->WriteUpdate(flags, data, target, this);
+        m_corpseData->WriteUpdate(*data, flags, this, target);
 }
 
 void Corpse::BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
-    UF::CorpseData::Mask const& requestedCorpseMask, Player const* target, bool ignoreNestedChangesMask) const
+    UF::CorpseData::Mask const& requestedCorpseMask, Player const* target) const
 {
     UF::UpdateFieldFlag flags = GetUpdateFieldFlagsFor(target);
     UpdateMask<NUM_CLIENT_OBJECT_TYPES> valuesMask;
@@ -271,14 +271,14 @@ void Corpse::BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData
     ByteBuffer& buffer = PrepareValuesUpdateBuffer(data);
     std::size_t sizePos = buffer.wpos();
     buffer << uint32(0);
-    BuildEntityFragmentsForValuesUpdateForPlayerWithMask(buffer, flags);
+    BuildEntityFragmentsForValuesUpdateForPlayerWithMask(&buffer, flags);
     buffer << uint32(valuesMask.GetBlock(0));
 
     if (valuesMask[TYPEID_OBJECT])
-        m_objectData->WriteUpdate(requestedObjectMask, buffer, target, this, ignoreNestedChangesMask);
+        m_objectData->WriteUpdate(buffer, requestedObjectMask, true, this, target);
 
     if (valuesMask[TYPEID_CORPSE])
-        m_corpseData->WriteUpdate(requestedCorpseMask, buffer, target, this, ignoreNestedChangesMask);
+        m_corpseData->WriteUpdate(buffer, requestedCorpseMask, true, this, target);
 
     buffer.put<uint32>(sizePos, buffer.wpos() - sizePos - 4);
 
@@ -290,14 +290,14 @@ void Corpse::ValuesUpdateForPlayerWithMaskSender::operator()(Player const* playe
     UpdateData udata(Owner->GetMapId());
     WorldPacket packet;
 
-    Owner->BuildValuesUpdateForPlayerWithMask(&udata, ObjectMask.GetChangesMask(), CorpseMask.GetChangesMask(), player, IgnoreNestedChangesMask);
+    Owner->BuildValuesUpdateForPlayerWithMask(&udata, ObjectMask.GetChangesMask(), CorpseMask.GetChangesMask(), player);
 
     udata.BuildPacket(&packet);
     player->SendDirectMessage(&packet);
 }
 
-void Corpse::ClearValuesChangesMask()
+void Corpse::ClearUpdateMask(bool remove)
 {
     m_values.ClearChangesMask(&Corpse::m_corpseData);
-    WorldObject::ClearValuesChangesMask();
+    Object::ClearUpdateMask(remove);
 }

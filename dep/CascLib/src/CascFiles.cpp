@@ -63,10 +63,7 @@ static LPCTSTR DataDirs[] =
     NULL,
 };
 
-// Dead as of September 2025
-// static const LPCTSTR szDefaultCDN = _T("ribbit://us.version.battle.net/v1/products");
-
-static const LPCTSTR szDefaultCDN = _T("http://us.patch.battle.net:1119");
+static const LPCTSTR szDefaultCDN = _T("ribbit://us.version.battle.net/v1/products");
 static const ULONGLONG ValueOne64 = 1;
 
 //-----------------------------------------------------------------------------

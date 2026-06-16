@@ -22,7 +22,6 @@
 #include "StringFormat.h"
 #include <fmt/ranges.h>
 #include <limits>
-#include <memory>
 #include <system_error>
 #include <unordered_map>
 #include <utility>

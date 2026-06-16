@@ -15,49 +15,35 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_COLLECTION_PACKETS_H
-#define TRINITYCORE_COLLECTION_PACKETS_H
+#ifndef CollectionPackets_h__
+#define CollectionPackets_h__
 
-#include "DBCEnums.h"
 #include "Packet.h"
 
 namespace WorldPackets
 {
     namespace Collections
     {
+        enum CollectionType : int32
+        {
+            NONE            = -1,
+            TOYBOX          = 1,
+            APPEARANCE      = 3,
+            TRANSMOG_SET    = 4
+        };
+
         class CollectionItemSetFavorite final : public ClientPacket
         {
         public:
-            explicit CollectionItemSetFavorite(WorldPacket&& packet) : ClientPacket(CMSG_COLLECTION_ITEM_SET_FAVORITE, std::move(packet)) { }
+            CollectionItemSetFavorite(WorldPacket&& packet) : ClientPacket(CMSG_COLLECTION_ITEM_SET_FAVORITE, std::move(packet)) { }
 
             void Read() override;
 
-            ItemCollectionType Type = ItemCollectionType::None;
+            CollectionType Type = NONE;
             uint32 ID = 0;
             bool IsFavorite = false;
-        };
-
-        struct ItemCollectionItemData
-        {
-            int32 ID = 0;
-            ItemCollectionType Type = ItemCollectionType::None;
-            int64 Unknown1110 = 0;
-            int32 Flags = 0;
-        };
-
-        class AccountItemCollectionData final : public ServerPacket
-        {
-        public:
-            explicit AccountItemCollectionData() : ServerPacket(SMSG_ACCOUNT_ITEM_COLLECTION_DATA) { }
-
-            WorldPacket const* Write() override;
-
-            uint32 Unknown1110_1 = 0;
-            ItemCollectionType Type = ItemCollectionType::None;
-            bool Unknown1110_2 = false;
-            std::vector<ItemCollectionItemData> Items;
         };
     }
 }
 
-#endif // TRINITYCORE_COLLECTION_PACKETS_H
+#endif // CollectionPackets_h__

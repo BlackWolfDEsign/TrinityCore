@@ -16,7 +16,6 @@
  */
 
 #include "LootPackets.h"
-#include "PacketOperators.h"
 
 namespace WorldPackets::Loot
 {
@@ -30,7 +29,6 @@ static ByteBuffer& operator<<(ByteBuffer& data, LootItemData const& lootItem)
     data << uint32(lootItem.Quantity);
     data << uint8(lootItem.LootItemType);
     data << uint8(lootItem.LootListID);
-
     return data;
 }
 
@@ -41,7 +39,6 @@ static ByteBuffer& operator<<(ByteBuffer& data, LootCurrency const& lootCurrency
     data << uint8(lootCurrency.LootListID);
     data << Bits<3>(lootCurrency.UIType);
     data.FlushBits();
-
     return data;
 }
 
@@ -59,11 +56,11 @@ WorldPacket const* LootResponse::Write()
     _worldPacket << uint8(_LootMethod);
     _worldPacket << uint8(Threshold);
     _worldPacket << uint32(Coins);
-    _worldPacket << Size<uint32>(Items);
-    _worldPacket << Size<uint32>(Currencies);
-    _worldPacket << Bits<1>(Acquired);
-    _worldPacket << Bits<1>(AELooting);
-    _worldPacket << Bits<1>(SuppressError);
+    _worldPacket << uint32(Items.size());
+    _worldPacket << uint32(Currencies.size());
+    _worldPacket.WriteBit(Acquired);
+    _worldPacket.WriteBit(AELooting);
+    _worldPacket.WriteBit(Unused_440);
     _worldPacket.FlushBits();
 
     for (LootItemData const& item : Items)
@@ -77,12 +74,14 @@ WorldPacket const* LootResponse::Write()
 
 void LootItem::Read()
 {
-    _worldPacket >> Size<uint32>(Loot);
+    uint32 Count;
+    _worldPacket >> Count;
 
-    for (LootRequest& lootRequest : Loot)
+    Loot.resize(Count);
+    for (uint32 i = 0; i < Count; ++i)
     {
-        _worldPacket >> lootRequest.Object;
-        _worldPacket >> lootRequest.LootListID;
+        _worldPacket >> Loot[i].Object;
+        _worldPacket >> Loot[i].LootListID;
     }
 
     _worldPacket >> Bits<1>(IsSoftInteract);
@@ -90,13 +89,15 @@ void LootItem::Read()
 
 void MasterLootItem::Read()
 {
-    _worldPacket >> Size<uint32>(Loot);
+    uint32 Count;
+    _worldPacket >> Count;
     _worldPacket >> Target;
 
-    for (LootRequest& lootRequest : Loot)
+    Loot.resize(Count);
+    for (uint32 i = 0; i < Count; ++i)
     {
-        _worldPacket >> lootRequest.Object;
-        _worldPacket >> lootRequest.LootListID;
+        _worldPacket >> Loot[i].Object;
+        _worldPacket >> Loot[i].LootListID;
     }
 }
 
@@ -170,11 +171,6 @@ WorldPacket const* LootList::Write()
     return &_worldPacket;
 }
 
-void SetLootSpecialization::Read()
-{
-    _worldPacket >> SpecID;
-}
-
 WorldPacket const* StartLootRoll::Write()
 {
     _worldPacket << LootObj;
@@ -239,7 +235,7 @@ WorldPacket const* LootRollsComplete::Write()
 WorldPacket const* MasterLootCandidateList::Write()
 {
     _worldPacket << LootObj;
-    _worldPacket << Size<uint32>(Players);
+    _worldPacket << uint32(Players.size());
     for (ObjectGuid const& player : Players)
         _worldPacket << player;
 

@@ -8,12 +8,22 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
+CollectSourceFiles(
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  PRIVATE_SOURCES
+  # Exclude
+  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
+
+if(USE_COREPCH)
+  set(PRIVATE_PCH_HEADER PrecompiledHeaders/gamePCH.h)
+endif()
+
 GroupSources(${CMAKE_CURRENT_SOURCE_DIR})
 
 CollectIncludeDirectories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   PUBLIC_INCLUDES
-  EXCLUDE
+  # Exclude
   ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
 
 # Provide an interface target for the game project to allow
@@ -27,15 +37,10 @@ target_include_directories(game-interface
 target_link_libraries(game-interface
   INTERFACE
     shared
-    mmaps_common)
+    Detour)
 
-add_library(game)
-
-CollectAndAddSourceFiles(
-  game
-  ${CMAKE_CURRENT_SOURCE_DIR}
-  EXCLUDE
-  ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders)
+add_library(game
+  ${PRIVATE_SOURCES})
 
 target_include_directories(game
   PRIVATE
@@ -44,14 +49,9 @@ target_include_directories(game
 target_link_libraries(game
   PRIVATE
     trinity-core-interface
+    efsw
   PUBLIC
     game-interface)
-
-if(TARGET efsw)
-  target_link_libraries(game
-    PRIVATE
-      efsw)
-endif()
 
 set_target_properties(game
   PROPERTIES
@@ -73,5 +73,5 @@ endif()
 
 # Generate precompiled header
 if(USE_COREPCH)
-  add_cxx_pch(game PrecompiledHeaders/gamePCH.h)
+  add_cxx_pch(game ${PRIVATE_PCH_HEADER})
 endif()

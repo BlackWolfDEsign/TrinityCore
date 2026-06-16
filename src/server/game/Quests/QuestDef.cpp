@@ -23,126 +23,112 @@
 #include "Log.h"
 #include "ObjectMgr.h"
 #include "Player.h"
-#include "QueryResult.h"
-#include "QueryResultStructured.h"
 #include "QuestPackets.h"
 #include "QuestPools.h"
 #include "SpellMgr.h"
 #include "World.h"
 #include "WorldSession.h"
 
-#define QUEST_TEMPLATE_FIELDS (ID)(QuestType)(QuestPackageID)(ContentTuningID)(QuestSortID)(QuestInfoID)(SuggestedGroupNum)(RewardNextQuest)(RewardXPDifficulty)\
-    (RewardXPMultiplier)(RewardMoneyDifficulty)(RewardMoneyMultiplier)(RewardBonusMoney)(RewardSpell)(RewardHonor)(RewardKillHonor)(RewardFavor)(StartItem)\
-    (RewardArtifactXPDifficulty)(RewardArtifactXPMultiplier)(RewardArtifactCategoryID)(Flags)(FlagsEx)(FlagsEx2)(FlagsEx3)\
-    (RewardItem1)(RewardAmount1)(ItemDrop1)(ItemDropQuantity1)(RewardItem2)(RewardAmount2)(ItemDrop2)(ItemDropQuantity2)\
-    (RewardItem3)(RewardAmount3)(ItemDrop3)(ItemDropQuantity3)(RewardItem4)(RewardAmount4)(ItemDrop4)(ItemDropQuantity4)\
-    (RewardChoiceItemID1)(RewardChoiceItemQuantity1)(RewardChoiceItemDisplayID1)(RewardChoiceItemID2)(RewardChoiceItemQuantity2)(RewardChoiceItemDisplayID2)\
-    (RewardChoiceItemID3)(RewardChoiceItemQuantity3)(RewardChoiceItemDisplayID3)(RewardChoiceItemID4)(RewardChoiceItemQuantity4)(RewardChoiceItemDisplayID4)\
-    (RewardChoiceItemID5)(RewardChoiceItemQuantity5)(RewardChoiceItemDisplayID5)(RewardChoiceItemID6)(RewardChoiceItemQuantity6)(RewardChoiceItemDisplayID6)\
-    (POIContinent)(POIx)(POIy)(POIPriority)(RewardTitle)(RewardArenaPoints)(RewardSkillLineID)(RewardNumSkillUps)\
-    (PortraitGiver)(PortraitGiverMount)(PortraitGiverModelSceneID)(PortraitTurnIn)(RewardFactionID1)(RewardFactionValue1)(RewardFactionOverride1)(RewardFactionCapIn1)\
-    (RewardFactionID2)(RewardFactionValue2)(RewardFactionOverride2)(RewardFactionCapIn2)(RewardFactionID3)(RewardFactionValue3)(RewardFactionOverride3)(RewardFactionCapIn3)\
-    (RewardFactionID4)(RewardFactionValue4)(RewardFactionOverride4)(RewardFactionCapIn4)(RewardFactionID5)(RewardFactionValue5)(RewardFactionOverride5)(RewardFactionCapIn5)\
-    (RewardFactionFlags)(RewardCurrencyID1)(RewardCurrencyQty1)(RewardCurrencyID2)(RewardCurrencyQty2)(RewardCurrencyID3)(RewardCurrencyQty3)\
-    (RewardCurrencyID4)(RewardCurrencyQty4)(AcceptedSoundKitID)(CompleteSoundKitID)(AreaGroupID)(TimeAllowed)(AllowableRaces)(ResetByScheduler)(Expansion)\
-    (ManagedWorldStateID)(QuestSessionBonus)(LogTitle)(LogDescription)(QuestDescription)(AreaDescription)(PortraitGiverText)(PortraitGiverName)\
-    (PortraitTurnInText)(PortraitTurnInName)(QuestCompletionLog)
-
-DEFINE_FIELD_ACCESSOR_CACHE(Quest::, QuestTemplateQueryResult, ResultSet, QUEST_TEMPLATE_FIELDS);
-
-Quest::Quest(QueryResult const& questRecord) : Quest(*questRecord)
+Quest::Quest(Field* questRecord)
 {
-}
+    _id = questRecord[0].GetUInt32();
+    _type = questRecord[1].GetUInt8();
+    _level = questRecord[2].GetInt32();
+    _scalingFactionGroup = questRecord[3].GetInt32();
+    _maxScalingLevel = questRecord[4].GetInt32();
+    _packageID = questRecord[5].GetUInt32();
+    _minLevel = questRecord[6].GetInt32();
+    _questSortID = questRecord[7].GetInt16();
+    _questInfoID = questRecord[8].GetUInt16();
+    _suggestedPlayers = questRecord[9].GetUInt8();
+    _nextQuestInChain = questRecord[10].GetUInt32();
+    _rewardXPDifficulty = questRecord[11].GetUInt32();
+    _rewardXPMultiplier = questRecord[12].GetFloat();
+    _rewardMoneyDifficulty = questRecord[13].GetUInt32();
+    _rewardMoneyMultiplier = questRecord[14].GetFloat();
+    _rewardBonusMoney = questRecord[15].GetUInt32();
+    _rewardSpell = questRecord[16].GetUInt32();
+    _rewardHonor = questRecord[17].GetUInt32();
+    _rewardKillHonor = questRecord[18].GetUInt32();
+    _sourceItemId = questRecord[19].GetUInt32();
+    _rewardArtifactXPDifficulty = questRecord[20].GetUInt32();
+    _rewardArtifactXPMultiplier = questRecord[21].GetFloat();
+    _rewardArtifactCategoryID = questRecord[22].GetUInt32();
+    _flags = questRecord[23].GetUInt32();
+    _flagsEx = questRecord[24].GetUInt32();
+    _flagsEx2 = questRecord[25].GetUInt32();
 
-Quest::Quest(QuestTemplateQueryResult const& questRecord) :
-    RewardItemId({ questRecord.RewardItem1().GetUInt32(), questRecord.RewardItem2().GetUInt32(),
-        questRecord.RewardItem3().GetUInt32(), questRecord.RewardItem4().GetUInt32() }),
-    RewardItemCount({ questRecord.RewardAmount1().GetUInt32(), questRecord.RewardAmount2().GetUInt32(),
-        questRecord.RewardAmount3().GetUInt32(), questRecord.RewardAmount4().GetUInt32() }),
-    ItemDrop({ questRecord.ItemDrop1().GetUInt32(), questRecord.ItemDrop2().GetUInt32(),
-        questRecord.ItemDrop3().GetUInt32(), questRecord.ItemDrop4().GetUInt32() }),
-    ItemDropQuantity({ questRecord.ItemDropQuantity1().GetUInt32(), questRecord.ItemDropQuantity2().GetUInt32(),
-        questRecord.ItemDropQuantity3().GetUInt32(), questRecord.ItemDropQuantity4().GetUInt32() }),
-    RewardChoiceItemId({ questRecord.RewardChoiceItemID1().GetUInt32(), questRecord.RewardChoiceItemID2().GetUInt32(),
-        questRecord.RewardChoiceItemID3().GetUInt32(), questRecord.RewardChoiceItemID4().GetUInt32(),
-        questRecord.RewardChoiceItemID5().GetUInt32(), questRecord.RewardChoiceItemID6().GetUInt32() }),
-    RewardChoiceItemCount({ questRecord.RewardChoiceItemQuantity1().GetUInt32(), questRecord.RewardChoiceItemQuantity2().GetUInt32(),
-        questRecord.RewardChoiceItemQuantity3().GetUInt32(), questRecord.RewardChoiceItemQuantity4().GetUInt32(),
-        questRecord.RewardChoiceItemQuantity5().GetUInt32(), questRecord.RewardChoiceItemQuantity6().GetUInt32() }),
-    RewardChoiceItemDisplayId({ questRecord.RewardChoiceItemDisplayID1().GetUInt32(), questRecord.RewardChoiceItemDisplayID2().GetUInt32(),
-        questRecord.RewardChoiceItemDisplayID3().GetUInt32(), questRecord.RewardChoiceItemDisplayID4().GetUInt32(),
-        questRecord.RewardChoiceItemDisplayID5().GetUInt32(), questRecord.RewardChoiceItemDisplayID6().GetUInt32() }),
-    RewardFactionId({ questRecord.RewardFactionID1().GetUInt32(), questRecord.RewardFactionID2().GetUInt32(),
-        questRecord.RewardFactionID3().GetUInt32(), questRecord.RewardFactionID4().GetUInt32(), questRecord.RewardFactionID5().GetUInt32() }),
-    RewardFactionValue({ questRecord.RewardFactionValue1().GetInt32(), questRecord.RewardFactionValue2().GetInt32(),
-        questRecord.RewardFactionValue3().GetInt32(), questRecord.RewardFactionValue4().GetInt32(), questRecord.RewardFactionValue5().GetInt32() }),
-    RewardFactionOverride({ questRecord.RewardFactionOverride1().GetInt32(), questRecord.RewardFactionOverride2().GetInt32(),
-        questRecord.RewardFactionOverride3().GetInt32(), questRecord.RewardFactionOverride4().GetInt32(), questRecord.RewardFactionOverride5().GetInt32() }),
-    RewardFactionCapIn({ questRecord.RewardFactionCapIn1().GetInt32(), questRecord.RewardFactionCapIn2().GetInt32(),
-        questRecord.RewardFactionCapIn3().GetInt32(), questRecord.RewardFactionCapIn4().GetInt32(), questRecord.RewardFactionCapIn5().GetInt32() }),
-    RewardCurrencyId({ questRecord.RewardCurrencyID1().GetUInt32(), questRecord.RewardCurrencyID2().GetUInt32(),
-        questRecord.RewardCurrencyID3().GetUInt32(), questRecord.RewardCurrencyID4().GetUInt32() }),
-    RewardCurrencyCount({ questRecord.RewardCurrencyQty1().GetUInt32(), questRecord.RewardCurrencyQty2().GetUInt32(),
-        questRecord.RewardCurrencyQty3().GetUInt32(), questRecord.RewardCurrencyQty4().GetUInt32() }),
-    _rewItemsCount(std::ranges::count_if(RewardItemId, [](uint32 itemId) { return itemId != 0; })),
-    _rewChoiceItemsCount(std::ranges::count_if(RewardChoiceItemId, [](uint32 itemId) { return itemId != 0; })),
-    _id(questRecord.ID().GetUInt32()),
-    _type(questRecord.QuestType().GetUInt8()),
-    _packageID(questRecord.QuestPackageID().GetUInt32()),
-    _contentTuningID(questRecord.ContentTuningID().GetInt32()),
-    _questSortID(questRecord.QuestSortID().GetInt16()),
-    _questInfoID(questRecord.QuestInfoID().GetUInt16()),
-    _suggestedPlayers(questRecord.SuggestedGroupNum().GetUInt8()),
-    _nextQuestInChain(questRecord.RewardNextQuest().GetUInt32()),
-    _rewardXPDifficulty(questRecord.RewardXPDifficulty().GetUInt32()),
-    _rewardXPMultiplier(questRecord.RewardXPMultiplier().GetFloat()),
-    _rewardMoneyDifficulty(questRecord.RewardMoneyDifficulty().GetUInt32()),
-    _rewardMoneyMultiplier(questRecord.RewardMoneyMultiplier().GetFloat()),
-    _rewardBonusMoney(questRecord.RewardBonusMoney().GetUInt32()),
-    _rewardSpell(questRecord.RewardSpell().GetUInt32()),
-    _rewardHonor(questRecord.RewardHonor().GetUInt32()),
-    _rewardKillHonor(questRecord.RewardKillHonor().GetUInt32()),
-    _rewardFavor(questRecord.RewardFavor().GetInt32()),
-    _rewardArtifactXPDifficulty(questRecord.RewardArtifactXPDifficulty().GetUInt32()),
-    _rewardArtifactXPMultiplier(questRecord.RewardArtifactXPMultiplier().GetFloat()),
-    _rewardArtifactCategoryID(questRecord.RewardArtifactCategoryID().GetUInt32()),
-    _sourceItemId(questRecord.StartItem().GetUInt32()),
-    _flags(questRecord.Flags().GetUInt32()),
-    _flagsEx(questRecord.FlagsEx().GetUInt32()),
-    _flagsEx2(questRecord.FlagsEx2().GetUInt32()),
-    _flagsEx3(questRecord.FlagsEx3().GetUInt32()),
-    _poiContinent(questRecord.POIContinent().GetUInt32()),
-    _poix(questRecord.POIx().GetFloat()),
-    _poiy(questRecord.POIy().GetFloat()),
-    _poiPriority(questRecord.POIPriority().GetUInt32()),
-    _rewardTitleId(questRecord.RewardTitle().GetUInt32()),
-    _rewardArenaPoints(questRecord.RewardArenaPoints().GetUInt32()),
-    _rewardSkillId(questRecord.RewardSkillLineID().GetUInt32()),
-    _rewardSkillPoints(questRecord.RewardNumSkillUps().GetUInt32()),
-    _questGiverPortrait(questRecord.PortraitGiver().GetUInt32()),
-    _questGiverPortraitMount(questRecord.PortraitGiverMount().GetUInt32()),
-    _questGiverPortraitModelSceneId(questRecord.PortraitGiverModelSceneID().GetInt32()),
-    _questTurnInPortrait(questRecord.PortraitTurnIn().GetUInt32()),
-    _rewardReputationMask(questRecord.RewardFactionFlags().GetUInt32()),
-    _soundAccept(questRecord.AcceptedSoundKitID().GetUInt32()),
-    _soundTurnIn(questRecord.CompleteSoundKitID().GetUInt32()),
-    _areaGroupID(questRecord.AreaGroupID().GetUInt32()),
-    _limitTime(questRecord.TimeAllowed().GetInt64()),
-    _allowableRaces({ .RawValue = advstd::bit_cast<std::array<int32, 2>>(questRecord.AllowableRaces().GetUInt64()) }),
-    _expansion(questRecord.Expansion().GetInt32()),
-    _managedWorldStateID(questRecord.ManagedWorldStateID().GetInt32()),
-    _questSessionBonus(questRecord.QuestSessionBonus().GetInt32()),
-    _logTitle(questRecord.LogTitle().GetStringView()),
-    _logDescription(questRecord.LogDescription().GetStringView()),
-    _questDescription(questRecord.QuestDescription().GetStringView()),
-    _areaDescription(questRecord.AreaDescription().GetStringView()),
-    _portraitGiverText(questRecord.PortraitGiverText().GetStringView()),
-    _portraitGiverName(questRecord.PortraitGiverName().GetStringView()),
-    _portraitTurnInText(questRecord.PortraitTurnInText().GetStringView()),
-    _portraitTurnInName(questRecord.PortraitTurnInName().GetStringView()),
-    _questCompletionLog(questRecord.QuestCompletionLog().GetStringView()),
-    _resetByScheduler(questRecord.ResetByScheduler().GetBool())
-{
+    for (uint32 i = 0; i < QUEST_ITEM_DROP_COUNT; ++i)
+    {
+        RewardItemId[i] = questRecord[26 + i * 4].GetUInt32();
+        RewardItemCount[i] = questRecord[27 + i * 4].GetUInt32();
+        ItemDrop[i] = questRecord[28 + i * 4].GetUInt32();
+        ItemDropQuantity[i] = questRecord[29 + i * 4].GetUInt32();
+
+        if (RewardItemId[i])
+            ++_rewItemsCount;
+    }
+
+    for (uint32 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
+    {
+        RewardChoiceItemId[i] = questRecord[42 + i * 3].GetUInt32();
+        RewardChoiceItemCount[i] = questRecord[43 + i * 3].GetUInt32();
+        RewardChoiceItemDisplayId[i] = questRecord[44 + i * 3].GetUInt32();
+
+        if (RewardChoiceItemId[i])
+            ++_rewChoiceItemsCount;
+    }
+
+    _poiContinent = questRecord[60].GetUInt32();
+    _poix = questRecord[61].GetFloat();
+    _poiy = questRecord[62].GetFloat();
+    _poiPriority = questRecord[63].GetUInt32();
+
+    _rewardTitleId = questRecord[64].GetUInt32();
+    _rewardArenaPoints = questRecord[65].GetUInt32();
+    _rewardSkillId = questRecord[66].GetUInt32();
+    _rewardSkillPoints = questRecord[67].GetUInt32();
+
+    _questGiverPortrait = questRecord[68].GetUInt32();
+    _questGiverPortraitMount = questRecord[69].GetUInt32();
+    _questGiverPortraitModelSceneId = questRecord[70].GetInt32();
+    _questTurnInPortrait = questRecord[71].GetUInt32();
+
+    for (uint32 i = 0; i < QUEST_REWARD_REPUTATIONS_COUNT; ++i)
+    {
+        RewardFactionId[i] = questRecord[72 + i * 4].GetUInt32();
+        RewardFactionValue[i] = questRecord[73 + i * 4].GetInt32();
+        RewardFactionOverride[i] = questRecord[74 + i * 4].GetInt32();
+        RewardFactionCapIn[i] = questRecord[75 + i * 4].GetInt32();
+    }
+
+    _rewardReputationMask = questRecord[92].GetUInt32();
+
+    for (uint32 i = 0; i < QUEST_REWARD_CURRENCY_COUNT; ++i)
+    {
+        RewardCurrencyId[i] = questRecord[93 + i * 2].GetUInt32();
+        RewardCurrencyCount[i] = questRecord[94 + i * 2].GetUInt32();
+
+        if (RewardCurrencyId[i])
+            ++_rewCurrencyCount;
+    }
+
+    _soundAccept = questRecord[101].GetUInt32();
+    _soundTurnIn = questRecord[102].GetUInt32();
+    _areaGroupID = questRecord[103].GetUInt32();
+    _limitTime = questRecord[104].GetInt64();
+    _allowableRaces.RawValue = questRecord[105].GetUInt64();
+    _expansion = questRecord[106].GetInt32();
+
+    _logTitle = questRecord[107].GetString();
+    _logDescription = questRecord[108].GetString();
+    _questDescription = questRecord[109].GetString();
+    _areaDescription = questRecord[110].GetString();
+    _portraitGiverText = questRecord[111].GetString();
+    _portraitGiverName = questRecord[112].GetString();
+    _portraitTurnInText = questRecord[113].GetString();
+    _portraitTurnInName = questRecord[114].GetString();
+    _questCompletionLog = questRecord[115].GetString();
 }
 
 Quest::~Quest()
@@ -153,9 +139,16 @@ Quest::~Quest()
 
 void Quest::LoadRewardDisplaySpell(Field* fields)
 {
-    uint32 spellId = fields[1].GetUInt32();
-    uint32 playerConditionId = fields[2].GetUInt32();
-    uint32 type = fields[3].GetUInt32();
+    uint32 idx = fields[1].GetUInt32();
+    uint32 spellId = fields[2].GetUInt32();
+    uint32 playerConditionId = fields[3].GetUInt32();
+    uint32 type = fields[4].GetUInt32();
+
+    if (idx >= QUEST_REWARD_DISPLAY_SPELL_COUNT)
+    {
+        TC_LOG_ERROR("sql.sql", "Table `quest_reward_display_spell` has an out of range Idx ({}) set for quest {} and spell {}. Skipped.", idx, fields[0].GetUInt32(), spellId);
+        return;
+    }
 
     if (!sSpellMgr->GetSpellInfo(spellId, DIFFICULTY_NONE))
     {
@@ -178,7 +171,7 @@ void Quest::LoadRewardDisplaySpell(Field* fields)
         type = AsUnderlyingType(QuestCompleteSpellType::LegacyBehavior);
     }
 
-    RewardDisplaySpell.emplace_back(spellId, playerConditionId, QuestCompleteSpellType(type));
+    RewardDisplaySpell[idx] = QuestRewardDisplaySpell(spellId, playerConditionId, QuestCompleteSpellType(type));
 }
 
 void Quest::LoadRewardChoiceItems(Field* fields)
@@ -217,7 +210,7 @@ void Quest::LoadQuestRequestItems(Field* fields)
 
     _emoteOnCompleteDelay = fields[3].GetUInt32();
     _emoteOnIncompleteDelay = fields[4].GetUInt32();
-    _requestItemsText = fields[5].GetStringView();
+    _requestItemsText = fields[5].GetString();
 }
 
 void Quest::LoadQuestOfferReward(Field* fields)
@@ -236,7 +229,7 @@ void Quest::LoadQuestOfferReward(Field* fields)
     for (uint32 i = 0; i < QUEST_EMOTE_COUNT; ++i)
         OfferRewardEmoteDelay[i] = fields[5 + i].GetUInt32();
 
-    _offerRewardText = fields[9].GetStringView();
+    _offerRewardText = fields[9].GetString();
 }
 
 void Quest::LoadQuestTemplateAddon(Field* fields)
@@ -258,7 +251,7 @@ void Quest::LoadQuestTemplateAddon(Field* fields)
     _requiredMaxRepValue = fields[15].GetInt32();
     _sourceItemIdCount = fields[16].GetUInt8();
     _specialFlags = fields[17].GetUInt8();
-    _scriptId = sObjectMgr->GetScriptId(fields[18].GetStringView());
+    _scriptId = sObjectMgr->GetScriptId(fields[18].GetString());
 
     if (_specialFlags & QUEST_SPECIAL_FLAGS_AUTO_ACCEPT)
         _flags |= QUEST_FLAGS_AUTO_ACCEPT;
@@ -278,23 +271,25 @@ void Quest::LoadQuestObjective(Field* fields)
     obj.StorageIndex = fields[3].GetInt8();
     obj.ObjectID = fields[4].GetInt32();
     obj.Amount = fields[5].GetInt32();
-    obj.ConditionalAmount = fields[6].GetInt32();
-    obj.Flags = fields[7].GetUInt32();
-    obj.Flags2 = fields[8].GetUInt32();
-    obj.ProgressBarWeight = fields[9].GetFloat();
-    obj.ParentObjectiveID = fields[10].GetInt32();
-    obj.Visible = fields[11].GetBool();
-    obj.Description = fields[12].GetStringView();
+    obj.Flags = fields[6].GetUInt32();
+    obj.Flags2 = fields[7].GetUInt32();
+    obj.ProgressBarWeight = fields[8].GetFloat();
+    obj.Description = fields[9].GetString();
 
-    bool hasCompletionEffect = std::any_of(fields + 13, fields + 18, [](Field const& f) { return !f.IsNull(); });
+    bool hasCompletionEffect = std::any_of(fields + 10, fields + 15, [](Field const& f) { return !f.IsNull(); });
     if (hasCompletionEffect)
     {
         obj.CompletionEffect = new QuestObjectiveAction();
-        obj.CompletionEffect->GameEventId = fields[13].GetUInt32OrNull();
-        obj.CompletionEffect->SpellId = fields[14].GetUInt32OrNull();
-        obj.CompletionEffect->ConversationId = fields[15].GetUInt32OrNull();
-        obj.CompletionEffect->UpdatePhaseShift = fields[16].GetBool();
-        obj.CompletionEffect->UpdateZoneAuras = fields[17].GetBool();
+        if (!fields[10].IsNull())
+            obj.CompletionEffect->GameEventId = fields[10].GetUInt32();
+        if (!fields[11].IsNull())
+            obj.CompletionEffect->SpellId = fields[11].GetUInt32();
+        if (!fields[12].IsNull())
+            obj.CompletionEffect->ConversationId = fields[12].GetUInt32();
+        if (!fields[13].IsNull())
+            obj.CompletionEffect->UpdatePhaseShift = fields[13].GetBool();
+        if (!fields[14].IsNull())
+            obj.CompletionEffect->UpdateZoneAuras = fields[14].GetBool();
     }
 
     _usedQuestObjectiveTypes[obj.Type] = true;
@@ -415,56 +410,32 @@ void Quest::LoadTreasurePickers(Field* fields)
     _treasurePickerID.push_back(fields[1].GetInt32());
 }
 
-void Quest::LoadRewardHouseRoom(Field* fields)
-{
-    _rewardHouseRoomIDs.push_back(fields[1].GetInt32());
-}
-
-void Quest::LoadRewardHouseDecor(Field* fields)
-{
-    _rewardHouseDecorIDs.push_back(fields[1].GetInt32());
-}
-
 uint32 Quest::XPValue(Player const* player) const
 {
-    return XPValue(player, GetContentTuningId(), _rewardXPDifficulty, _rewardXPMultiplier, _expansion);
+    return XPValue(player ? player->GetLevel() : 0, GetQuestLevelForPlayer(player), _level, _rewardXPDifficulty, _rewardXPMultiplier);
 }
 
-uint32 Quest::XPValue(Player const* player, uint32 contentTuningId, uint32 xpDifficulty, float xpMultiplier /*= 1.0f*/, int32 expansion /*= -1*/)
+uint32 Quest::XPValue(uint8 playerLevel, uint32 questLevel, int32 unscaledQuestLevel, uint32 xpDifficulty, float xpMultiplier /*= 1.0f*/)
 {
-    if (player)
+    QuestXPEntry const* questXp = sQuestXPStore.LookupEntry(questLevel);
+    if (!questXp || xpDifficulty >= 10)
+        return 0;
+
+    int32 diffFactor = 2 * (questLevel - (unscaledQuestLevel == -1 ? 0 : -5) - playerLevel) + 10;
+    if (diffFactor < 1)
+        diffFactor = 1;
+    else if (diffFactor > 10)
+        diffFactor = 10;
+
+    uint32 xp = RoundXPValue(diffFactor * questXp->Difficulty[xpDifficulty] * xpMultiplier / 10);
+
+    if (sWorld->getIntConfig(CONFIG_MIN_QUEST_SCALED_XP_RATIO))
     {
-        uint32 questLevel = player->GetQuestLevel(contentTuningId);
-        QuestXPEntry const* questXp = sQuestXPStore.LookupEntry(questLevel);
-        if (!questXp || xpDifficulty >= 10)
-            return 0;
-
-        uint32 xp = questXp->Difficulty[xpDifficulty];
-        if (ContentTuningEntry const* contentTuning = sContentTuningStore.LookupEntry(contentTuningId))
-            xp = xp * contentTuning->QuestXpMultiplier;
-
-        int32 diffFactor = 2 * (questLevel - player->GetLevel()) + 12;
-        if (diffFactor < 1)
-            diffFactor = 1;
-        else if (diffFactor > 10)
-            diffFactor = 10;
-
-        xp = diffFactor * xp * xpMultiplier / 10;
-        if (player->GetLevel() >= GetMaxLevelForExpansion(CURRENT_EXPANSION - 1) && player->GetSession()->GetExpansion() == CURRENT_EXPANSION && expansion >= 0 && expansion < CURRENT_EXPANSION)
-            xp = uint32(xp / 9.0f);
-
-        xp = RoundXPValue(xp);
-
-        if (sWorld->getIntConfig(CONFIG_MIN_QUEST_SCALED_XP_RATIO))
-        {
-            uint32 minScaledXP = RoundXPValue(questXp->Difficulty[xpDifficulty] * xpMultiplier) * sWorld->getIntConfig(CONFIG_MIN_QUEST_SCALED_XP_RATIO) / 100;
-            xp = std::max(minScaledXP, xp);
-        }
-
-        return xp;
+        uint32 minScaledXP = RoundXPValue(questXp->Difficulty[xpDifficulty] * xpMultiplier) * sWorld->getIntConfig(CONFIG_MIN_QUEST_SCALED_XP_RATIO) / 100;
+        xp = std::max(minScaledXP, xp);
     }
 
-    return 0;
+    return xp;
 }
 
 /*static*/ bool Quest::IsTakingQuestEnabled(uint32 questId)
@@ -475,27 +446,12 @@ uint32 Quest::XPValue(Player const* player, uint32 contentTuningId, uint32 xpDif
     return true;
 }
 
-uint32 Quest::MoneyValue(Player const* player) const
+uint32 Quest::GetMoneyReward(Player const* player) const
 {
-    if (QuestMoneyRewardEntry const* money = sQuestMoneyRewardStore.LookupEntry(player->GetQuestLevel(this)))
+    if (QuestMoneyRewardEntry const* money = sQuestMoneyRewardStore.LookupEntry(player ? GetQuestLevelForPlayer(player) : _level))
         return money->Difficulty[GetRewMoneyDifficulty()] * GetMoneyMultiplier();
     else
         return 0;
-}
-
-uint32 Quest::MaxMoneyValue() const
-{
-    uint32 value = 0;
-    if (Optional<ContentTuningLevels> questLevels = sDB2Manager.GetContentTuningData(GetContentTuningId(), {}))
-        if (QuestMoneyRewardEntry const* money = sQuestMoneyRewardStore.LookupEntry(questLevels->MaxLevel))
-            value = money->Difficulty[GetRewMoneyDifficulty()] * GetMoneyMultiplier();
-
-    return value;
-}
-
-uint32 Quest::GetMaxMoneyReward() const
-{
-    return MaxMoneyValue() * sWorld->getRate(RATE_MONEY_QUEST);
 }
 
 Optional<QuestTagType> Quest::GetQuestTag() const
@@ -522,6 +478,26 @@ bool Quest::IsMeta() const
     return false;
 }
 
+uint32 Quest::GetQuestLevelForPlayer(Player const* player) const
+{
+    if (_level != -1)
+        return static_cast<uint32>(_level);
+
+    int32 questLevel = _minLevel;
+    if (_level == -1 && _scalingFactionGroup != 0 && player->m_unitData->ScalingFactionGroup != _scalingFactionGroup)
+        questLevel = _maxScalingLevel;
+
+    int32 playerLevel = player->GetLevel();
+    if (playerLevel >= questLevel)
+    {
+        questLevel = playerLevel;
+        if (_maxScalingLevel < playerLevel)
+            return static_cast<uint32>(_maxScalingLevel);
+    }
+
+    return static_cast<uint32>(questLevel);
+}
+
 void Quest::BuildQuestRewards(WorldPackets::Quest::QuestRewards& rewards, Player* player) const
 {
     rewards.ChoiceItemCount         = GetRewChoiceItemsCount();
@@ -545,7 +521,7 @@ void Quest::BuildQuestRewards(WorldPackets::Quest::QuestRewards& rewards, Player
     rewards.SpellCompletionID       = GetRewSpell();
     rewards.SkillLineID             = GetRewardSkillId();
     rewards.NumSkillUps             = GetRewardSkillPoints();
-    rewards.TreasurePickerID        = GetTreasurePickerId();
+    //rewards.TreasurePickerID        = GetTreasurePickerId();
 
     for (uint32 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
     {
@@ -575,14 +551,19 @@ void Quest::BuildQuestRewards(WorldPackets::Quest::QuestRewards& rewards, Player
     }
 }
 
-uint32 Quest::GetRewMoneyMaxLevel() const
+uint32 Quest::GetRewMoneyMaxLevel(Player const* player /*= nullptr*/) const
 {
     // If Quest has flag to not give money on max level, it's 0
     if (HasFlag(QUEST_FLAGS_NO_MONEY_FOR_XP))
         return 0;
 
-    // Else, return the rewarded copper sum modified by the rate
-    return uint32(_rewardBonusMoney * sWorld->getRate(RATE_MONEY_MAX_LEVEL_QUEST));
+    uint32 maxQuestLevel = _level == -1 ? _maxScalingLevel : _level;
+
+    // Query initialization during startup does not provide a valid player so we just go for the expansion's max level
+    uint8 playerLevel = player ? player->GetLevel() : GetMaxLevelForExpansion(CURRENT_EXPANSION);
+
+    // The conversion rate is XP * 6 copper
+    return XPValue(playerLevel, maxQuestLevel, _level, _rewardXPDifficulty, _rewardXPMultiplier) * 6;
 }
 
 bool Quest::IsAutoAccept() const
@@ -650,8 +631,6 @@ bool Quest::CanIncreaseRewardedQuestCounters() const
 
 void Quest::InitializeQueryData()
 {
-    QueryData = std::make_unique<WorldPacket[]>(TOTAL_LOCALES);
-
     for (uint8 loc = LOCALE_enUS; loc < TOTAL_LOCALES; ++loc)
     {
         if (!sWorld->getBoolConfig(CONFIG_LOAD_LOCALES) && loc != DEFAULT_LOCALE)
@@ -677,18 +656,18 @@ WorldPacket Quest::BuildQueryData(LocaleConstant loc, Player* player) const
     response.Info.PortraitGiverName = GetPortraitGiverName();
     response.Info.PortraitTurnInText = GetPortraitTurnInText();
     response.Info.PortraitTurnInName = GetPortraitTurnInName();
-    std::ranges::transform(GetConditionalQuestDescription(), std::back_inserter(response.Info.ConditionalQuestDescription), [loc](QuestConditionalText const& text) -> WorldPackets::Quest::ConditionalQuestText
+    std::transform(GetConditionalQuestDescription().begin(), GetConditionalQuestDescription().end(), std::back_inserter(response.Info.ConditionalQuestDescription), [loc](QuestConditionalText const& text)
     {
         std::string_view content = text.Text[LOCALE_enUS];
         ObjectMgr::GetLocaleString(text.Text, loc, content);
-        return { .PlayerConditionID = text.PlayerConditionId, .QuestGiverCreatureID = text.QuestgiverCreatureId, .Text = content };
+        return WorldPackets::Quest::ConditionalQuestText { text.PlayerConditionId, text.QuestgiverCreatureId, content };
     });
 
-    std::ranges::transform(GetConditionalQuestCompletionLog(), std::back_inserter(response.Info.ConditionalQuestCompletionLog), [loc](QuestConditionalText const& text) -> WorldPackets::Quest::ConditionalQuestText
+    std::transform(GetConditionalQuestCompletionLog().begin(), GetConditionalQuestCompletionLog().end(), std::back_inserter(response.Info.ConditionalQuestCompletionLog), [loc](QuestConditionalText const& text)
     {
         std::string_view content = text.Text[LOCALE_enUS];
         ObjectMgr::GetLocaleString(text.Text, loc, content);
-        return { .PlayerConditionID = text.PlayerConditionId, .QuestGiverCreatureID = text.QuestgiverCreatureId, .Text = content };
+        return WorldPackets::Quest::ConditionalQuestText { text.PlayerConditionId, text.QuestgiverCreatureId, content };
     });
 
     if (loc != LOCALE_enUS)
@@ -709,8 +688,11 @@ WorldPacket Quest::BuildQueryData(LocaleConstant loc, Player* player) const
 
     response.Info.QuestID = GetQuestId();
     response.Info.QuestType = GetQuestType();
-    response.Info.ContentTuningID = GetContentTuningId();
+    response.Info.QuestLevel = GetQuestLevel();
+    response.Info.QuestScalingFactionGroup = GetQuestScalingFactionGroup();
+    response.Info.QuestMaxScalingLevel = GetQuestMaxScalingLevel();
     response.Info.QuestPackageID = GetQuestPackageID();
+    response.Info.QuestMinLevel = GetQuestMinLevel();
     response.Info.QuestSortID = GetZoneOrSort();
     response.Info.QuestInfoID = GetQuestInfoID();
     response.Info.SuggestedGroupNum = GetSuggestedPlayers();
@@ -719,25 +701,19 @@ WorldPacket Quest::BuildQueryData(LocaleConstant loc, Player* player) const
     response.Info.RewardXPMultiplier = GetXPMultiplier();
 
     if (!HasFlag(QUEST_FLAGS_HIDE_REWARD))
-        response.Info.RewardMoney = player ? player->GetQuestMoneyReward(this) : GetMaxMoneyReward();
+        response.Info.RewardMoney = GetMoneyReward(player);
 
     response.Info.RewardMoneyDifficulty = GetRewMoneyDifficulty();
     response.Info.RewardMoneyMultiplier = GetMoneyMultiplier();
-    response.Info.RewardBonusMoney = GetRewMoneyMaxLevel();
-    for (QuestRewardDisplaySpell displaySpell : RewardDisplaySpell)
-    {
-        WorldPackets::Quest::QuestCompleteDisplaySpell& rewardDisplaySpell = response.Info.RewardDisplaySpell.emplace_back();
-        rewardDisplaySpell.SpellID = displaySpell.SpellId;
-        rewardDisplaySpell.PlayerConditionID = displaySpell.PlayerConditionId;
-        rewardDisplaySpell.Type = int32(displaySpell.Type);
-    }
+    response.Info.RewardBonusMoney = GetRewMoneyMaxLevel(player);
+
+    for (uint8 i = 0; i < QUEST_REWARD_DISPLAY_SPELL_COUNT; ++i)
+        response.Info.RewardDisplaySpell[i] = RewardDisplaySpell[i].SpellId;
 
     response.Info.RewardSpell = GetRewSpell();
 
     response.Info.RewardHonor = GetRewHonor();
     response.Info.RewardKillHonor = GetRewKillHonor();
-
-    response.Info.RewardFavor = GetRewardFavor();
 
     response.Info.RewardArtifactXPDifficulty = GetArtifactXPDifficulty();
     response.Info.RewardArtifactXPMultiplier = GetArtifactXPMultiplier();
@@ -747,7 +723,6 @@ WorldPacket Quest::BuildQueryData(LocaleConstant loc, Player* player) const
     response.Info.Flags = GetFlags();
     response.Info.FlagsEx = GetFlagsEx();
     response.Info.FlagsEx2 = GetFlagsEx2();
-    response.Info.FlagsEx3 = GetFlagsEx3();
     response.Info.RewardTitle = GetRewTitle();
     response.Info.RewardArenaPoints = GetRewArenaPoints();
     response.Info.RewardSkillLineID = GetRewardSkillId();
@@ -794,37 +769,16 @@ WorldPacket Quest::BuildQueryData(LocaleConstant loc, Player* player) const
     response.Info.AllowableRaces = GetAllowableRaces();
     response.Info.TreasurePickerID = GetTreasurePickerId();
     response.Info.Expansion = GetExpansion();
-    response.Info.ManagedWorldStateID = GetManagedWorldStateId();
-    response.Info.QuestSessionBonus = 0; //GetQuestSessionBonus(); // this is only sent while quest session is active
     response.Info.QuestGiverCreatureID = 0; // only sent during npc interaction
-    response.Info.RewardHouseRoomIDs = GetRewardHouseRoomIds();
-    response.Info.RewardHouseDecorIDs = GetRewardRewardHouseDecorIds();
 
-    response.Info.Objectives.resize(GetObjectives().size());
-    for (std::size_t i = 0; i < GetObjectives().size(); ++i)
+    for (QuestObjective const& questObjective : GetObjectives())
     {
-        QuestObjective const& questObjective = GetObjectives()[i];
-        WorldPackets::Quest::QuestInfoObjective& responseObjective = response.Info.Objectives[i];
-
-        responseObjective.ID = questObjective.ID;
-        responseObjective.QuestID = questObjective.QuestID;
-        responseObjective.Type = questObjective.Type;
-        responseObjective.StorageIndex = questObjective.StorageIndex;
-        responseObjective.ObjectID = questObjective.ObjectID;
-        responseObjective.Amount = questObjective.Amount;
-        responseObjective.ConditionalAmount = questObjective.ConditionalAmount;
-        responseObjective.Flags = questObjective.Flags;
-        responseObjective.Flags2 = questObjective.Flags2;
-        responseObjective.ProgressBarWeight = questObjective.ProgressBarWeight;
-        responseObjective.ParentObjectiveID = questObjective.ParentObjectiveID;
-        responseObjective.Visible = questObjective.Visible;
-        responseObjective.Description = questObjective.Description;
-        responseObjective.VisualEffects = questObjective.VisualEffects;
+        response.Info.Objectives.push_back(questObjective);
 
         if (loc != LOCALE_enUS)
         {
             if (QuestObjectivesLocale const* questObjectivesLocale = sObjectMgr->GetQuestObjectivesLocale(questObjective.ID))
-                ObjectMgr::GetLocaleString(questObjectivesLocale->Description, loc, responseObjective.Description);
+                ObjectMgr::GetLocaleString(questObjectivesLocale->Description, loc, response.Info.Objectives.back().Description);
         }
     }
 
@@ -838,7 +792,6 @@ WorldPacket Quest::BuildQueryData(LocaleConstant loc, Player* player) const
     response.Info.CompleteSoundKitID = GetSoundTurnIn();
     response.Info.AreaGroupID = GetAreaGroupID();
     response.Info.TimeAllowed = GetLimitTime();
-    response.Info.ResetByScheduler = IsResetByScheduler();
 
     response.Write();
     response.ShrinkToFit();

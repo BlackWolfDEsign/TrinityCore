@@ -15,20 +15,15 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_PARTY_PACKETS_H
-#define TRINITYCORE_PARTY_PACKETS_H
+#ifndef PartyPackets_h__
+#define PartyPackets_h__
 
 #include "Packet.h"
 #include "AuthenticationPackets.h"
 #include "ObjectGuid.h"
+#include "Group.h"
 #include "MythicPlusPacketsCommon.h"
 #include "Optional.h"
-#include "Position.h"
-
-class Player;
-struct RaidMarker;
-enum class PingSubjectType : uint8;
-enum class RestrictPingsTo : int32;
 
 namespace WorldPackets
 {
@@ -37,7 +32,7 @@ namespace WorldPackets
         class PartyCommandResult final : public ServerPacket
         {
         public:
-            explicit PartyCommandResult() : ServerPacket(SMSG_PARTY_COMMAND_RESULT, 23) { }
+            PartyCommandResult() : ServerPacket(SMSG_PARTY_COMMAND_RESULT, 23) { }
 
             WorldPacket const* Write() override;
 
@@ -51,7 +46,7 @@ namespace WorldPackets
         class PartyInviteClient final : public ClientPacket
         {
         public:
-            explicit PartyInviteClient(WorldPacket&& packet) : ClientPacket(CMSG_PARTY_INVITE, std::move(packet)) { }
+            PartyInviteClient(WorldPacket&& packet) : ClientPacket(CMSG_PARTY_INVITE, std::move(packet)) { }
 
             void Read() override;
 
@@ -65,17 +60,18 @@ namespace WorldPackets
         class PartyInvite final : public ServerPacket
         {
         public:
-            explicit PartyInvite() : ServerPacket(SMSG_PARTY_INVITE, 55) { }
+            PartyInvite() : ServerPacket(SMSG_PARTY_INVITE, 55) { }
 
             WorldPacket const* Write() override;
 
             void Initialize(Player const* inviter, int32 proposedRoles, bool canAccept);
 
-            bool ShouldSquelch = false;
+            bool MightCRZYou = false;
+            bool MustBeBNetFriend = false;
             bool AllowMultipleRoles = false;
             bool QuestSessionActive = false;
-            bool IsCrossFaction = false;
-            uint16 InviterCfgRealmID = 0;
+            bool Unused440 = false;
+            uint16 Unk1 = 0;
 
             bool CanAccept = false;
 
@@ -87,7 +83,6 @@ namespace WorldPackets
 
             // Realm
             bool IsXRealm = false;
-            bool IsXNativeRealm = false;
 
             // Lfg
             uint8 ProposedRoles = 0;
@@ -98,7 +93,7 @@ namespace WorldPackets
         class PartyInviteResponse final : public ClientPacket
         {
         public:
-            explicit PartyInviteResponse(WorldPacket&& packet) : ClientPacket(CMSG_PARTY_INVITE_RESPONSE, std::move(packet)) { }
+            PartyInviteResponse(WorldPacket&& packet) : ClientPacket(CMSG_PARTY_INVITE_RESPONSE, std::move(packet)) { }
 
             void Read() override;
 
@@ -110,7 +105,7 @@ namespace WorldPackets
         class PartyUninvite final : public ClientPacket
         {
         public:
-            explicit PartyUninvite(WorldPacket&& packet) : ClientPacket(CMSG_PARTY_UNINVITE, std::move(packet)) { }
+            PartyUninvite(WorldPacket&& packet) : ClientPacket(CMSG_PARTY_UNINVITE, std::move(packet)) { }
 
             void Read() override;
 
@@ -122,7 +117,7 @@ namespace WorldPackets
         class GroupDecline final : public ServerPacket
         {
         public:
-            explicit GroupDecline(std::string const& name) : ServerPacket(SMSG_GROUP_DECLINE, 2 + name.size()), Name(name) { }
+            GroupDecline(std::string const& name) : ServerPacket(SMSG_GROUP_DECLINE, 2 + name.size()), Name(name) { }
 
             WorldPacket const* Write() override;
 
@@ -132,22 +127,20 @@ namespace WorldPackets
         class GroupUninvite final : public ServerPacket
         {
         public:
-            explicit GroupUninvite() : ServerPacket(SMSG_GROUP_UNINVITE, 1) { }
+            GroupUninvite() : ServerPacket(SMSG_GROUP_UNINVITE, 0) { }
 
-            WorldPacket const* Write() override;
-
-            uint8 Reason = 0;
+            WorldPacket const* Write() override { return &_worldPacket; }
         };
 
         class RequestPartyMemberStats final : public ClientPacket
         {
         public:
-            explicit RequestPartyMemberStats(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_PARTY_MEMBER_STATS, std::move(packet)) { }
+            RequestPartyMemberStats(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_PARTY_MEMBER_STATS, std::move(packet)) { }
 
             void Read() override;
 
             Optional<uint8> PartyIndex;
-            Array<ObjectGuid, 40> Targets;
+            ObjectGuid TargetGUID;
         };
 
         struct PartyMemberPhase
@@ -185,15 +178,15 @@ namespace WorldPackets
 
         struct CTROptions
         {
-            std::span<uint32 const> ConditionalFlags;
-            int8 FactionGroup = 0;
-            uint32 ChromieTimeExpansionMask = 0;
+            uint32 ContentTuningConditionMask = 0;
+            int32 Unused901 = 0;
+            uint32 ExpansionLevelMask = 0;
         };
 
         struct PartyMemberStats
         {
             uint16 Level = 0;
-            uint32 Status = 0;
+            uint16 Status = 0;
 
             int32 CurrentHealth = 0;
             int32 MaxHealth = 0;
@@ -220,14 +213,12 @@ namespace WorldPackets
             int8 PartyType[2] = { };
 
             CTROptions ChromieTime;
-
-            MythicPlus::DungeonScoreSummary DungeonScore;
         };
 
         class PartyMemberFullState final : public ServerPacket
         {
         public:
-            explicit PartyMemberFullState() : ServerPacket(SMSG_PARTY_MEMBER_FULL_STATE, 80) { }
+            PartyMemberFullState() : ServerPacket(SMSG_PARTY_MEMBER_FULL_STATE, 80) { }
 
             WorldPacket const* Write() override;
             void Initialize(Player const* player);
@@ -240,7 +231,7 @@ namespace WorldPackets
         class SetPartyLeader final : public ClientPacket
         {
         public:
-            explicit SetPartyLeader(WorldPacket&& packet) : ClientPacket(CMSG_SET_PARTY_LEADER, std::move(packet)) { }
+            SetPartyLeader(WorldPacket&& packet) : ClientPacket(CMSG_SET_PARTY_LEADER, std::move(packet)) { }
 
             void Read() override;
 
@@ -251,7 +242,7 @@ namespace WorldPackets
         class SetRole final : public ClientPacket
         {
         public:
-            explicit SetRole(WorldPacket&& packet) : ClientPacket(CMSG_SET_ROLE, std::move(packet)) { }
+            SetRole(WorldPacket&& packet) : ClientPacket(CMSG_SET_ROLE, std::move(packet)) { }
 
             void Read() override;
 
@@ -263,7 +254,7 @@ namespace WorldPackets
         class RoleChangedInform final : public ServerPacket
         {
         public:
-            explicit RoleChangedInform() : ServerPacket(SMSG_ROLE_CHANGED_INFORM, 41) { }
+            RoleChangedInform() : ServerPacket(SMSG_ROLE_CHANGED_INFORM, 41) { }
 
             WorldPacket const* Write() override;
 
@@ -277,7 +268,7 @@ namespace WorldPackets
         class LeaveGroup final : public ClientPacket
         {
         public:
-            explicit LeaveGroup(WorldPacket&& packet) : ClientPacket(CMSG_LEAVE_GROUP, std::move(packet)) { }
+            LeaveGroup(WorldPacket&& packet) : ClientPacket(CMSG_LEAVE_GROUP, std::move(packet)) { }
 
             void Read() override;
 
@@ -287,7 +278,7 @@ namespace WorldPackets
         class SetLootMethod final : public ClientPacket
         {
         public:
-            explicit SetLootMethod(WorldPacket&& packet) : ClientPacket(CMSG_SET_LOOT_METHOD, std::move(packet)) { }
+            SetLootMethod(WorldPacket&& packet) : ClientPacket(CMSG_SET_LOOT_METHOD, std::move(packet)) { }
 
             void Read() override;
 
@@ -300,7 +291,7 @@ namespace WorldPackets
         class MinimapPingClient final : public ClientPacket
         {
         public:
-            explicit MinimapPingClient(WorldPacket&& packet) : ClientPacket(CMSG_MINIMAP_PING, std::move(packet)) { }
+            MinimapPingClient(WorldPacket&& packet) : ClientPacket(CMSG_MINIMAP_PING, std::move(packet)) { }
 
             void Read() override;
 
@@ -312,7 +303,7 @@ namespace WorldPackets
         class MinimapPing final : public ServerPacket
         {
         public:
-            explicit MinimapPing() : ServerPacket(SMSG_MINIMAP_PING, 24) { }
+            MinimapPing() : ServerPacket(SMSG_MINIMAP_PING, 24) { }
 
             WorldPacket const* Write() override;
 
@@ -324,7 +315,7 @@ namespace WorldPackets
         class UpdateRaidTarget final : public ClientPacket
         {
         public:
-            explicit UpdateRaidTarget(WorldPacket&& packet) : ClientPacket(CMSG_UPDATE_RAID_TARGET, std::move(packet)) { }
+            UpdateRaidTarget(WorldPacket&& packet) : ClientPacket(CMSG_UPDATE_RAID_TARGET, std::move(packet)) { }
 
             void Read() override;
 
@@ -336,7 +327,7 @@ namespace WorldPackets
         class SendRaidTargetUpdateSingle final : public ServerPacket
         {
         public:
-            explicit SendRaidTargetUpdateSingle() : ServerPacket(SMSG_SEND_RAID_TARGET_UPDATE_SINGLE, 34) { }
+            SendRaidTargetUpdateSingle() : ServerPacket(SMSG_SEND_RAID_TARGET_UPDATE_SINGLE, 34) { }
 
             WorldPacket const* Write() override;
 
@@ -349,18 +340,18 @@ namespace WorldPackets
         class SendRaidTargetUpdateAll final : public ServerPacket
         {
         public:
-            explicit SendRaidTargetUpdateAll() : ServerPacket(SMSG_SEND_RAID_TARGET_UPDATE_ALL, 1 + 8 * (1 + 16)) { }
+            SendRaidTargetUpdateAll() : ServerPacket(SMSG_SEND_RAID_TARGET_UPDATE_ALL, 1 + TARGET_ICONS_COUNT * (1 + 16)) { }
 
             WorldPacket const* Write() override;
 
             uint8 PartyIndex = 0;
-            std::vector<std::pair<uint8, ObjectGuid>> TargetIcons;
+            std::map<uint8, ObjectGuid> TargetIcons;
         };
 
         class ConvertRaid final : public ClientPacket
         {
         public:
-            explicit ConvertRaid(WorldPacket&& packet) : ClientPacket(CMSG_CONVERT_RAID, std::move(packet)) { }
+            ConvertRaid(WorldPacket&& packet) : ClientPacket(CMSG_CONVERT_RAID, std::move(packet)) { }
 
             void Read() override;
 
@@ -370,7 +361,7 @@ namespace WorldPackets
         class RequestPartyJoinUpdates final : public ClientPacket
         {
         public:
-            explicit RequestPartyJoinUpdates(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_PARTY_JOIN_UPDATES, std::move(packet)) { }
+            RequestPartyJoinUpdates(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_PARTY_JOIN_UPDATES, std::move(packet)) { }
 
             void Read() override;
 
@@ -380,7 +371,7 @@ namespace WorldPackets
         class SetAssistantLeader final : public ClientPacket
         {
         public:
-            explicit SetAssistantLeader(WorldPacket&& packet) : ClientPacket(CMSG_SET_ASSISTANT_LEADER, std::move(packet)) { }
+            SetAssistantLeader(WorldPacket&& packet) : ClientPacket(CMSG_SET_ASSISTANT_LEADER, std::move(packet)) { }
 
             void Read() override;
 
@@ -392,10 +383,10 @@ namespace WorldPackets
         class SetPartyAssignment final : public ClientPacket
         {
         public:
-            explicit SetPartyAssignment(WorldPacket&& packet) : ClientPacket(CMSG_SET_PARTY_ASSIGNMENT, std::move(packet)) { }
+            SetPartyAssignment(WorldPacket&& packet) : ClientPacket(CMSG_SET_PARTY_ASSIGNMENT, std::move(packet)) { }
 
             void Read() override;
-            int32 Assignment = 0;
+            uint8 Assignment = 0;
             Optional<uint8> PartyIndex;
             ObjectGuid Target;
             bool Set = false;
@@ -404,7 +395,7 @@ namespace WorldPackets
         class DoReadyCheck final : public ClientPacket
         {
         public:
-            explicit DoReadyCheck(WorldPacket&& packet) : ClientPacket(CMSG_DO_READY_CHECK, std::move(packet)) { }
+            DoReadyCheck(WorldPacket&& packet) : ClientPacket(CMSG_DO_READY_CHECK, std::move(packet)) { }
 
             void Read() override;
 
@@ -414,7 +405,7 @@ namespace WorldPackets
         class ReadyCheckStarted final : public ServerPacket
         {
         public:
-            explicit ReadyCheckStarted() : ServerPacket(SMSG_READY_CHECK_STARTED, 37) { }
+            ReadyCheckStarted() : ServerPacket(SMSG_READY_CHECK_STARTED, 37) { }
 
             WorldPacket const* Write() override;
 
@@ -427,7 +418,7 @@ namespace WorldPackets
         class ReadyCheckResponseClient final : public ClientPacket
         {
         public:
-            explicit ReadyCheckResponseClient(WorldPacket&& packet) : ClientPacket(CMSG_READY_CHECK_RESPONSE, std::move(packet)) { }
+            ReadyCheckResponseClient(WorldPacket&& packet) : ClientPacket(CMSG_READY_CHECK_RESPONSE, std::move(packet)) { }
 
             void Read() override;
 
@@ -438,7 +429,7 @@ namespace WorldPackets
         class ReadyCheckResponse final : public ServerPacket
         {
         public:
-            explicit ReadyCheckResponse() : ServerPacket(SMSG_READY_CHECK_RESPONSE, 19) { }
+            ReadyCheckResponse() : ServerPacket(SMSG_READY_CHECK_RESPONSE, 19) { }
 
             WorldPacket const* Write() override;
 
@@ -450,7 +441,7 @@ namespace WorldPackets
         class ReadyCheckCompleted final : public ServerPacket
         {
         public:
-            explicit ReadyCheckCompleted() : ServerPacket(SMSG_READY_CHECK_COMPLETED, 17) { }
+            ReadyCheckCompleted() : ServerPacket(SMSG_READY_CHECK_COMPLETED, 17) { }
 
             WorldPacket const* Write() override;
 
@@ -461,7 +452,7 @@ namespace WorldPackets
         class RequestRaidInfo final : public ClientPacket
         {
         public:
-            explicit RequestRaidInfo(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_RAID_INFO, std::move(packet)) { }
+            RequestRaidInfo(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_RAID_INFO, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -469,7 +460,7 @@ namespace WorldPackets
         class OptOutOfLoot final : public ClientPacket
         {
         public:
-            explicit OptOutOfLoot(WorldPacket&& packet) : ClientPacket(CMSG_OPT_OUT_OF_LOOT, std::move(packet)) { }
+            OptOutOfLoot(WorldPacket&& packet) : ClientPacket(CMSG_OPT_OUT_OF_LOOT, std::move(packet)) { }
 
             void Read() override;
 
@@ -479,7 +470,7 @@ namespace WorldPackets
         class InitiateRolePoll final : public ClientPacket
         {
         public:
-            explicit InitiateRolePoll(WorldPacket&& packet) : ClientPacket(CMSG_INITIATE_ROLE_POLL, std::move(packet)) { }
+            InitiateRolePoll(WorldPacket&& packet) : ClientPacket(CMSG_INITIATE_ROLE_POLL, std::move(packet)) { }
 
             void Read() override;
 
@@ -489,7 +480,7 @@ namespace WorldPackets
         class RolePollInform final : public ServerPacket
         {
         public:
-            explicit RolePollInform() : ServerPacket(SMSG_ROLE_POLL_INFORM, 17) { }
+            RolePollInform() : ServerPacket(SMSG_ROLE_POLL_INFORM, 17) { }
 
             WorldPacket const* Write() override;
 
@@ -500,7 +491,7 @@ namespace WorldPackets
         class GroupNewLeader final : public ServerPacket
         {
         public:
-            explicit GroupNewLeader() : ServerPacket(SMSG_GROUP_NEW_LEADER, 14) { }
+            GroupNewLeader() : ServerPacket(SMSG_GROUP_NEW_LEADER, 14) { }
 
             WorldPacket const* Write() override;
 
@@ -508,26 +499,11 @@ namespace WorldPackets
             std::string Name;
         };
 
-        struct LeaverInfo
-        {
-            ObjectGuid BnetAccountGUID;
-            float LeaveScore = 0.0f;
-            uint32 SeasonID = 0;
-            uint32 TotalLeaves = 0;
-            uint32 TotalSuccesses = 0;
-            int32 ConsecutiveSuccesses = 0;
-            Timestamp<> LastPenaltyTime;
-            Timestamp<> LeaverExpirationTime;
-            int32 Unknown_1120 = 0;
-            bool LeaverStatus = false;
-        };
-
         struct PartyPlayerInfo
         {
             ObjectGuid GUID;
             std::string Name;
             std::string VoiceStateID;   // same as bgs.protocol.club.v1.MemberVoiceState.id
-            LeaverInfo Leaver;
             uint8 Class = 0u;
             uint8 Subgroup = 0u;
             uint8 Flags = 0u;
@@ -540,15 +516,15 @@ namespace WorldPackets
 
         struct PartyLFGInfo
         {
-            uint32 Slot = 0;
             uint8 MyFlags = 0;
+            uint32 Slot = 0;
+            uint8 BootCount = 0;
             uint32 MyRandomSlot = 0;
+            bool Aborted = false;
             uint8 MyPartialClear = 0;
             float MyGearDiff = 0.0f;
             uint8 MyStrangerCount = 0;
             uint8 MyKickVoteCount = 0;
-            uint8 BootCount = 0;
-            bool Aborted = false;
             bool MyFirstReward = false;
         };
 
@@ -561,29 +537,15 @@ namespace WorldPackets
 
         struct PartyDifficultySettings
         {
-            int16 DungeonDifficultyID = 0u;
-            int16 RaidDifficultyID = 0u;
-            int16 LegacyRaidDifficultyID = 0u;
-        };
-
-        struct ChallengeModeData
-        {
-            int32 MapID = 0;
-            int32 InitialPlayerCount = 0;
-            uint64 InstanceID = 0;
-            Timestamp<> StartTime;
-            ObjectGuid KeystoneOwnerGUID;
-            ObjectGuid LeaverGUID;
-            Duration<Milliseconds> InstanceAbandonVoteCooldown;
-            bool IsActive = false;
-            bool HasRestrictions = false;
-            bool CanVoteAbandon = false;
+            uint32 DungeonDifficultyID = 0u;
+            uint32 RaidDifficultyID = 0u;
+            uint32 LegacyRaidDifficultyID = 0u;
         };
 
         class PartyUpdate final : public ServerPacket
         {
         public:
-            explicit PartyUpdate() : ServerPacket(SMSG_PARTY_UPDATE, 200) { }
+            PartyUpdate() : ServerPacket(SMSG_PARTY_UPDATE, 200) { }
 
             WorldPacket const* Write() override;
 
@@ -598,11 +560,10 @@ namespace WorldPackets
             int32 MyIndex = 0;
             int32 SequenceNum = 0;
 
-            RestrictPingsTo PingRestriction = { };
+            RestrictPingsTo PingRestriction = RestrictPingsTo::None;
 
             std::vector<PartyPlayerInfo> PlayerList;
 
-            Optional<ChallengeModeData> ChallengeMode;
             Optional<PartyLFGInfo> LfgInfos;
             Optional<PartyLootSettings> LootSettings;
             Optional<PartyDifficultySettings> DifficultySettings;
@@ -611,7 +572,7 @@ namespace WorldPackets
         class SetEveryoneIsAssistant final : public ClientPacket
         {
         public:
-            explicit SetEveryoneIsAssistant(WorldPacket&& packet) : ClientPacket(CMSG_SET_EVERYONE_IS_ASSISTANT, std::move(packet)) { }
+            SetEveryoneIsAssistant(WorldPacket&& packet) : ClientPacket(CMSG_SET_EVERYONE_IS_ASSISTANT, std::move(packet)) { }
 
             void Read() override;
 
@@ -622,7 +583,7 @@ namespace WorldPackets
         class ChangeSubGroup final : public ClientPacket
         {
         public:
-            explicit ChangeSubGroup(WorldPacket&& packet) : ClientPacket(CMSG_CHANGE_SUB_GROUP, std::move(packet)) { }
+            ChangeSubGroup(WorldPacket&& packet) : ClientPacket(CMSG_CHANGE_SUB_GROUP, std::move(packet)) { }
 
             void Read() override;
 
@@ -634,7 +595,7 @@ namespace WorldPackets
         class SwapSubGroups final : public ClientPacket
         {
         public:
-            explicit SwapSubGroups(WorldPacket&& packet) : ClientPacket(CMSG_SWAP_SUB_GROUPS, std::move(packet)) { }
+            SwapSubGroups(WorldPacket&& packet) : ClientPacket(CMSG_SWAP_SUB_GROUPS, std::move(packet)) { }
 
             void Read() override;
 
@@ -646,7 +607,7 @@ namespace WorldPackets
         class ClearRaidMarker final : public ClientPacket
         {
         public:
-            explicit ClearRaidMarker(WorldPacket&& packet) : ClientPacket(CMSG_CLEAR_RAID_MARKER, std::move(packet)) { }
+            ClearRaidMarker(WorldPacket&& packet) : ClientPacket(CMSG_CLEAR_RAID_MARKER, std::move(packet)) { }
 
             void Read() override;
 
@@ -656,7 +617,7 @@ namespace WorldPackets
         class RaidMarkersChanged final : public ServerPacket
         {
         public:
-            explicit RaidMarkersChanged() : ServerPacket(SMSG_RAID_MARKERS_CHANGED, 6) { }
+            RaidMarkersChanged() : ServerPacket(SMSG_RAID_MARKERS_CHANGED, 6) { }
 
             WorldPacket const* Write() override;
 
@@ -669,7 +630,7 @@ namespace WorldPackets
         class PartyKillLog final : public ServerPacket
         {
         public:
-            explicit PartyKillLog() : ServerPacket(SMSG_PARTY_KILL_LOG, 2 * 16) { }
+            PartyKillLog() : ServerPacket(SMSG_PARTY_KILL_LOG, 2 * 16) { }
 
             WorldPacket const* Write() override;
 
@@ -680,7 +641,7 @@ namespace WorldPackets
         class GroupDestroyed final : public ServerPacket
         {
         public:
-            explicit GroupDestroyed() : ServerPacket(SMSG_GROUP_DESTROYED, 0) { }
+            GroupDestroyed() : ServerPacket(SMSG_GROUP_DESTROYED, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -688,7 +649,7 @@ namespace WorldPackets
         class BroadcastSummonCast final : public ServerPacket
         {
         public:
-            explicit BroadcastSummonCast() : ServerPacket(SMSG_BROADCAST_SUMMON_CAST, 16) { }
+            BroadcastSummonCast() : ServerPacket(SMSG_BROADCAST_SUMMON_CAST, 16) { }
 
             WorldPacket const* Write() override;
 
@@ -698,7 +659,7 @@ namespace WorldPackets
         class BroadcastSummonResponse final : public ServerPacket
         {
         public:
-            explicit BroadcastSummonResponse() : ServerPacket(SMSG_BROADCAST_SUMMON_RESPONSE, 16 + 1) { }
+            BroadcastSummonResponse() : ServerPacket(SMSG_BROADCAST_SUMMON_RESPONSE, 16 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -706,85 +667,37 @@ namespace WorldPackets
             bool Accepted = false;
         };
 
-        class SetRestrictPingsToAssistants final : public ClientPacket
-        {
-        public:
-            explicit SetRestrictPingsToAssistants(WorldPacket&& packet) : ClientPacket(CMSG_SET_RESTRICT_PINGS_TO_ASSISTANTS, std::move(packet)) { }
-
-            void Read() override;
-
-            Optional<uint8> PartyIndex;
-            RestrictPingsTo RestrictTo = { };
-        };
-
-        class SendPingUnit final : public ClientPacket
-        {
-        public:
-            explicit SendPingUnit(WorldPacket&& packet) : ClientPacket(CMSG_SEND_PING_UNIT, std::move(packet)) { }
-
-            void Read() override;
-
-            ObjectGuid SenderGUID;
-            ObjectGuid TargetGUID;
-            PingSubjectType Type = { };
-            uint32 PinFrameID = 0;
-            Duration<Milliseconds, int32> PingDuration;
-            Optional<uint32> CreatureID;
-            Optional<uint32> SpellOverrideNameID;
-        };
-
         class ReceivePingUnit final : public ServerPacket
         {
         public:
-            explicit ReceivePingUnit() : ServerPacket(SMSG_RECEIVE_PING_UNIT, 16 + 16 + 1 + 4) { }
+            ReceivePingUnit() : ServerPacket(SMSG_RECEIVE_PING_UNIT, 16 + 16 + 1 + 4) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid SenderGUID;
             ObjectGuid TargetGUID;
-            PingSubjectType Type = { };
+            PingSubjectType Type = PingSubjectType::Max;
             uint32 PinFrameID = 0;
-            Duration<Milliseconds, int32> PingDuration;
-            Optional<uint32> CreatureID;
-            Optional<uint32> SpellOverrideNameID;
-        };
-
-        class SendPingWorldPoint final : public ClientPacket
-        {
-        public:
-            explicit SendPingWorldPoint(WorldPacket&& packet) : ClientPacket(CMSG_SEND_PING_WORLD_POINT, std::move(packet)) { }
-
-            void Read() override;
-
-            ObjectGuid SenderGUID;
-            uint32 MapID = 0;
-            TaggedPosition<Position::XYZ> Point;
-            PingSubjectType Type = { };
-            uint32 PinFrameID = 0;
-            ObjectGuid Transport;
-            Duration<Milliseconds, int32> PingDuration;
         };
 
         class ReceivePingWorldPoint final : public ServerPacket
         {
         public:
-            explicit ReceivePingWorldPoint() : ServerPacket(SMSG_RECEIVE_PING_WORLD_POINT, 16 + 4 + 4 * 3 + 1 + 4) { }
+            ReceivePingWorldPoint() : ServerPacket(SMSG_RECEIVE_PING_WORLD_POINT, 16 + 4 + 4 * 3 + 1 + 4) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid SenderGUID;
             uint32 MapID = 0;
             TaggedPosition<Position::XYZ> Point;
-            PingSubjectType Type = { };
+            PingSubjectType Type = PingSubjectType::Max;
             uint32 PinFrameID = 0;
-            Duration<Milliseconds, int32> PingDuration;
-            ObjectGuid Transport;
         };
 
         class CancelPingPin final : public ServerPacket
         {
         public:
-            explicit CancelPingPin() : ServerPacket(SMSG_CANCEL_PING_PIN, 16 + 4) { }
+            CancelPingPin() : ServerPacket(SMSG_CANCEL_PING_PIN, 16 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -794,4 +707,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_PARTY_PACKETS_H
+#endif // PartyPackets_h__

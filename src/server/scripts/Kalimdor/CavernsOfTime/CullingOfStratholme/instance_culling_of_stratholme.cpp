@@ -28,6 +28,7 @@
 #include "ScriptMgr.h"
 #include "TemporarySummon.h"
 #include <array>
+#include <sstream>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -120,13 +121,14 @@ enum COSMisc
     WAVE_SALRAMM        = 10
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_MALGANIS_GATE_2, DATA_MAL_GANIS, EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_EXIT_GATE,       DATA_MAL_GANIS, EncounterDoorBehavior::OpenWhenDone },
+    { 0,                  0,              EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_MEATHOOK, {{ 2002 }} },
     { DATA_SALRAMM, {{ 2004 }} },
@@ -167,11 +169,11 @@ COSProgressStates GetStableStateFor(COSProgressStates const state)
     }
 }
 
-static constexpr Position CorruptorPos = { 2331.642f, 1273.273f, 132.9524f, 3.717551f };
-static constexpr Position GuardianPos = { 2321.489f, 1268.383f, 132.8507f, 0.418879f };
-static constexpr Position CorruptorRiftPos = { 2443.626f, 1280.450f, 133.0066f, 1.727876f };
+static Position const CorruptorPos = { 2331.642f, 1273.273f, 132.9524f, 3.717551f };
+static Position const GuardianPos = { 2321.489f, 1268.383f, 132.8507f, 0.418879f };
+static Position const CorruptorRiftPos = { 2443.626f, 1280.450f, 133.0066f, 1.727876f };
 
-static constexpr std::array<std::array<uint32, MAX_SPAWNS_PER_WAVE>, NUM_SCOURGE_WAVES> HeroicWaves =
+static std::array<std::array<uint32, MAX_SPAWNS_PER_WAVE>, NUM_SCOURGE_WAVES> const HeroicWaves =
 {
     {
         { { NPC_DEVOURING_GHOUL, NPC_DEVOURING_GHOUL, NPC_DEVOURING_GHOUL                                      } }, // wave 1
@@ -193,7 +195,7 @@ struct WaveLocation
     std::array<Position, MAX_SPAWNS_PER_WAVE> SpawnPoints;
 };
 
-static constexpr std::array<WaveLocation, WAVE_LOC_MAX - WAVE_LOC_MIN + 1> WaveLocations =
+static const std::array<WaveLocation, WAVE_LOC_MAX - WAVE_LOC_MIN + 1> WaveLocations =
 {
     {
         { // King's Square
@@ -403,7 +405,10 @@ class instance_culling_of_stratholme : public InstanceMapScript
                                 if (player->GetGUID() == guid || !player->IsGameMaster())
                                 {
                                     player->CombatStop(true);
-                                    player->NearTeleportTo(player->GetRandomPoint(target, 10.0f));
+                                    constexpr float offsetDist = 10.0f;
+                                    float myAngle = rand_norm() * static_cast<float>(2.0f * M_PI);
+                                    Position myTarget(target.GetPositionX() + std::sin(myAngle) * offsetDist, target.GetPositionY() + std::sin(myAngle) * offsetDist, target.GetPositionZ(), myAngle + M_PI);
+                                    player->NearTeleportTo(myTarget);
                                 }
                         }
                         break;
@@ -600,7 +605,7 @@ class instance_culling_of_stratholme : public InstanceMapScript
                         _plagueCrates.push_back(creature->GetGUID());
                         break;
                     case NPC_ARTHAS:
-                        TC_LOG_DEBUG("scripts.cos", "instance_culling_of_stratholme::OnCreatureCreate: Arthas spawned at {}", creature->GetPosition());
+                        TC_LOG_DEBUG("scripts.cos", "instance_culling_of_stratholme::OnCreatureCreate: Arthas spawned at {}", creature->GetPosition().ToString());
                         _arthasGUID = creature->GetGUID();
                         creature->setActive(true);
                         break;

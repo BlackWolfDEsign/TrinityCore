@@ -41,7 +41,7 @@ class learn_commandscript : public CommandScript
 public:
     learn_commandscript() : CommandScript("learn_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable learnAllCommandTable =
         {
@@ -195,15 +195,12 @@ public:
             if (playerClass != uint8(talentInfo->ClassID))
                 continue;
 
-            if (talentInfo->SpecID && player->GetPrimarySpecialization() != ChrSpecialization(talentInfo->SpecID))
-                continue;
-
             SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(talentInfo->SpellID, DIFFICULTY_NONE);
             if (!spellInfo || !SpellMgr::IsSpellValid(spellInfo, handler->GetSession()->GetPlayer(), false))
                 continue;
 
-            player->AddTalent(talentInfo, player->GetActiveTalentGroup(), true);
-            player->LearnSpell(talentInfo->SpellID, false);
+            //player->AddTalent(talentInfo, player->GetActiveTalentGroup(), true);
+            //player->LearnSpell(talentInfo->SpellID, false);
         }
 
         player->SendTalentsInfoData();

@@ -24,16 +24,17 @@
 #include "lost_city_of_the_tolvir.h"
 #include "Map.h"
 
-static constexpr ObjectData creatureData[] =
+static constexpr ObjectData const creatureData[] =
 {
     { NPC_GENERAL_HUSAM,        BOSS_GENERAL_HUSAM       },
     { NPC_LOCKMAW,              BOSS_LOCKMAW             },
     { NPC_HIGH_PROPHET_BARIM,   BOSS_HIGH_PROPHET_BARIM  },
     { NPC_SIAMAT,               BOSS_SIAMAT              },
     { NPC_DUST_FLAIL,           DATA_DUST_FLAIL          },
+    { 0,                        0                        } // End
 };
 
-static constexpr DungeonEncounterData encounters[] =
+static constexpr DungeonEncounterData const encounters[] =
 {
     { BOSS_GENERAL_HUSAM,       {{ 1052 }} },
     { BOSS_LOCKMAW,             {{ 1054 }} },
@@ -64,7 +65,7 @@ public:
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
             LoadDungeonEncounterData(encounters);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
         }
 
         void OnCreatureCreate(Creature* creature) override

@@ -37,20 +37,18 @@ EndScriptData */
 #include "World.h"
 #include "WorldSession.h"
 
-#if TRINITY_COMPILER_IS_GCC
+#if TRINITY_COMPILER == TRINITY_COMPILER_GNU
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 #endif
-
-using namespace Trinity::ChatCommands;
 
 class reset_commandscript : public CommandScript
 {
 public:
     reset_commandscript() : CommandScript("reset_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    std::vector<ChatCommand> GetCommands() const override
     {
-        static ChatCommandTable resetCommandTable =
+        static std::vector<ChatCommand> resetCommandTable =
         {
             { "achievements", rbac::RBAC_PERM_COMMAND_RESET_ACHIEVEMENTS, true, &HandleResetAchievementsCommand, "" },
             { "honor",        rbac::RBAC_PERM_COMMAND_RESET_HONOR,        true, &HandleResetHonorCommand,        "" },
@@ -60,7 +58,7 @@ public:
             { "talents",      rbac::RBAC_PERM_COMMAND_RESET_TALENTS,      true, &HandleResetTalentsCommand,      "" },
             { "all",          rbac::RBAC_PERM_COMMAND_RESET_ALL,          true, &HandleResetAllCommand,          "" },
         };
-        static ChatCommandTable commandTable =
+        static std::vector<ChatCommand> commandTable =
         {
             { "reset", rbac::RBAC_PERM_COMMAND_RESET, true, nullptr, "", resetCommandTable },
         };
@@ -137,14 +135,15 @@ public:
         uint8 oldLevel = target->GetLevel();
 
         // set starting level
-        uint8 startLevel = target->GetStartLevel(target->GetRace(), target->GetClass(), {});
+        uint8 startLevel = target->GetStartLevel(target->GetClass(), {});
 
         target->_ApplyAllLevelScaleItemMods(false);
         target->SetLevel(startLevel);
         target->InitRunes();
         target->InitStatsForLevel(true);
         target->InitTaxiNodesForLevel();
-        target->InitTalentForLevel();
+        target->UpdateAvailableTalentPoints();
+        target->SendTalentsInfoData();
         target->SetXP(0);
 
         target->_ApplyAllLevelScaleItemMods(true);
@@ -199,7 +198,8 @@ public:
         target->InitRunes();
         target->InitStatsForLevel(true);
         target->InitTaxiNodesForLevel();
-        target->InitTalentForLevel();
+        target->UpdateAvailableTalentPoints();
+        target->SendTalentsInfoData();
 
         return true;
     }
@@ -220,9 +220,10 @@ public:
                 Unit* owner = creature->GetOwner();
                 if (owner && owner->GetTypeId() == TYPEID_PLAYER && creature->ToPet()->IsPermanentPetFor(owner->ToPlayer()))
                 {
-                    creature->ToPet()->resetTalents(true);
+                    creature->ToPet()->resetTalents();
                     owner->ToPlayer()->SendTalentsInfoData(true);
 
+                    ChatHandler(owner->ToPlayer()->GetSession()).SendSysMessage(LANG_RESET_PET_TALENTS);
                     if (!handler->GetSession() || handler->GetSession()->GetPlayer() != owner->ToPlayer())
                         handler->PSendSysMessage(LANG_RESET_PET_TALENTS_ONLINE, handler->GetNameLink(owner->ToPlayer()).c_str());
                 }
@@ -238,14 +239,14 @@ public:
         if (target)
         {
             target->ResetTalents(true);
-            target->ResetTalentSpecialization();
             target->SendTalentsInfoData();
+            ChatHandler(target->GetSession()).SendSysMessage(LANG_RESET_TALENTS);
             if (!handler->GetSession() || handler->GetSession()->GetPlayer() != target)
                 handler->PSendSysMessage(LANG_RESET_TALENTS_ONLINE, handler->GetNameLink(target).c_str());
 
             /* TODO: 6.x remove/update pet talents
             Pet* pet = target->GetPet();
-            Pet::resetTalentsForAllPetsOf(target, pet, true);
+            Pet::resetTalentsForAllPetsOf(target, pet);
             if (pet)
                 target->SendTalentsInfoData(true);
             */

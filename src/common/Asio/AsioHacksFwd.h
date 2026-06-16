@@ -35,12 +35,6 @@ namespace boost
         template <typename Time>
         struct time_traits;
 
-        template <typename Clock>
-        struct wait_traits;
-
-        template <typename Protocol, typename Clock, typename WaitTraits>
-        class basic_socket_iostream;
-
         namespace ip
         {
             class address;

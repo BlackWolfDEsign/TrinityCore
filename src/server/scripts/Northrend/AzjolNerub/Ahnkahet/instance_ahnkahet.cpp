@@ -19,25 +19,29 @@
 #include "AreaBoundary.h"
 #include "GameObject.h"
 #include "InstanceScript.h"
+#include "Map.h"
 #include "ScriptMgr.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_PRINCE_TALDARAM_GATE, DATA_PRINCE_TALDARAM, EncounterDoorBehavior::OpenWhenDone },
+    { 0,                       0,                    EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_ELDER_NADOX,         DATA_ELDER_NADOX         },
     { NPC_PRINCE_TALDARAM,     DATA_PRINCE_TALDARAM     },
     { NPC_JEDOGA_SHADOWSEEKER, DATA_JEDOGA_SHADOWSEEKER },
     { NPC_AMANITAR,            DATA_AMANITAR            },
     { NPC_HERALD_VOLAZJ,       DATA_HERALD_VOLAZJ       },
+    { 0,                       0                        }
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_PRINCE_TALDARAM_PLATFORM, DATA_PRINCE_TALDARAM_PLATFORM },
+    { 0,                           0                             } //END
 };
 
 BossBoundaryData const boundaries =
@@ -45,7 +49,7 @@ BossBoundaryData const boundaries =
     { DATA_JEDOGA_SHADOWSEEKER, new ParallelogramBoundary(Position(460.365f, -661.997f, -20.985f), Position(364.958f,-790.211f, -14.207f), Position(347.436f,-657.978f,14.478f)) }
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_ELDER_NADOX, {{ 1969 }} },
     { DATA_PRINCE_TALDARAM, {{ 1966 }} },

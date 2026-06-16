@@ -8,51 +8,39 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-# Adds all found source files to a given target
+# Collects all source files into the given variable,
+# which is useful to include all sources in subdirectories.
+# Ignores full qualified directories listed in the variadic arguments.
 #
 # Use it like:
-# CollectAndAddSourceFiles(
-#   common
+# CollectSourceFiles(
 #   ${CMAKE_CURRENT_SOURCE_DIR}
-#   EXCLUDE
+#   COMMON_PRIVATE_SOURCES
+#   # Exclude
 #   ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders
-#   ${CMAKE_CURRENT_SOURCE_DIR}/Platform
-#   HEADER_VISIBILITY PRIVATE) # default is PUBLIC, this controls whether other targets that have this target as dependency will be able to access its headers
+#   ${CMAKE_CURRENT_SOURCE_DIR}/Platform)
 #
-function(CollectAndAddSourceFiles target_name current_dir)
-  cmake_parse_arguments(PARSE_ARGV 2 arg "" "BASE_DIR;HEADER_VISIBILITY" "EXCLUDE")
-  if(NOT arg_BASE_DIR)
-    set(arg_BASE_DIR "${current_dir}")
-  endif()
-  if(NOT arg_HEADER_VISIBILITY)
-    set(arg_HEADER_VISIBILITY "PUBLIC")
-  endif()
-  list(FIND arg_EXCLUDE "${current_dir}" IS_EXCLUDED)
+function(CollectSourceFiles current_dir variable)
+  list(FIND ARGN "${current_dir}" IS_EXCLUDED)
   if(IS_EXCLUDED EQUAL -1)
-    cmake_path(RELATIVE_PATH current_dir BASE_DIRECTORY "${arg_BASE_DIR}" OUTPUT_VARIABLE fileset_name)
-    # normalize file set name
-    string(REGEX REPLACE "[./\\]" "_" fileset_name "${fileset_name}")
-
-    file(GLOB private_source_files
+    file(GLOB COLLECTED_SOURCES
       ${current_dir}/*.c
       ${current_dir}/*.cc
-      ${current_dir}/*.cpp)
-
-    file(GLOB public_header_files
+      ${current_dir}/*.cpp
       ${current_dir}/*.inl
+      ${current_dir}/*.def
       ${current_dir}/*.h
       ${current_dir}/*.hh
       ${current_dir}/*.hpp)
-
-    target_sources(${target_name} PRIVATE ${private_source_files})
-    target_sources(${target_name} ${arg_HEADER_VISIBILITY} FILE_SET "headers_${fileset_name}" TYPE HEADERS BASE_DIRS ${current_dir} FILES ${public_header_files})
+    list(APPEND ${variable} ${COLLECTED_SOURCES})
 
     file(GLOB SUB_DIRECTORIES ${current_dir}/*)
     foreach(SUB_DIRECTORY ${SUB_DIRECTORIES})
       if(IS_DIRECTORY ${SUB_DIRECTORY})
-        CollectAndAddSourceFiles("${target_name}" "${SUB_DIRECTORY}" BASE_DIR ${arg_BASE_DIR} HEADER_VISIBILITY ${arg_HEADER_VISIBILITY} EXCLUDE ${arg_EXCLUDE})
+        CollectSourceFiles("${SUB_DIRECTORY}" "${variable}" "${ARGN}")
       endif()
     endforeach()
+    set(${variable} ${${variable}} PARENT_SCOPE)
   endif()
 endfunction()
 
@@ -64,21 +52,20 @@ endfunction()
 # CollectIncludeDirectories(
 #   ${CMAKE_CURRENT_SOURCE_DIR}
 #   COMMON_PUBLIC_INCLUDES
-#   EXCLUDE
+#   # Exclude
 #   ${CMAKE_CURRENT_SOURCE_DIR}/PrecompiledHeaders
 #   ${CMAKE_CURRENT_SOURCE_DIR}/Platform)
 #
-function(CollectIncludeDirectories current_dir sources_variable)
-  cmake_parse_arguments(PARSE_ARGV 2 arg "" "" "EXCLUDE")
-  list(FIND arg_EXCLUDE "${current_dir}" IS_EXCLUDED)
+function(CollectIncludeDirectories current_dir variable)
+  list(FIND ARGN "${current_dir}" IS_EXCLUDED)
   if(IS_EXCLUDED EQUAL -1)
-    list(APPEND ${sources_variable} ${current_dir})
+    list(APPEND ${variable} ${current_dir})
     file(GLOB SUB_DIRECTORIES ${current_dir}/*)
     foreach(SUB_DIRECTORY ${SUB_DIRECTORIES})
       if(IS_DIRECTORY ${SUB_DIRECTORY})
-        CollectIncludeDirectories("${SUB_DIRECTORY}" "${sources_variable}" EXCLUDE ${arg_EXCLUDE})
+        CollectIncludeDirectories("${SUB_DIRECTORY}" "${variable}" "${ARGN}")
       endif()
     endforeach()
-    set(${sources_variable} ${${sources_variable}} PARENT_SCOPE)
+    set(${variable} ${${variable}} PARENT_SCOPE)
   endif()
 endfunction()

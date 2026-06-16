@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_ITEM_PACKETS_COMMON_H
-#define TRINITYCORE_ITEM_PACKETS_COMMON_H
+#ifndef ItemPacketsCommon_h__
+#define ItemPacketsCommon_h__
 
 #include "ItemDefines.h"
 #include "PacketUtilities.h"
@@ -48,10 +48,13 @@ namespace WorldPackets
 
         struct ItemMod
         {
+            ItemMod() = default;
+            ItemMod(int32 value, ItemModifier type) : Value(value), Type(type) { }
+
             int32 Value = 0;
             ItemModifier Type = MAX_ITEM_MODIFIERS;
 
-            friend bool operator==(ItemMod const& left, ItemMod const& right) = default;
+            bool operator==(ItemMod const& r) const;
         };
 
         struct ItemModList
@@ -66,8 +69,11 @@ namespace WorldPackets
             void Initialize(::Item const* item);
             void Initialize(UF::SocketedGem const* gem);
             void Initialize(::LootItem const& lootItem);
+            void Initialize(::VoidStorageItem const* voidItem);
 
             uint32 ItemID = 0;
+            int32 RandomPropertiesSeed = 0;
+            int32 RandomPropertiesID = 0;
             Optional<ItemBonuses> ItemBonus;
             ItemModList Modifications;
 
@@ -78,7 +84,6 @@ namespace WorldPackets
         {
             int32 ItemID = 0;
             std::vector<int32> BonusListIDs;
-            std::vector<ItemMod> Modifications;
 
             bool operator==(ItemBonusKey const& right) const;
         };
@@ -131,4 +136,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_ITEM_PACKETS_COMMON_H
+#endif // ItemPacketsCommon_h__

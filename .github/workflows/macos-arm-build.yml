@@ -9,7 +9,7 @@ jobs:
     runs-on: macos-14
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v4
 
     - name: Set reusable strings
       id: strings
@@ -23,9 +23,7 @@ jobs:
       run: |
         brew update
         brew uninstall openssl@1.1
-        for pkg in mysql openssl readline cmake boost coreutils ninja; do
-          brew ls --versions $pkg || brew install $pkg
-        done
+        brew install mysql openssl readline cmake boost coreutils ninja
         brew config
 
     - name: Check some deps

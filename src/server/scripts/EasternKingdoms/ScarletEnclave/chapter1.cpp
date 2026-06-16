@@ -429,7 +429,8 @@ enum EyeOfAcherusMisc
     POINT_NEW_AVALON                        = 1
 };
 
-G3D::Vector3 const EyeOfAcherusPath[] =
+static constexpr uint8 const EyeOfAcherusPathSize = 4;
+G3D::Vector3 const EyeOfAcherusPath[EyeOfAcherusPathSize] =
 {
     { 2361.21f,  -5660.45f,  496.744f  },
     { 2341.571f, -5672.797f, 538.3942f },
@@ -485,7 +486,8 @@ struct npc_eye_of_acherus : public ScriptedAI
                 {
                     std::function<void(Movement::MoveSplineInit&)> initializer = [=, me = me](Movement::MoveSplineInit& init)
                     {
-                        init.MovebyPath(EyeOfAcherusPath);
+                        Movement::PointsArray path(EyeOfAcherusPath, EyeOfAcherusPath + EyeOfAcherusPathSize);
+                        init.MovebyPath(path);
                         init.SetFly();
                         if (Unit* owner = me->GetCharmerOrOwner())
                             init.SetVelocity(owner->GetSpeed(MOVE_RUN));
@@ -1220,12 +1222,11 @@ struct npc_hearthglen_crusader : public ScriptedAI
         if (!spellInfo)
             return;
 
-        auto [minRange, maxRange] = spellInfo->GetMinMaxRange(false);
-        _minimumRange = minRange;
+        _minimumRange = spellInfo->GetMinRange(false);
 
         if (!_minimumRange)
             _minimumRange = MELEE_RANGE;
-        creature->m_CombatDistance = maxRange;
+        creature->m_CombatDistance = spellInfo->GetMaxRange(false);
         creature->m_SightDistance = creature->m_CombatDistance;
     }
 

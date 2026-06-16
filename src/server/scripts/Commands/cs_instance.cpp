@@ -38,6 +38,7 @@ EndScriptData */
 #include "Util.h"
 #include "World.h"
 #include "WorldSession.h"
+#include <sstream>
 
 using namespace Trinity::ChatCommands;
 
@@ -46,7 +47,7 @@ class instance_commandscript : public CommandScript
 public:
     instance_commandscript() : CommandScript("instance_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable instanceCommandTable =
         {
@@ -79,7 +80,7 @@ public:
             std::string timeleft = !instanceLock->IsExpired() ? secsToTimeString(std::chrono::duration_cast<Seconds>(instanceLock->GetEffectiveExpiryTime() - now).count()) : "-";
             handler->PSendSysMessage(LANG_COMMAND_LIST_BIND_INFO,
                 entries.Map->ID, entries.Map->MapName[sWorld->GetDefaultDbcLocale()],
-                uint32(entries.MapDifficulty->DifficultyID), DB2Manager::GetDifficultyName(entries.MapDifficulty->GetDifficultyID()),
+                uint32(entries.MapDifficulty->DifficultyID), sDifficultyStore.AssertEntry(entries.MapDifficulty->DifficultyID)->Name[sWorld->GetDefaultDbcLocale()],
                 instanceLock->GetInstanceId(),
                 handler->GetTrinityString(instanceLock->IsExpired() ? LANG_YES : LANG_NO),
                 handler->GetTrinityString(instanceLock->IsExtended() ? LANG_YES : LANG_NO),
@@ -117,7 +118,7 @@ public:
             std::string timeleft = !instanceLock->IsExpired() ? secsToTimeString(std::chrono::duration_cast<Seconds>(instanceLock->GetEffectiveExpiryTime() - now).count()) : "-";
             handler->PSendSysMessage(LANG_COMMAND_INST_UNBIND_UNBINDING,
                 entries.Map->ID, entries.Map->MapName[sWorld->GetDefaultDbcLocale()],
-                uint32(entries.MapDifficulty->DifficultyID), DB2Manager::GetDifficultyName(entries.MapDifficulty->GetDifficultyID()),
+                uint32(entries.MapDifficulty->DifficultyID), sDifficultyStore.AssertEntry(entries.MapDifficulty->DifficultyID)->Name[sWorld->GetDefaultDbcLocale()],
                 instanceLock->GetInstanceId(),
                 handler->GetTrinityString(instanceLock->IsExpired() ? LANG_YES : LANG_NO),
                 handler->GetTrinityString(instanceLock->IsExtended() ? LANG_YES : LANG_NO),
@@ -132,7 +133,7 @@ public:
             std::string timeleft = !instanceLock->IsExpired() ? secsToTimeString(std::chrono::duration_cast<Seconds>(instanceLock->GetEffectiveExpiryTime() - now).count()) : "-";
             handler->PSendSysMessage(LANG_COMMAND_INST_UNBIND_FAILED,
                 entries.Map->ID, entries.Map->MapName[sWorld->GetDefaultDbcLocale()],
-                uint32(entries.MapDifficulty->DifficultyID), DB2Manager::GetDifficultyName(entries.MapDifficulty->GetDifficultyID()),
+                uint32(entries.MapDifficulty->DifficultyID), sDifficultyStore.AssertEntry(entries.MapDifficulty->DifficultyID)->Name[sWorld->GetDefaultDbcLocale()],
                 instanceLock->GetInstanceId(),
                 handler->GetTrinityString(instanceLock->IsExpired() ? LANG_YES : LANG_NO),
                 handler->GetTrinityString(instanceLock->IsExtended() ? LANG_YES : LANG_NO),

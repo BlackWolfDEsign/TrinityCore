@@ -57,7 +57,7 @@ protected:
     uint32      m_cinematicLength;
     std::vector<FlyByCamera> const* m_cinematicCamera;
     Position    m_remoteSightPosition;
-    ObjectGuid  m_CinematicObjectGUID;
+    TempSummon* m_CinematicObject;
 };
 
 #endif // CinematicMgr_h__

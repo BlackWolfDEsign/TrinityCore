@@ -72,7 +72,7 @@ enum class VendorDataTypeFlags : int32
 DEFINE_ENUM_FLAG(VendorDataTypeFlags);
 
 static constexpr uint8 WILD_BATTLE_PET_DEFAULT_LEVEL = 1;
-static constexpr size_t CREATURE_TAPPERS_SOFT_CAP = 5;
+static constexpr size_t CREATURE_TAPPERS_SOFT_CAP = 1; // Classic Only - only allow one tapper at a time
 
 //used for handling non-repeatable random texts
 typedef std::vector<uint8> CreatureTextRepeatIds;
@@ -112,7 +112,7 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         void Update(uint32 time) override;                         // overwrited Unit::Update
         void Heartbeat() override;
 
-        Position GetRespawnPosition(float* dist = nullptr) const;
+        void GetRespawnPosition(float &x, float &y, float &z, float* ori = nullptr, float* dist = nullptr) const;
         bool IsSpawnedOnTransport() const { return m_creatureData && m_creatureData->mapId != GetMapId(); }
 
         void SetCorpseDelay(uint32 delay, bool ignoreCorpseDecayRatio = false)
@@ -150,17 +150,17 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         bool CannotPenetrateWater() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CANNOT_PENETRATE_WATER); }
         void SetCannotPenetrateWater(bool cannotPenetrateWater) { _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_3_CANNOT_PENETRATE_WATER, cannotPenetrateWater); }
 
-        // Returns true if CREATURE_STATIC_FLAG_3_CANT_SWIM is set which prevents 'Amphibious' creatures from swimming when engaged
-        bool IsSwimDisabled() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CANT_SWIM); }
+        // Returns true if CREATURE_STATIC_FLAG_3_CANNOT_SWIM is set which prevents 'Amphibious' creatures from swimming when engaged
+        bool IsSwimDisabled() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CANNOT_SWIM); }
 
-        // Returns true if CREATURE_STATIC_FLAG_4_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS is set which prevents 'Amphibious' creatures from swimming when engaged until the victim is no longer on the ocean floor
-        bool CanOnlySwimIfTargetSwims() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_4_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS); }
+        // Returns true if CREATURE_STATIC_FLAG_4_PREVENT_SWIM is set which prevents 'Amphibious' creatures from swimming when engaged until the victim is no longer on the ocean floor
+        bool IsSwimPrevented() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_4_PREVENT_SWIM); }
 
         bool CanSwim() const override;
-        bool CanEnterWater() const override { return (CanSwim() || IsAmphibious()); }
+        bool CanEnterWater() const override { return (CanSwim() || IsAmphibious()); };
         bool CanFly()  const override { return (IsFlying() || HasUnitMovementFlag(MOVEMENTFLAG_CAN_FLY)); }
 
-        MovementGeneratorType GetDefaultMovementType() const override;
+        MovementGeneratorType GetDefaultMovementType() const override { return m_defaultMovementType; }
         void SetDefaultMovementType(MovementGeneratorType mgt) { m_defaultMovementType = mgt; }
 
         CreatureClassifications GetCreatureClassification() const { return GetCreatureTemplate()->Classification; }
@@ -191,6 +191,7 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         /// @todo Rename these properly
         bool isCanInteractWithBattleMaster(Player* player, bool msg) const;
         bool CanResetTalents(Player* player) const;
+        bool IsClassTrainerFor(Player const* player) const;
         bool CanCreatureAttack(Unit const* victim, bool force = true) const;
         void LoadTemplateImmunities(int32 creatureImmunitiesId);
         bool IsImmunedToSpellEffect(SpellInfo const* spellInfo, SpellEffectInfo const& spellEffectInfo, WorldObject const* caster, bool requireImmunityPurgesEffectAttribute = false) const override;
@@ -201,24 +202,13 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         void SetInteractionAllowedInCombat(bool interactionAllowed) override;
         void UpdateNearbyPlayersInteractions() override;
 
-        bool HasScalableLevels() const;
-        void ApplyLevelScaling();
         uint8 GetLevelForTarget(WorldObject const* target) const override;
-
-        uint64 GetMaxHealthByLevel(uint8 level) const;
-        float GetHealthMultiplierForTarget(WorldObject const* target) const override;
-
-        float GetBaseDamageForLevel(uint8 level) const;
-        float GetDamageMultiplierForTarget(WorldObject const* target) const override;
-
-        float GetBaseArmorForLevel(uint8 level) const;
-        float GetArmorMultiplierForTarget(WorldObject const* target) const override;
 
         bool IsInEvadeMode() const { return HasUnitState(UNIT_STATE_EVADE); }
         bool IsEvadingAttacks() const { return IsInEvadeMode() || CanNotReachTarget(); }
 
-        bool IsStateRestoredOnEvade() const { return !HasFlag(CREATURE_STATIC_FLAG_5_NO_LEAVE_COMBAT_STATE_RESTORE); }
-        void SetRestoreStateOnEvade(bool restoreOnEvade) { _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_5_NO_LEAVE_COMBAT_STATE_RESTORE, !restoreOnEvade); }
+        bool IsStateRestoredOnEvade() const { return !HasFlag(CREATURE_STATIC_FLAG_5_NO_LEAVECOMBAT_STATE_RESTORE); }
+        void SetRestoreStateOnEvade(bool restoreOnEvade) { _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_5_NO_LEAVECOMBAT_STATE_RESTORE, !restoreOnEvade); }
 
         bool AIM_Destroy();
         bool AIM_Create(CreatureAI* ai = nullptr);
@@ -276,13 +266,8 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         void SetScriptStringId(std::string id);
         std::string_view GetStringId(StringIdType type) const { return m_stringIds[size_t(type)] ? std::string_view(*m_stringIds[size_t(type)]) : std::string_view(); }
 
-        SpawnTrackingStateData const* GetSpawnTrackingStateDataForPlayer(Player const* player) const override;
-
         // override WorldObject function for proper name localization
         std::string GetNameForLocaleIdx(LocaleConstant locale) const override;
-
-        bool HasLabel(int32 cretureLabel) const;
-        std::span<int32 const> GetLabels() const;
 
         void setDeathState(DeathState s) override;                   // override virtual Unit::setDeathState
 
@@ -307,6 +292,8 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         bool IsTapListNotClearedOnEvade() const { return m_dontClearTapListOnEvade; }
         void SetDontClearTapListOnEvade(bool dontClear);
         bool isTappedBy(Player const* player) const;                          // return true if the creature is tapped by the player or a member of his party.
+        bool CanBeMultiTapped() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_3_CAN_BE_MULTITAPPED); }
+        void SetCanBeMultiTapped(bool apply) { return _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_3_CAN_BE_MULTITAPPED, apply); }
         Loot* GetLootForPlayer(Player const* player) const override;
         bool IsFullyLooted() const;
         bool IsSkinnedBy(Player const* player) const;
@@ -375,8 +362,8 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         virtual uint32 GetPetAutoSpellOnPos(uint8 pos) const;
         float GetPetChaseDistance() const;
 
-        bool IsIgnoringChaseRange() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_6_ALWAYS_STAND_ON_TARGET); }
-        void SetIgnoreChaseRange(bool ignoreChaseRange) { _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_6_ALWAYS_STAND_ON_TARGET, ignoreChaseRange); }
+        bool IsIgnoringChaseRange() const { return _staticFlags.HasFlag(CREATURE_STATIC_FLAG_6_ALWAYS_STAND_ON_TOP_OF_TARGET); }
+        void SetIgnoreChaseRange(bool ignoreChaseRange) { _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_6_ALWAYS_STAND_ON_TOP_OF_TARGET, ignoreChaseRange); }
 
         void SetCannotReachTarget(bool cannotReach);
         bool CanNotReachTarget() const { return m_cannotReachTarget; }
@@ -411,6 +398,7 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
 
         void SetDisableReputationGain(bool disable) { DisableReputationGain = disable; }
         bool IsReputationGainDisabled() const { return DisableReputationGain; }
+        bool IsDamageEnoughForLootingAndReward() const { return (m_creatureInfo->flags_extra & CREATURE_FLAG_EXTRA_NO_PLAYER_DAMAGE_REQ) || (m_PlayerDamageReq == 0); }
         void LowerPlayerDamageReq(uint64 unDamage);
         void ResetPlayerDamageReq() { m_PlayerDamageReq = GetHealth() / 2; }
         uint64 m_PlayerDamageReq;
@@ -492,27 +480,28 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         UF::OptionalUpdateField<UF::VendorData, int32(WowCS::EntityFragment::FVendor_C), 0> m_vendorData;
 
     protected:
-        void BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
+        void BuildValuesCreate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void BuildValuesUpdate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
 
     public:
-        void BuildValuesUpdateWithFlag(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
+        void BuildValuesUpdateWithFlag(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
         void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
-            UF::UnitData::Mask const& requestedUnitMask, Player const* target, bool ignoreNestedChangesMask) const;
+            UF::UnitData::Mask const& requestedUnitMask, Player const* target) const;
 
         struct ValuesUpdateForPlayerWithMaskSender // sender compatible with MessageDistDeliverer
         {
-            explicit ValuesUpdateForPlayerWithMaskSender(Creature const* owner) : Owner(owner), IgnoreNestedChangesMask(false) { }
+            explicit ValuesUpdateForPlayerWithMaskSender(Creature const* owner) : Owner(owner) { }
 
             Creature const* Owner;
             UF::ObjectData::Base ObjectMask;
             UF::UnitData::Base UnitMask;
-            bool IgnoreNestedChangesMask;
 
             void operator()(Player const* player) const;
         };
 
     protected:
+        void ClearUpdateMask(bool remove) override;
+
         bool CreateFromProto(ObjectGuid::LowType guidlow, uint32 entry, CreatureData const* data = nullptr, uint32 vehId = 0);
         bool InitEntry(uint32 entry, CreatureData const* data = nullptr);
 
@@ -535,8 +524,7 @@ class TC_GAME_API Creature : public Unit, public GridObject<Creature>, public Ma
         uint32 m_boundaryCheckTime;                         // (msecs) remaining time for next evade boundary check
 
         ReactStates m_reactState;                           // for AI, not charmInfo
-        void RegenerateHealth();
-        void Regenerate(Powers power);
+        void RegenerateHealth() override;
         MovementGeneratorType m_defaultMovementType;
         ObjectGuid::LowType m_spawnId;                               ///< For new or temporary creatures is 0 for saved it is lowguid
         uint8 m_equipmentId;

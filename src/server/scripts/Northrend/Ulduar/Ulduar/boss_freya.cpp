@@ -1561,19 +1561,19 @@ class spell_freya_attuned_to_nature_dose_reduction : public SpellScriptLoader
                 switch (GetSpellInfo()->Id)
                 {
                     case SPELL_ATTUNED_TO_NATURE_2_DOSE_REDUCTION:
-                        if (target->HasAura(GetEffectValueAsInt()))
+                        if (target->HasAura(GetEffectValue()))
                             for (uint8 n = 0; n < 2; ++n)
-                                target->RemoveAuraFromStack(GetEffectValueAsInt());
+                                target->RemoveAuraFromStack(GetEffectValue());
                         break;
                     case SPELL_ATTUNED_TO_NATURE_10_DOSE_REDUCTION:
-                        if (target->HasAura(GetEffectValueAsInt()))
+                        if (target->HasAura(GetEffectValue()))
                             for (uint8 n = 0; n < 10; ++n)
-                                target->RemoveAuraFromStack(GetEffectValueAsInt());
+                                target->RemoveAuraFromStack(GetEffectValue());
                         break;
                     case SPELL_ATTUNED_TO_NATURE_25_DOSE_REDUCTION:
-                        if (target->HasAura(GetEffectValueAsInt()))
+                        if (target->HasAura(GetEffectValue()))
                             for (uint8 n = 0; n < 25; ++n)
-                                target->RemoveAuraFromStack(GetEffectValueAsInt());
+                                target->RemoveAuraFromStack(GetEffectValue());
                         break;
                     default:
                         break;
@@ -1614,7 +1614,7 @@ class spell_freya_iron_roots : public SpellScriptLoader
 
             void Register() override
             {
-                OnEffectLaunch += SpellEffectFn(spell_freya_iron_roots_SpellScript::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
+                OnEffectHit += SpellEffectFn(spell_freya_iron_roots_SpellScript::HandleSummon, EFFECT_0, SPELL_EFFECT_SUMMON);
             }
         };
 

@@ -37,15 +37,10 @@ struct QuestPool
 class TC_GAME_API QuestPoolMgr
 {
     private:
-        QuestPoolMgr();
-        ~QuestPoolMgr();
+        QuestPoolMgr() {}
+        ~QuestPoolMgr() {}
 
     public:
-        QuestPoolMgr(QuestPoolMgr const&) = delete;
-        QuestPoolMgr(QuestPoolMgr&&) = delete;
-        QuestPoolMgr& operator=(QuestPoolMgr const&) = delete;
-        QuestPoolMgr& operator=(QuestPoolMgr&&) = delete;
-
         static QuestPoolMgr* instance();
 
         void LoadFromDB();

@@ -178,6 +178,8 @@ struct TC_GAME_API LootItem
     uint32  itemid = 0;
     uint32  LootListId = 0;
     ItemRandomBonusListId randomBonusListId = 0;
+    ItemRandomPropertiesId randomPropertiesId = 0;
+    int32 randomPropertiesSeed = 0;
     std::vector<int32> BonusListIDs;
     ItemContext context = ItemContext::NONE;
     ConditionsReference conditions;                         // additional loot condition
@@ -271,8 +273,7 @@ private:
     void FillPacket(WorldPackets::Loot::LootItemData& lootItem) const;
     void Finish(RollVoteMap::const_iterator winnerItr);
     bool AllPlayerVoted(RollVoteMap::const_iterator& winnerItr);
-    Optional<uint32> GetItemDisenchantLootId() const;
-    Optional<uint16> GetItemDisenchantSkillRequired() const;
+    ItemDisenchantLootEntry const* GetItemDisenchantLoot() const;
     Map*        m_map;
     RollVoteMap m_rollVoteMap;
     bool        m_isStarted;
@@ -328,7 +329,7 @@ struct TC_GAME_API Loot
     // Inserts the item into the loot (called by LootTemplate processors)
     void AddItem(LootStoreItem const& item);
 
-    bool AutoStore(Player* player, uint8 bag, uint8 slot, bool broadcast = false, bool pushed = false, bool createdByPlayer = false);
+    bool AutoStore(Player* player, uint8 bag, uint8 slot, bool broadcast = false, bool createdByPlayer = false);
     void AutoStoreTrackingQuests(Player* player, NotNormalLootItemList& ffaItems);
 
     void LootMoney();

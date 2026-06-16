@@ -16,16 +16,29 @@
  */
 
 #include "SocialPackets.h"
-#include "PacketOperators.h"
+#include "SocialMgr.h"
+#include "World.h"
 
-namespace WorldPackets::Social
-{
-void SendContactList::Read()
+void WorldPackets::Social::SendContactList::Read()
 {
     _worldPacket >> Flags;
 }
 
-ByteBuffer& operator<<(ByteBuffer& data, ContactInfo const& contact)
+WorldPackets::Social::ContactInfo::ContactInfo(ObjectGuid const& guid, FriendInfo const& friendInfo)
+{
+    Guid = guid;
+    WowAccountGuid = friendInfo.WowAccountGuid;
+    VirtualRealmAddr = GetVirtualRealmAddress();
+    NativeRealmAddr = GetVirtualRealmAddress();
+    TypeFlags = friendInfo.Flags;
+    Notes = friendInfo.Note;
+    Status = friendInfo.Status;
+    AreaID = friendInfo.Area;
+    Level = friendInfo.Level;
+    ClassID = friendInfo.Class;
+}
+
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Social::ContactInfo const& contact)
 {
     data << contact.Guid;
     data << contact.WowAccountGuid;
@@ -35,19 +48,18 @@ ByteBuffer& operator<<(ByteBuffer& data, ContactInfo const& contact)
     data << uint8(contact.Status);
     data << uint32(contact.AreaID);
     data << uint32(contact.Level);
-    data << int8(contact.ClassID);
-    data << SizedString::BitsSize<10>(contact.Notes);
+    data << uint32(contact.ClassID);
+    data.WriteBits(contact.Notes.length(), 10);
     data.FlushBits();
-
-    data << SizedString::Data(contact.Notes);
+    data.WriteString(contact.Notes);
 
     return data;
 }
 
-WorldPacket const* ContactList::Write()
+WorldPacket const* WorldPackets::Social::ContactList::Write()
 {
     _worldPacket << uint32(Flags);
-    _worldPacket << BitsSize<8>(Contacts);
+    _worldPacket.WriteBits(Contacts.size(), 8);
     _worldPacket.FlushBits();
 
     for (ContactInfo const& contact : Contacts)
@@ -56,7 +68,20 @@ WorldPacket const* ContactList::Write()
     return &_worldPacket;
 }
 
-WorldPacket const* FriendStatus::Write()
+void WorldPackets::Social::FriendStatus::Initialize(ObjectGuid const& guid, FriendsResult result, FriendInfo const& friendInfo)
+{
+    VirtualRealmAddress = GetVirtualRealmAddress();
+    Notes = friendInfo.Note;
+    ClassID = friendInfo.Class;
+    Status = friendInfo.Status;
+    Guid = guid;
+    WowAccountGuid = friendInfo.WowAccountGuid;
+    Level = friendInfo.Level;
+    AreaID = friendInfo.Area;
+    FriendResult = result;
+}
+
+WorldPacket const* WorldPackets::Social::FriendStatus::Write()
 {
     _worldPacket << uint8(FriendResult);
     _worldPacket << Guid;
@@ -65,16 +90,15 @@ WorldPacket const* FriendStatus::Write()
     _worldPacket << uint8(Status);
     _worldPacket << uint32(AreaID);
     _worldPacket << uint32(Level);
-    _worldPacket << int8(ClassID);
-    _worldPacket << SizedString::BitsSize<10>(Notes);
+    _worldPacket << uint32(ClassID);
+    _worldPacket.WriteBits(Notes.length(), 10);
     _worldPacket.FlushBits();
-
-    _worldPacket << SizedString::Data(Notes);
+    _worldPacket.WriteString(Notes);
 
     return &_worldPacket;
 }
 
-ByteBuffer& operator>>(ByteBuffer& data, QualifiedGUID& qGuid)
+ByteBuffer& operator>>(ByteBuffer& data, WorldPackets::Social::QualifiedGUID& qGuid)
 {
     data >> qGuid.VirtualRealmAddress;
     data >> qGuid.Guid;
@@ -82,43 +106,41 @@ ByteBuffer& operator>>(ByteBuffer& data, QualifiedGUID& qGuid)
     return data;
 }
 
-void AddFriend::Read()
+void WorldPackets::Social::AddFriend::Read()
 {
-    _worldPacket >> SizedString::BitsSize<9>(Name);
-    _worldPacket >> SizedString::BitsSize<9>(Notes);
-    _worldPacket >> SizedString::Data(Name);
-    _worldPacket >> SizedString::Data(Notes);
+    uint32 nameLength = _worldPacket.ReadBits(9);
+    uint32 noteslength = _worldPacket.ReadBits(9);
+    Name = _worldPacket.ReadString(nameLength);
+    Notes = _worldPacket.ReadString(noteslength);
 }
 
-void DelFriend::Read()
+void WorldPackets::Social::DelFriend::Read()
 {
     _worldPacket >> Player;
 }
 
-void SetContactNotes::Read()
+void WorldPackets::Social::SetContactNotes::Read()
 {
     _worldPacket >> Player;
-    _worldPacket >> SizedString::BitsSize<10>(Notes);
-    _worldPacket >> SizedString::Data(Notes);
+    Notes = _worldPacket.ReadString(_worldPacket.ReadBits(10));
 }
 
-void AddIgnore::Read()
+void WorldPackets::Social::AddIgnore::Read()
 {
-    _worldPacket >> SizedString::BitsSize<9>(Name);
+    uint32 nameLength = _worldPacket.ReadBits(9);
     _worldPacket >> AccountGUID;
-    _worldPacket >> SizedString::Data(Name);
+    Name = _worldPacket.ReadString(nameLength);
 }
 
-void DelIgnore::Read()
+void WorldPackets::Social::DelIgnore::Read()
 {
     _worldPacket >> Player;
 }
 
-WorldPacket const* SocialContractRequestResponse::Write()
+WorldPacket const* WorldPackets::Social::SocialContractRequestResponse::Write()
 {
-    _worldPacket << Bits<1>(ShowSocialContract);
+    _worldPacket.WriteBit(ShowSocialContract);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
-}
 }

@@ -18,31 +18,23 @@
 #include "GameTime.h"
 #include "Timer.h"
 #include "Timezone.h"
-#include "Types.h"
 #include "Util.h"
 #include "WowTime.h"
 
 namespace GameTime
 {
-namespace
-{
-    time_t GameTime;
-    uint32 GameMSTime;
+    time_t const StartTime = time(nullptr);
 
-    SystemTimePoint GameTimeSystemPoint;
-    TimePoint GameTimeSteadyPoint;
+    time_t GameTime = time(nullptr);
+    uint32 GameMSTime = 0;
+
+    SystemTimePoint GameTimeSystemPoint = SystemTimePoint::min();
+    TimePoint GameTimeSteadyPoint = TimePoint::min();
 
     tm DateTime;
 
     WowTime UtcWow;
     WowTime Wow;
-
-    time_t const StartTime = []
-    {
-        UpdateGameTimers();
-        return time(nullptr);
-    }();
-}
 
     time_t GetStartTime()
     {
@@ -72,8 +64,7 @@ namespace
     template<typename Clock>
     typename Clock::time_point GetTime()
     {
-        static_assert(Trinity::dependant_false_v<Clock>, "Missing specialization for GetGameTimePoint");
-        return { };
+        static_assert(!std::is_same<Clock, Clock>::value, "Missing specialization for GetGameTimePoint");
     }
 
     template<>

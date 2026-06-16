@@ -19,7 +19,7 @@
 #define UpdateMask_h__
 
 #include "Define.h"
-#include <array>
+#include <algorithm>
 #include <cstring> // std::memset
 
 namespace UpdateMaskHelpers
@@ -68,11 +68,10 @@ public:
 
     constexpr bool IsAnySet() const
     {
-        for (uint32 i = 0; i < BlocksMaskCount; ++i)
-            if (_blocksMask[i])
-                return true;
-
-        return false;
+        return std::ranges::any_of(_blocksMask, [](uint32 blockMask)
+        {
+            return blockMask != 0;
+        });
     }
 
     constexpr void Reset(uint32 index)
@@ -98,15 +97,15 @@ public:
     constexpr void SetAll()
     {
         std::memset(_blocksMask.data(), 0xFF, _blocksMask.size() * sizeof(typename decltype(_blocksMask)::value_type));
-        if constexpr (BlockCount % 32)
+        if constexpr (BlocksMaskCount % 32)
         {
-            constexpr uint32 unused = 32 - (BlockCount % 32);
+            constexpr uint32 unused = 32 - (BlocksMaskCount % 32);
             _blocksMask.back() &= (0xFFFFFFFF >> unused);
         }
         std::memset(_blocks.data(), 0xFF, _blocks.size() * sizeof(typename decltype(_blocks)::value_type));
-        if constexpr (Bits % 32)
+        if constexpr (BlockCount % 32)
         {
-            constexpr uint32 unused = 32 - (Bits % 32);
+            constexpr uint32 unused = 32 - (BlockCount % 32);
             _blocks.back() &= (0xFFFFFFFF >> unused);
         }
     }
@@ -140,7 +139,7 @@ private:
 };
 
 template<uint32 Bits>
-constexpr UpdateMask<Bits> operator&(UpdateMask<Bits> const& left, UpdateMask<Bits> const& right)
+UpdateMask<Bits> operator&(UpdateMask<Bits> const& left, UpdateMask<Bits> const& right)
 {
     UpdateMask<Bits> result = left;
     result &= right;
@@ -148,7 +147,7 @@ constexpr UpdateMask<Bits> operator&(UpdateMask<Bits> const& left, UpdateMask<Bi
 }
 
 template<uint32 Bits>
-constexpr UpdateMask<Bits> operator|(UpdateMask<Bits> const& left, UpdateMask<Bits> const& right)
+UpdateMask<Bits> operator|(UpdateMask<Bits> const& left, UpdateMask<Bits> const& right)
 {
     UpdateMask<Bits> result = left;
     result |= right;

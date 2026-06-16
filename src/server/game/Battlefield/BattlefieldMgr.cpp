@@ -64,7 +64,7 @@ void BattlefieldMgr::InitBattlefield()
                 continue;
             }
 
-            BattlefieldIdToScriptId[typeId] = sObjectMgr->GetScriptId(fields[1].GetStringView());
+            BattlefieldIdToScriptId[typeId] = sObjectMgr->GetScriptId(fields[1].GetString());
 
             ++count;
         } while (result->NextRow());

@@ -26,7 +26,7 @@
 #include "Player.h"
 #include "SpellMgr.h"
 #include "StringConvert.h"
-#include "VMapManager.h"
+#include "VMapManager2.h"
 #include "World.h"
 
 namespace DisableMgr

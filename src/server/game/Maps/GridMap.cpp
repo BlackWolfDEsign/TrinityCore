@@ -613,27 +613,31 @@ ZLiquidStatus GridMap::GetLiquidStatus(float x, float y, float z, Optional<map_l
     int idx=(x_int>>3)*16 + (y_int>>3);
     map_liquidHeaderTypeFlags type = _liquidFlags ? _liquidFlags[idx] : _liquidGlobalFlags;
     uint32 entry = _liquidEntry ? _liquidEntry[idx] : _liquidGlobalEntry;
-    if (sLiquidTypeStore.HasRecord(entry))
+    if (LiquidTypeEntry const* liquidEntry = sLiquidTypeStore.LookupEntry(entry))
     {
         type &= map_liquidHeaderTypeFlags::DarkWater;
+        uint32 liqTypeIdx = liquidEntry->SoundBank;
         if (entry < 21)
         {
             if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(getArea(x, y)))
             {
-                uint32 overrideLiquid = area->LiquidTypeID[(entry - 1) & 3];
+                uint32 overrideLiquid = area->LiquidTypeID[liquidEntry->SoundBank];
                 if (!overrideLiquid && area->ParentAreaID)
                 {
                     area = sAreaTableStore.LookupEntry(area->ParentAreaID);
                     if (area)
-                        overrideLiquid = area->LiquidTypeID[(entry - 1) & 3];
+                        overrideLiquid = area->LiquidTypeID[liquidEntry->SoundBank];
                 }
 
-                if (sLiquidTypeStore.HasRecord(overrideLiquid))
+                if (LiquidTypeEntry const* liq = sLiquidTypeStore.LookupEntry(overrideLiquid))
+                {
                     entry = overrideLiquid;
+                    liqTypeIdx = liq->SoundBank;
+                }
             }
         }
 
-        type |= map_liquidHeaderTypeFlags(DB2Manager::GetLiquidFlags(entry));
+        type |= map_liquidHeaderTypeFlags(1 << liqTypeIdx);
     }
 
     if (type == map_liquidHeaderTypeFlags::NoWater)

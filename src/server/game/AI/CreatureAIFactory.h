@@ -19,6 +19,7 @@
 #define TRINITY_CREATUREAIFACTORY_H
 
 #include "ObjectMgr.h"
+#include "ObjectRegistry.h"
 #include "SelectableAI.h"
 
 class Creature;

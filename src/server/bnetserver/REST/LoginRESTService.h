@@ -42,7 +42,7 @@ enum class BanMode
     BAN_ACCOUNT = 1
 };
 
-class LoginRESTService final : public Trinity::Net::Http::HttpService<LoginHttpSession>
+class LoginRESTService : public Trinity::Net::Http::HttpService<LoginHttpSession>
 {
 public:
     using RequestHandlerResult = Trinity::Net::Http::RequestHandlerResult;
@@ -51,7 +51,7 @@ public:
     using HttpRequestContext = Trinity::Net::Http::RequestContext;
     using HttpSessionState = Trinity::Net::Http::SessionState;
 
-    LoginRESTService() : HttpService("login"), _port(0), _firstLocalAddressIndex(0), _loginTicketDuration(0) { }
+    LoginRESTService() : HttpService("login"), _port(0), _loginTicketDuration(0) { }
 
     static LoginRESTService& Instance();
 
@@ -79,11 +79,9 @@ private:
     void MigrateLegacyPasswordHashes() const;
 
     JSON::Login::FormInputs _formInputs;
+    std::string _bindIP;
     uint16 _port;
-    std::string _externalHostname;
-    std::string _localHostname;
-    std::vector<boost::asio::ip::address> _addresses;
-    std::size_t _firstLocalAddressIndex; // index inside _addresses where the first local address can be found
+    std::array<std::pair<std::string, std::vector<boost::asio::ip::address>>, 2> _hostnames;
     uint32 _loginTicketDuration;
 };
 }

@@ -2772,7 +2772,7 @@ class spell_hor_evasion : public SpellScriptLoader
             void SetDest(SpellDestination& dest)
             {
                 WorldObject* target = GetExplTargetWorldObject();
-                Position pos = target->GetPosition();
+                Position pos(*target);
                 Position home = GetCaster()->ToCreature()->GetHomePosition();
 
                 // prevent evasion outside the room
@@ -2780,7 +2780,7 @@ class spell_hor_evasion : public SpellScriptLoader
                     return;
 
                 float angle = pos.GetAbsoluteAngle(&home);
-                float dist = GetEffectInfo().CalcRadius(GetCaster()).Max;
+                float dist = GetEffectInfo().CalcRadius(GetCaster());
                 target->MovePosition(pos, dist, angle);
 
                 dest.Relocate(pos);

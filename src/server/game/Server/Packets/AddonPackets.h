@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_ADDON_PACKETS_H
-#define TRINITYCORE_ADDON_PACKETS_H
+#ifndef AddonPackets_h__
+#define AddonPackets_h__
 
 #include <string>
 
@@ -38,4 +38,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_ADDON_PACKETS_H
+#endif // AddonPackets_h__

@@ -31,21 +31,9 @@
 namespace
 {
 constexpr int32 WORLDSTATE_ANY_MAP = -1;
-struct Data
-{
-    std::unordered_map<int32, WorldStateTemplate> WorldStateTemplates;
-    std::mutex RealmWorldStateValuesMutex;
-    WorldStateValueContainer RealmWorldStateValues;
-    std::unordered_set<WorldStateValueContainer::value_type const*> ChangedRealmWorldStates;
-    std::vector<WorldPackets::WorldState::InitWorldStates::WorldStateInfo> RealmWorldStatePacketCache;
-    std::unordered_map<int32, WorldStateValueContainer> WorldStatesByMap;
-};
-
-Data& GetData()
-{
-    static Data data;
-    return data;
-}
+std::unordered_map<int32, WorldStateTemplate> _worldStateTemplates;
+WorldStateValueContainer _realmWorldStateValues;
+std::unordered_map<int32, WorldStateValueContainer> _worldStatesByMap;
 }
 
 void WorldStateMgr::LoadFromDB()
@@ -57,14 +45,12 @@ void WorldStateMgr::LoadFromDB()
     if (!result)
         return;
 
-    Data& data = GetData();
-
     do
     {
         Field* fields = result->Fetch();
 
         int32 id = fields[0].GetInt32();
-        WorldStateTemplate& worldState = data.WorldStateTemplates[id];
+        WorldStateTemplate& worldState = _worldStateTemplates[id];
         worldState.Id = id;
         worldState.DefaultValue = fields[1].GetInt32();
 
@@ -117,7 +103,7 @@ void WorldStateMgr::LoadFromDB()
                     continue;
                 }
 
-                if (!worldState.MapIds.contains(areaTableEntry->ContinentID))
+                if (worldState.MapIds.find(areaTableEntry->ContinentID) == worldState.MapIds.end())
                 {
                     TC_LOG_ERROR("sql.sql", "Table `world_state` contains a world state {} with AreaID ({}) not on any of required maps, area ignored",
                         id, *areaId);
@@ -140,19 +126,19 @@ void WorldStateMgr::LoadFromDB()
                 id, areaIds);
         }
 
-        worldState.ScriptId = sObjectMgr->GetScriptId(fields[4].GetStringView());
+        worldState.ScriptId = sObjectMgr->GetScriptId(fields[4].GetString());
 
         if (!worldState.MapIds.empty())
         {
             for (int32 mapId : worldState.MapIds)
-                data.WorldStatesByMap[mapId][id] = worldState.DefaultValue;
+                _worldStatesByMap[mapId][id] = worldState.DefaultValue;
         }
         else
-            data.RealmWorldStateValues[id] = worldState.DefaultValue;
+            _realmWorldStateValues[id] = worldState.DefaultValue;
 
     } while (result->NextRow());
 
-    TC_LOG_INFO("server.loading", ">> Loaded {} world state templates {} ms", data.WorldStateTemplates.size(), GetMSTimeDiffToNow(oldMSTime));
+    TC_LOG_INFO("server.loading", ">> Loaded {} world state templates {} ms", _worldStateTemplates.size(), GetMSTimeDiffToNow(oldMSTime));
 
     oldMSTime = getMSTime();
 
@@ -164,7 +150,7 @@ void WorldStateMgr::LoadFromDB()
         {
             Field* fields = result->Fetch();
             int32 worldStateId = fields[0].GetInt32();
-            WorldStateTemplate* worldState = Trinity::Containers::MapGetValuePtr(data.WorldStateTemplates, worldStateId);
+            WorldStateTemplate* worldState = Trinity::Containers::MapGetValuePtr(_worldStateTemplates, worldStateId);
             if (!worldState)
             {
                 TC_LOG_ERROR("sql.sql", "Table `world_state_value` contains a value for unknown world state {}, ignored", worldStateId);
@@ -176,10 +162,10 @@ void WorldStateMgr::LoadFromDB()
             if (!worldState->MapIds.empty())
             {
                 for (int32 mapId : worldState->MapIds)
-                    data.WorldStatesByMap[mapId][worldStateId] = value;
+                    _worldStatesByMap[mapId][worldStateId] = value;
             }
             else
-                data.RealmWorldStateValues[worldStateId] = value;
+                _realmWorldStateValues[worldStateId] = value;
 
             ++savedValueCount;
         }
@@ -189,48 +175,23 @@ void WorldStateMgr::LoadFromDB()
     TC_LOG_INFO("server.loading", ">> Loaded {} saved world state values {} ms", savedValueCount, GetMSTimeDiffToNow(oldMSTime));
 }
 
-void WorldStateMgr::Update()
+WorldStateTemplate const* WorldStateMgr::GetWorldStateTemplate(int32 worldStateId) const
 {
-    Data& data = GetData();
-    if (!data.ChangedRealmWorldStates.empty())
-    {
-        data.RealmWorldStatePacketCache.clear();
-        for (auto const& [worldStateId, value] : data.RealmWorldStateValues)
-            data.RealmWorldStatePacketCache.emplace_back(worldStateId, value);
-
-        // Broadcast update to all players on the server
-        for (WorldStateValueContainer::value_type const* changedRealmWorldState : data.ChangedRealmWorldStates)
-        {
-            WorldPackets::WorldState::UpdateWorldState updateWorldState;
-            updateWorldState.VariableID = changedRealmWorldState->first;
-            updateWorldState.Value = changedRealmWorldState->second;
-            updateWorldState.Hidden = false;
-            sWorld->SendGlobalMessage(updateWorldState.Write());
-        }
-
-        data.ChangedRealmWorldStates.clear();
-    }
+    return Trinity::Containers::MapGetValuePtr(_worldStateTemplates, worldStateId);
 }
 
-WorldStateTemplate const* WorldStateMgr::GetWorldStateTemplate(int32 worldStateId)
-{
-    return Trinity::Containers::MapGetValuePtr(GetData().WorldStateTemplates, worldStateId);
-}
-
-int32 WorldStateMgr::GetValue(int32 worldStateId, Map const* map)
+int32 WorldStateMgr::GetValue(int32 worldStateId, Map const* map) const
 {
     WorldStateTemplate const* worldStateTemplate = GetWorldStateTemplate(worldStateId);
     if (!worldStateTemplate || worldStateTemplate->MapIds.empty())
     {
-        Data& data = GetData();
-        std::scoped_lock lock(data.RealmWorldStateValuesMutex);
-        if (int32 const* value = Trinity::Containers::MapGetValuePtr(data.RealmWorldStateValues, worldStateId))
+        if (int32 const* value = Trinity::Containers::MapGetValuePtr(_realmWorldStateValues, worldStateId))
             return *value;
 
         return 0;
     }
 
-    if (!map || (!worldStateTemplate->MapIds.contains(map->GetId()) && !worldStateTemplate->MapIds.contains(WORLDSTATE_ANY_MAP)))
+    if (!map || (!worldStateTemplate->MapIds.count(map->GetId()) && !worldStateTemplate->MapIds.count(WORLDSTATE_ANY_MAP)))
         return 0;
 
     return map->GetWorldStateValue(worldStateId);
@@ -241,26 +202,26 @@ void WorldStateMgr::SetValue(int32 worldStateId, int32 value, bool hidden, Map* 
     WorldStateTemplate const* worldStateTemplate = GetWorldStateTemplate(worldStateId);
     if (!worldStateTemplate || worldStateTemplate->MapIds.empty())
     {
-        int32 oldValue;
-        {
-            Data& data = GetData();
-            std::scoped_lock lock(data.RealmWorldStateValuesMutex);
-            auto [itr, inserted] = data.RealmWorldStateValues.try_emplace(worldStateId, 0);
-            oldValue = itr->second;
-            if (oldValue == value && !inserted)
-                return;
+        auto [itr, inserted] = _realmWorldStateValues.try_emplace(worldStateId, 0);
+        int32 oldValue = itr->second;
+        if (oldValue == value && !inserted)
+            return;
 
-            itr->second = value;
-            data.ChangedRealmWorldStates.insert(&*itr);
-        }
+        itr->second = value;
 
         if (worldStateTemplate)
             sScriptMgr->OnWorldStateValueChange(worldStateTemplate, oldValue, value, nullptr);
 
+        // Broadcast update to all players on the server
+        WorldPackets::WorldState::UpdateWorldState updateWorldState;
+        updateWorldState.VariableID = worldStateId;
+        updateWorldState.Value = value;
+        updateWorldState.Hidden = hidden;
+        sWorld->SendGlobalMessage(updateWorldState.Write());
         return;
     }
 
-    if (!map || (!worldStateTemplate->MapIds.contains(map->GetId()) && !worldStateTemplate->MapIds.contains(WORLDSTATE_ANY_MAP)))
+    if (!map || (!worldStateTemplate->MapIds.count(map->GetId()) && !worldStateTemplate->MapIds.count(WORLDSTATE_ANY_MAP)))
         return;
 
     map->SetWorldStateValue(worldStateId, value, hidden);
@@ -283,30 +244,29 @@ void WorldStateMgr::SetValueAndSaveInDb(int32 worldStateId, int32 value, bool hi
     SaveValueInDb(worldStateId, value);
 }
 
-WorldStateValueContainer WorldStateMgr::GetInitialWorldStatesForMap(Map const* map)
+WorldStateValueContainer WorldStateMgr::GetInitialWorldStatesForMap(Map const* map) const
 {
     WorldStateValueContainer initialValues;
-    Data& data = GetData();
-    if (WorldStateValueContainer const* valuesTemplate = Trinity::Containers::MapGetValuePtr(data.WorldStatesByMap, map->GetId()))
+    if (WorldStateValueContainer const* valuesTemplate = Trinity::Containers::MapGetValuePtr(_worldStatesByMap, map->GetId()))
         initialValues.insert(valuesTemplate->begin(), valuesTemplate->end());
 
-    if (WorldStateValueContainer const* valuesTemplate = Trinity::Containers::MapGetValuePtr(data.WorldStatesByMap, WORLDSTATE_ANY_MAP))
+    if (WorldStateValueContainer const* valuesTemplate = Trinity::Containers::MapGetValuePtr(_worldStatesByMap, WORLDSTATE_ANY_MAP))
         initialValues.insert(valuesTemplate->begin(), valuesTemplate->end());
 
     return initialValues;
 }
 
-void WorldStateMgr::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& initWorldStates, Map const* map, uint32 playerAreaId)
+void WorldStateMgr::FillInitialWorldStates(WorldPackets::WorldState::InitWorldStates& initWorldStates, Map const* map, uint32 playerAreaId) const
 {
-    Data& data = GetData();
-    initWorldStates.Worldstates.insert(initWorldStates.Worldstates.end(), data.RealmWorldStatePacketCache.begin(), data.RealmWorldStatePacketCache.end());
+    for (auto const& [worldStateId, value] : _realmWorldStateValues)
+        initWorldStates.Worldstates.emplace_back(worldStateId, value);
 
     for (auto const& [worldStateId, value] : map->GetWorldStateValues())
     {
         WorldStateTemplate const* worldStateTemplate = GetWorldStateTemplate(worldStateId);
         if (worldStateTemplate && !worldStateTemplate->AreaIds.empty())
         {
-            bool isInAllowedArea = std::ranges::any_of(worldStateTemplate->AreaIds,
+            bool isInAllowedArea = std::any_of(worldStateTemplate->AreaIds.begin(), worldStateTemplate->AreaIds.end(),
                 [=](uint32 requiredAreaId) { return DB2Manager::IsInArea(playerAreaId, requiredAreaId); });
             if (!isInAllowedArea)
                 continue;
@@ -314,4 +274,10 @@ void WorldStateMgr::FillInitialWorldStates(WorldPackets::WorldState::InitWorldSt
 
         initWorldStates.Worldstates.emplace_back(worldStateId, value);
     }
+}
+
+WorldStateMgr* WorldStateMgr::instance()
+{
+    static WorldStateMgr instance;
+    return &instance;
 }

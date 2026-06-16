@@ -15,13 +15,12 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_COMBAT_LOG_PACKETS_H
-#define TRINITYCORE_COMBAT_LOG_PACKETS_H
+#ifndef CombatLogPackets_h__
+#define CombatLogPackets_h__
 
 #include "CombatLogPacketsCommon.h"
 #include "Optional.h"
-
-struct SpellLogEffect;
+#include "Spell.h"
 
 namespace WorldPackets
 {
@@ -37,7 +36,7 @@ namespace WorldPackets
         class SpellNonMeleeDamageLog final : public CombatLogServerPacket
         {
         public:
-            explicit SpellNonMeleeDamageLog() : CombatLogServerPacket(SMSG_SPELL_NON_MELEE_DAMAGE_LOG, 60) { }
+            SpellNonMeleeDamageLog() : CombatLogServerPacket(SMSG_SPELL_NON_MELEE_DAMAGE_LOG, 60) { }
 
             WorldPacket const* Write() override;
 
@@ -51,21 +50,18 @@ namespace WorldPackets
             int32 Overkill = -1;
             uint8 SchoolMask = 0;
             int32 ShieldBlock = 0;
-            int32 ReflectingSpellID = 0;
             int32 Resisted = 0;
             bool Periodic = false;
             int32 Absorbed = 0;
             int32 Flags = 0;
             // Optional<SpellNonMeleeDamageLogDebugInfo> DebugInfo;
             Optional<Spells::ContentTuningParams> ContentTuning;
-            std::vector<CombatWorldTextViewerInfo> WorldTextViewers;
-            std::vector<Spells::SpellSupportInfo> Supporters;
         };
 
         class EnvironmentalDamageLog final : public CombatLogServerPacket
         {
         public:
-            explicit EnvironmentalDamageLog() : CombatLogServerPacket(SMSG_ENVIRONMENTAL_DAMAGE_LOG, 23) { }
+            EnvironmentalDamageLog() : CombatLogServerPacket(SMSG_ENVIRONMENTAL_DAMAGE_LOG, 23) { }
 
             WorldPacket const* Write() override;
 
@@ -79,7 +75,7 @@ namespace WorldPackets
         class SpellExecuteLog final : public CombatLogServerPacket
         {
         public:
-            explicit SpellExecuteLog() : CombatLogServerPacket(SMSG_SPELL_EXECUTE_LOG, 16 + 4 + 4 + 1) { }
+            SpellExecuteLog() : CombatLogServerPacket(SMSG_SPELL_EXECUTE_LOG, 16 + 4 + 4 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -91,7 +87,7 @@ namespace WorldPackets
         class SpellHealLog final : public CombatLogServerPacket
         {
         public:
-            explicit SpellHealLog() : CombatLogServerPacket(SMSG_SPELL_HEAL_LOG, 16 + 16 + 4 * 5 + 1) { }
+            SpellHealLog() : CombatLogServerPacket(SMSG_SPELL_HEAL_LOG, 16 + 16 + 4 * 5 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -109,44 +105,44 @@ namespace WorldPackets
             std::vector<Spells::SpellSupportInfo> Supporters;
         };
 
-        struct PeriodicalAuraLogEffectDebugInfo
-        {
-            float CritRollMade = 0.0f;
-            float CritRollNeeded = 0.0f;
-        };
-
-        struct PeriodicAuraLogEffect
-        {
-            int32 Effect              = 0;
-            int32 Amount              = 0;
-            int32 OriginalDamage      = 0;
-            int32 OverHealOrKill      = 0;
-            int32 SchoolMaskOrPower   = 0;
-            int32 AbsorbedOrAmplitude = 0;
-            int32 Resisted            = 0;
-            bool Crit                 = false;
-            Optional<PeriodicalAuraLogEffectDebugInfo> DebugInfo;
-            Optional<Spells::ContentTuningParams> ContentTuning;
-            std::vector<Spells::SpellSupportInfo> Supporters;
-        };
-
         class SpellPeriodicAuraLog final : public CombatLogServerPacket
         {
         public:
-            explicit SpellPeriodicAuraLog() : CombatLogServerPacket(SMSG_SPELL_PERIODIC_AURA_LOG, 16 + 16 + 4 + 4 + 1) { }
+            struct PeriodicalAuraLogEffectDebugInfo
+            {
+                float CritRollMade = 0.0f;
+                float CritRollNeeded = 0.0f;
+            };
+
+            struct SpellLogEffect
+            {
+                int32 Effect              = 0;
+                int32 Amount              = 0;
+                int32 OriginalDamage      = 0;
+                int32 OverHealOrKill      = 0;
+                int32 SchoolMaskOrPower   = 0;
+                int32 AbsorbedOrAmplitude = 0;
+                int32 Resisted            = 0;
+                bool Crit                 = false;
+                Optional<PeriodicalAuraLogEffectDebugInfo> DebugInfo;
+                Optional<Spells::ContentTuningParams> ContentTuning;
+                std::vector<Spells::SpellSupportInfo> Supporters;
+            };
+
+            SpellPeriodicAuraLog() : CombatLogServerPacket(SMSG_SPELL_PERIODIC_AURA_LOG, 16 + 16 + 4 + 4 + 1) { }
 
             WorldPacket const* Write() override;
 
             ObjectGuid TargetGUID;
             ObjectGuid CasterGUID;
             int32 SpellID = 0;
-            std::vector<PeriodicAuraLogEffect> Effects;
+            std::vector<SpellLogEffect> Effects;
         };
 
         class SpellInterruptLog final : public ServerPacket
         {
         public:
-            explicit SpellInterruptLog() : ServerPacket(SMSG_SPELL_INTERRUPT_LOG, 16 + 16 + 4 + 4) { }
+            SpellInterruptLog() : ServerPacket(SMSG_SPELL_INTERRUPT_LOG, 16 + 16 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -154,7 +150,6 @@ namespace WorldPackets
             ObjectGuid Victim;
             int32 InterruptedSpellID = 0;
             int32 SpellID = 0;
-            bool HideFromCombatLog = false;
         };
 
         struct SpellDispellData
@@ -168,7 +163,7 @@ namespace WorldPackets
         class SpellDispellLog : public ServerPacket
         {
         public:
-            explicit SpellDispellLog() : ServerPacket(SMSG_SPELL_DISPELL_LOG, 1 + 16 + 16 + 4 + 4 + 20) { }
+            SpellDispellLog() : ServerPacket(SMSG_SPELL_DISPELL_LOG, 1 + 16 + 16 + 4 + 4 + 20) { }
 
             WorldPacket const* Write() override;
 
@@ -183,7 +178,7 @@ namespace WorldPackets
         class SpellEnergizeLog final : public CombatLogServerPacket
         {
         public:
-            explicit SpellEnergizeLog() : CombatLogServerPacket(SMSG_SPELL_ENERGIZE_LOG, 16 + 16 + 4 + 4 + 4 + 1) { }
+            SpellEnergizeLog() : CombatLogServerPacket(SMSG_SPELL_ENERGIZE_LOG, 16 + 16 + 4 + 4 + 4 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -198,7 +193,7 @@ namespace WorldPackets
         class TC_GAME_API SpellInstakillLog final : public ServerPacket
         {
         public:
-            explicit SpellInstakillLog() : ServerPacket(SMSG_SPELL_INSTAKILL_LOG, 16 + 16 + 4) { }
+            SpellInstakillLog() : ServerPacket(SMSG_SPELL_INSTAKILL_LOG, 16 + 16 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -225,20 +220,19 @@ namespace WorldPackets
         class SpellMissLog final : public ServerPacket
         {
         public:
-            explicit SpellMissLog() : ServerPacket(SMSG_SPELL_MISS_LOG) { }
+            SpellMissLog() : ServerPacket(SMSG_SPELL_MISS_LOG) { }
 
             WorldPacket const* Write() override;
 
             int32 SpellID = 0;
             ObjectGuid Caster;
             std::vector<SpellLogMissEntry> Entries;
-            bool HideFromCombatLog = false;
         };
 
         class ProcResist final : public ServerPacket
         {
         public:
-            explicit ProcResist() : ServerPacket(SMSG_PROC_RESIST, 16 + 4 + 4 + 4 + 16) { }
+            ProcResist() : ServerPacket(SMSG_PROC_RESIST, 16 + 4 + 4 + 4 + 16) { }
 
             WorldPacket const* Write() override;
 
@@ -252,7 +246,7 @@ namespace WorldPackets
         class SpellOrDamageImmune final : public ServerPacket
         {
         public:
-            explicit SpellOrDamageImmune() : ServerPacket(SMSG_SPELL_OR_DAMAGE_IMMUNE, 16 + 1 + 4 + 16) { }
+            SpellOrDamageImmune() : ServerPacket(SMSG_SPELL_OR_DAMAGE_IMMUNE, 16 + 1 + 4 + 16) { }
 
             WorldPacket const* Write() override;
 
@@ -265,7 +259,7 @@ namespace WorldPackets
         class SpellDamageShield final : public CombatLogServerPacket
         {
         public:
-            explicit SpellDamageShield() : CombatLogServerPacket(SMSG_SPELL_DAMAGE_SHIELD, 4 + 16 + 4 + 4 + 16 + 4 + 4 + 1) { }
+            SpellDamageShield() : CombatLogServerPacket(SMSG_SPELL_DAMAGE_SHIELD, 4 + 16 + 4 + 4 + 16 + 4 + 4 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -288,30 +282,30 @@ namespace WorldPackets
             int32 Resisted = 0;
         };
 
-        struct HitInfoData
+        struct UnkAttackerState
         {
-            uint32 ArmorReduction = 0;
-            float CritRollNeeded = 0.0f;
-            float CombatRoll = 0.0f;
-            float MissChance = 0.0f;
-            float DodgeChance = 0.0f;
-            float ParryChance = 0.0f;
-            float BlockChance = 0.0f;
-            float GlanceChance = 0.0f;
-            float CrushChance = 0.0f;
-            float MinDamage = 0.0f;
-            float MaxDamage = 0.0f;
-            uint32 SinceLastSwing = 0;
+            uint32 State1 = 0;
+            float State2 = 0.0f;
+            float State3 = 0.0f;
+            float State4 = 0.0f;
+            float State5 = 0.0f;
+            float State6 = 0.0f;
+            float State7 = 0.0f;
+            float State8 = 0.0f;
+            float State9 = 0.0f;
+            std::array<float, 5> State10 = {};
+            std::array<float, 5> State11 = {};
+            uint32 State12 = 0;
         };
 
         class AttackerStateUpdate final : public CombatLogServerPacket
         {
         public:
-            explicit AttackerStateUpdate() : CombatLogServerPacket(SMSG_ATTACKER_STATE_UPDATE, 70) { }
+            AttackerStateUpdate() : CombatLogServerPacket(SMSG_ATTACKER_STATE_UPDATE, 70) { }
 
             WorldPacket const* Write() override;
 
-            uint32 Flags = 0; // Flags
+            uint32 HitInfo = 0; // Flags
             ObjectGuid AttackerGUID;
             ObjectGuid VictimGUID;
             int32 Damage = 0;
@@ -323,15 +317,15 @@ namespace WorldPackets
             uint32 MeleeSpellID = 0;
             int32 BlockAmount = 0;
             int32 RageGained = 0;
-            HitInfoData HitInfo;
-            float BlockRoll = 0.0f;
+            UnkAttackerState UnkState;
+            float Unk = 0.0f;
             Spells::ContentTuningParams ContentTuning;
         };
 
         class SpellAbsorbLog final : public CombatLogServerPacket
         {
         public:
-            explicit SpellAbsorbLog() : CombatLogServerPacket(SMSG_SPELL_ABSORB_LOG, 100) { }
+            SpellAbsorbLog() : CombatLogServerPacket(SMSG_SPELL_ABSORB_LOG, 100) { }
 
             WorldPacket const* Write() override;
 
@@ -346,10 +340,10 @@ namespace WorldPackets
             std::vector<Spells::SpellSupportInfo> Supporters;
         };
 
-        class SpellHealAbsorbLog final : public CombatLogServerPacket
+        class SpellHealAbsorbLog final : public ServerPacket
         {
         public:
-            explicit SpellHealAbsorbLog() : CombatLogServerPacket(SMSG_SPELL_HEAL_ABSORB_LOG, 100) { }
+            SpellHealAbsorbLog() : ServerPacket(SMSG_SPELL_HEAL_ABSORB_LOG, 100) { }
 
             WorldPacket const* Write() override;
 
@@ -365,4 +359,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_COMBAT_LOG_PACKETS_H
+#endif // CombatLogPackets_h__

@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_GUILDPACKETS_H
-#define TRINITYCORE_GUILDPACKETS_H
+#ifndef GuildPackets_h__
+#define GuildPackets_h__
 
 #include "Packet.h"
 #include "ItemPacketsCommon.h"
@@ -33,7 +33,7 @@ namespace WorldPackets
         class QueryGuildInfo final : public ClientPacket
         {
         public:
-            explicit QueryGuildInfo(WorldPacket&& packet) : ClientPacket(CMSG_QUERY_GUILD_INFO, std::move(packet)) { }
+            QueryGuildInfo(WorldPacket&& packet) : ClientPacket(CMSG_QUERY_GUILD_INFO, std::move(packet)) { }
 
             void Read() override;
 
@@ -71,7 +71,7 @@ namespace WorldPackets
         class QueryGuildInfoResponse final : public ServerPacket
         {
         public:
-            explicit QueryGuildInfoResponse() : ServerPacket(SMSG_QUERY_GUILD_INFO_RESPONSE) { }
+            QueryGuildInfoResponse();
 
             WorldPacket const* Write() override;
 
@@ -82,7 +82,7 @@ namespace WorldPackets
         class GuildGetRoster final : public ClientPacket
         {
         public:
-            explicit GuildGetRoster(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_GET_ROSTER, std::move(packet)) { }
+            GuildGetRoster(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_GET_ROSTER, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -105,17 +105,16 @@ namespace WorldPackets
             int32 GuildReputation = 0;
             int32 GuildRepToCap = 0;
             float LastSave = 0.0f;
-            std::string_view Name;
+            std::string Name;
             uint32 VirtualRealmAddress = 0;
-            std::string_view Note;
-            std::string_view OfficerNote;
+            std::string Note;
+            std::string OfficerNote;
             uint8 Status = 0;
             uint8 Level = 0;
             uint8 ClassID = 0;
             uint8 Gender = 0;
             uint64 GuildClubMemberID = 0;
             uint8 RaceID = 0;
-            int32 TimerunningSeasonID = 0;
             bool Authenticated = false;
             GuildRosterProfessionData Profession[2];
             MythicPlus::DungeonScoreSummary DungeonScore;
@@ -124,7 +123,7 @@ namespace WorldPackets
         class GuildRoster final : public ServerPacket
         {
         public:
-            explicit GuildRoster() : ServerPacket(SMSG_GUILD_ROSTER, 4 + 4 + 4 + 4) { }
+            GuildRoster() : ServerPacket(SMSG_GUILD_ROSTER, 4 + 4 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -139,7 +138,7 @@ namespace WorldPackets
         class GuildUpdateMotdText final : public ClientPacket
         {
         public:
-            explicit GuildUpdateMotdText(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_UPDATE_MOTD_TEXT, std::move(packet)) { }
+            GuildUpdateMotdText(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_UPDATE_MOTD_TEXT, std::move(packet)) { }
 
             void Read() override;
 
@@ -149,19 +148,19 @@ namespace WorldPackets
         class GuildCommandResult final : public ServerPacket
         {
         public:
-            explicit GuildCommandResult() : ServerPacket(SMSG_GUILD_COMMAND_RESULT, 9) { }
+            GuildCommandResult() : ServerPacket(SMSG_GUILD_COMMAND_RESULT, 9) { }
 
             WorldPacket const* Write() override;
 
             std::string Name;
-            uint8 Result = 0;
-            uint8 Command = 0;
+            int32 Result = 0;
+            int32 Command = 0;
         };
 
         class AcceptGuildInvite final : public ClientPacket
         {
         public:
-            explicit AcceptGuildInvite(WorldPacket&& packet) : ClientPacket(CMSG_ACCEPT_GUILD_INVITE, std::move(packet)) { }
+            AcceptGuildInvite(WorldPacket&& packet) : ClientPacket(CMSG_ACCEPT_GUILD_INVITE, std::move(packet)) { }
 
             void Read() override;
 
@@ -171,7 +170,7 @@ namespace WorldPackets
         class GuildDeclineInvitation final : public ClientPacket
         {
         public:
-            explicit GuildDeclineInvitation(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DECLINE_INVITATION, std::move(packet)) { }
+            GuildDeclineInvitation(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DECLINE_INVITATION, std::move(packet)) { }
 
             void Read() override;
 
@@ -182,7 +181,7 @@ namespace WorldPackets
         class DeclineGuildInvites final : public ClientPacket
         {
         public:
-            explicit DeclineGuildInvites(WorldPacket&& packet) : ClientPacket(CMSG_DECLINE_GUILD_INVITES, std::move(packet)) { }
+            DeclineGuildInvites(WorldPacket&& packet) : ClientPacket(CMSG_DECLINE_GUILD_INVITES, std::move(packet)) { }
 
             void Read() override;
 
@@ -192,18 +191,18 @@ namespace WorldPackets
         class GuildInviteByName final : public ClientPacket
         {
         public:
-            explicit GuildInviteByName(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_INVITE_BY_NAME, std::move(packet)) { }
+            GuildInviteByName(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_INVITE_BY_NAME, std::move(packet)) { }
 
             void Read() override;
 
             std::string Name;
-            Optional<int32> ArenaTeam;
+            Optional<int32> Unused910;
         };
 
         class GuildInvite final : public ServerPacket
         {
         public:
-            explicit GuildInvite() : ServerPacket(SMSG_GUILD_INVITE, 68) { }
+            GuildInvite() : ServerPacket(SMSG_GUILD_INVITE, 68) { }
 
             WorldPacket const* Write() override;
 
@@ -226,7 +225,7 @@ namespace WorldPackets
         class GuildEventStatusChange final : public ServerPacket
         {
         public:
-            explicit GuildEventStatusChange() : ServerPacket(SMSG_GUILD_EVENT_STATUS_CHANGE, 16 + 1) {  }
+            GuildEventStatusChange() : ServerPacket(SMSG_GUILD_EVENT_STATUS_CHANGE, 16 + 1) {  }
 
             WorldPacket const* Write() override;
 
@@ -238,7 +237,7 @@ namespace WorldPackets
         class GuildEventPresenceChange final : public ServerPacket
         {
         public:
-            explicit GuildEventPresenceChange() : ServerPacket(SMSG_GUILD_EVENT_PRESENCE_CHANGE, 16 + 4 + 1 + 1) { }
+            GuildEventPresenceChange() : ServerPacket(SMSG_GUILD_EVENT_PRESENCE_CHANGE, 16 + 4 + 1 + 1) { }
 
             WorldPacket const* Write() override;
 
@@ -251,7 +250,7 @@ namespace WorldPackets
         class GuildEventMotd final : public ServerPacket
         {
         public:
-            explicit GuildEventMotd() : ServerPacket(SMSG_GUILD_EVENT_MOTD, 1) { }
+            GuildEventMotd() : ServerPacket(SMSG_GUILD_EVENT_MOTD, 1) { }
 
             WorldPacket const* Write() override;
 
@@ -261,7 +260,7 @@ namespace WorldPackets
         class GuildEventPlayerJoined final : public ServerPacket
         {
         public:
-            explicit GuildEventPlayerJoined() : ServerPacket(SMSG_GUILD_EVENT_PLAYER_JOINED, 21) { }
+            GuildEventPlayerJoined() : ServerPacket(SMSG_GUILD_EVENT_PLAYER_JOINED, 21) { }
 
             WorldPacket const* Write() override;
 
@@ -273,7 +272,7 @@ namespace WorldPackets
         class GuildEventRankChanged final : public ServerPacket
         {
         public:
-            explicit GuildEventRankChanged() : ServerPacket(SMSG_GUILD_EVENT_RANK_CHANGED, 4) { }
+            GuildEventRankChanged() : ServerPacket(SMSG_GUILD_EVENT_RANK_CHANGED, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -283,7 +282,7 @@ namespace WorldPackets
         class GuildEventRanksUpdated final : public ServerPacket
         {
         public:
-            explicit GuildEventRanksUpdated() : ServerPacket(SMSG_GUILD_EVENT_RANKS_UPDATED, 0) { }
+            GuildEventRanksUpdated() : ServerPacket(SMSG_GUILD_EVENT_RANKS_UPDATED, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -291,7 +290,7 @@ namespace WorldPackets
         class GuildEventBankMoneyChanged final : public ServerPacket
         {
         public:
-            explicit GuildEventBankMoneyChanged() : ServerPacket(SMSG_GUILD_EVENT_BANK_MONEY_CHANGED, 8) { }
+            GuildEventBankMoneyChanged() : ServerPacket(SMSG_GUILD_EVENT_BANK_MONEY_CHANGED, 8) { }
 
             WorldPacket const* Write() override;
 
@@ -301,7 +300,7 @@ namespace WorldPackets
         class GuildEventDisbanded final : public ServerPacket
         {
         public:
-            explicit GuildEventDisbanded() : ServerPacket(SMSG_GUILD_EVENT_DISBANDED, 0) { }
+            GuildEventDisbanded() : ServerPacket(SMSG_GUILD_EVENT_DISBANDED, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -318,7 +317,7 @@ namespace WorldPackets
         class GuildEventLogQuery final : public ClientPacket
         {
         public:
-            explicit GuildEventLogQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_EVENT_LOG_QUERY, std::move(packet)) { }
+            GuildEventLogQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_EVENT_LOG_QUERY, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -326,7 +325,7 @@ namespace WorldPackets
         class GuildEventLogQueryResults final : public ServerPacket
         {
         public:
-            explicit GuildEventLogQueryResults() : ServerPacket(SMSG_GUILD_EVENT_LOG_QUERY_RESULTS, 4) { }
+            GuildEventLogQueryResults() : ServerPacket(SMSG_GUILD_EVENT_LOG_QUERY_RESULTS, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -336,7 +335,7 @@ namespace WorldPackets
         class GuildEventPlayerLeft final : public ServerPacket
         {
         public:
-            explicit GuildEventPlayerLeft() : ServerPacket(SMSG_GUILD_EVENT_PLAYER_LEFT, 43) { }
+            GuildEventPlayerLeft() : ServerPacket(SMSG_GUILD_EVENT_PLAYER_LEFT, 43) { }
 
             WorldPacket const* Write() override;
 
@@ -352,7 +351,7 @@ namespace WorldPackets
         class GuildEventNewLeader final : public ServerPacket
         {
         public:
-            explicit GuildEventNewLeader() : ServerPacket(SMSG_GUILD_EVENT_NEW_LEADER, 43) { }
+            GuildEventNewLeader() : ServerPacket(SMSG_GUILD_EVENT_NEW_LEADER, 43) { }
 
             WorldPacket const* Write() override;
 
@@ -368,7 +367,7 @@ namespace WorldPackets
         class GuildEventTabAdded final : public ServerPacket
         {
         public:
-            explicit GuildEventTabAdded() : ServerPacket(SMSG_GUILD_EVENT_TAB_ADDED, 0) { }
+            GuildEventTabAdded() : ServerPacket(SMSG_GUILD_EVENT_TAB_ADDED, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -376,7 +375,7 @@ namespace WorldPackets
         class GuildEventTabModified final : public ServerPacket
         {
         public:
-            explicit GuildEventTabModified() : ServerPacket(SMSG_GUILD_EVENT_TAB_MODIFIED, 6) { }
+            GuildEventTabModified() : ServerPacket(SMSG_GUILD_EVENT_TAB_MODIFIED, 6) { }
 
             WorldPacket const* Write() override;
 
@@ -388,7 +387,7 @@ namespace WorldPackets
         class GuildEventTabTextChanged final : public ServerPacket
         {
         public:
-            explicit GuildEventTabTextChanged() : ServerPacket(SMSG_GUILD_EVENT_TAB_TEXT_CHANGED, 4) { }
+            GuildEventTabTextChanged() : ServerPacket(SMSG_GUILD_EVENT_TAB_TEXT_CHANGED, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -398,7 +397,7 @@ namespace WorldPackets
         class GuildEventBankContentsChanged final : public ServerPacket
         {
         public:
-            explicit GuildEventBankContentsChanged() : ServerPacket(SMSG_GUILD_EVENT_BANK_CONTENTS_CHANGED, 0) { }
+            GuildEventBankContentsChanged() : ServerPacket(SMSG_GUILD_EVENT_BANK_CONTENTS_CHANGED, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -406,7 +405,7 @@ namespace WorldPackets
         class GuildPermissionsQuery final : public ClientPacket
         {
         public:
-            explicit GuildPermissionsQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_PERMISSIONS_QUERY, std::move(packet)) { }
+            GuildPermissionsQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_PERMISSIONS_QUERY, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -420,7 +419,7 @@ namespace WorldPackets
                 int32 WithdrawItemLimit = 0;
             };
 
-            explicit GuildPermissionsQueryResults() : ServerPacket(SMSG_GUILD_PERMISSIONS_QUERY_RESULTS, 20) { }
+            GuildPermissionsQueryResults() : ServerPacket(SMSG_GUILD_PERMISSIONS_QUERY_RESULTS, 20) { }
 
             WorldPacket const* Write() override;
 
@@ -434,7 +433,7 @@ namespace WorldPackets
         class GuildSetRankPermissions final : public ClientPacket
         {
         public:
-            explicit GuildSetRankPermissions(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_RANK_PERMISSIONS, std::move(packet)) { }
+            GuildSetRankPermissions(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_RANK_PERMISSIONS, std::move(packet)) { }
 
             void Read() override;
 
@@ -451,7 +450,7 @@ namespace WorldPackets
         class GuildAddRank final : public ClientPacket
         {
         public:
-            explicit GuildAddRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_ADD_RANK, std::move(packet)) { }
+            GuildAddRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_ADD_RANK, std::move(packet)) { }
 
             void Read() override;
 
@@ -462,7 +461,7 @@ namespace WorldPackets
         class GuildAssignMemberRank final : public ClientPacket
         {
         public:
-            explicit GuildAssignMemberRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_ASSIGN_MEMBER_RANK, std::move(packet)) { }
+            GuildAssignMemberRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_ASSIGN_MEMBER_RANK, std::move(packet)) { }
 
             void Read() override;
 
@@ -473,7 +472,7 @@ namespace WorldPackets
         class GuildDeleteRank final : public ClientPacket
         {
         public:
-            explicit GuildDeleteRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DELETE_RANK, std::move(packet)) { }
+            GuildDeleteRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DELETE_RANK, std::move(packet)) { }
 
             void Read() override;
 
@@ -483,7 +482,7 @@ namespace WorldPackets
         class GuildGetRanks final : public ClientPacket
         {
         public:
-            explicit GuildGetRanks(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_GET_RANKS, std::move(packet)) { }
+            GuildGetRanks(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_GET_RANKS, std::move(packet)) { }
 
             void Read() override;
 
@@ -504,7 +503,7 @@ namespace WorldPackets
         class GuildRanks final : public ServerPacket
         {
         public:
-            explicit GuildRanks() : ServerPacket(SMSG_GUILD_RANKS, 4) { }
+            GuildRanks() : ServerPacket(SMSG_GUILD_RANKS, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -514,7 +513,7 @@ namespace WorldPackets
         class GuildSendRankChange final : public ServerPacket
         {
         public:
-            explicit GuildSendRankChange() : ServerPacket(SMSG_GUILD_SEND_RANK_CHANGE, 43) { }
+            GuildSendRankChange() : ServerPacket(SMSG_GUILD_SEND_RANK_CHANGE, 43) { }
 
             WorldPacket const* Write() override;
 
@@ -527,7 +526,7 @@ namespace WorldPackets
         class GuildShiftRank final : public ClientPacket
         {
         public:
-            explicit GuildShiftRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SHIFT_RANK, std::move(packet)) { }
+            GuildShiftRank(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SHIFT_RANK, std::move(packet)) { }
 
             void Read() override;
 
@@ -538,7 +537,7 @@ namespace WorldPackets
         class GuildUpdateInfoText final : public ClientPacket
         {
         public:
-            explicit GuildUpdateInfoText(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_UPDATE_INFO_TEXT, std::move(packet)) { }
+            GuildUpdateInfoText(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_UPDATE_INFO_TEXT, std::move(packet)) { }
 
             void Read() override;
 
@@ -548,7 +547,7 @@ namespace WorldPackets
         class GuildSetMemberNote final : public ClientPacket
         {
         public:
-            explicit GuildSetMemberNote(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_MEMBER_NOTE, std::move(packet)) { }
+            GuildSetMemberNote(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_MEMBER_NOTE, std::move(packet)) { }
 
             void Read() override;
 
@@ -560,7 +559,7 @@ namespace WorldPackets
         class GuildMemberUpdateNote final : public ServerPacket
         {
         public:
-            explicit GuildMemberUpdateNote() : ServerPacket(SMSG_GUILD_MEMBER_UPDATE_NOTE, 21) { }
+            GuildMemberUpdateNote() : ServerPacket(SMSG_GUILD_MEMBER_UPDATE_NOTE, 21) { }
 
             WorldPacket const* Write() override;
 
@@ -572,7 +571,7 @@ namespace WorldPackets
         class GuildMemberDailyReset final : public ServerPacket
         {
         public:
-            explicit GuildMemberDailyReset() : ServerPacket(SMSG_GUILD_MEMBER_DAILY_RESET, 0) { }
+            GuildMemberDailyReset() : ServerPacket(SMSG_GUILD_MEMBER_DAILY_RESET, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -580,7 +579,7 @@ namespace WorldPackets
         class GuildDelete final : public ClientPacket
         {
         public:
-            explicit GuildDelete(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DELETE, std::move(packet)) { }
+            GuildDelete(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DELETE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -588,7 +587,7 @@ namespace WorldPackets
         class GuildDemoteMember final : public ClientPacket
         {
         public:
-            explicit GuildDemoteMember(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DEMOTE_MEMBER, std::move(packet)) { }
+            GuildDemoteMember(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_DEMOTE_MEMBER, std::move(packet)) { }
 
             void Read() override;
 
@@ -598,17 +597,17 @@ namespace WorldPackets
         class GuildPromoteMember final : public ClientPacket
         {
         public:
-            explicit GuildPromoteMember(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_PROMOTE_MEMBER, std::move(packet)) { }
+            GuildPromoteMember(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_PROMOTE_MEMBER, std::move(packet)) { }
 
             void Read() override;
 
             ObjectGuid Promotee;
         };
 
-        class GuildOfficerRemoveMember final : public ClientPacket
+        class GuildOfficerRemoveMember : public ClientPacket
         {
         public:
-            explicit GuildOfficerRemoveMember(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_OFFICER_REMOVE_MEMBER, std::move(packet)) { }
+            GuildOfficerRemoveMember(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_OFFICER_REMOVE_MEMBER, std::move(packet)) { }
 
             void Read() override;
 
@@ -618,7 +617,7 @@ namespace WorldPackets
         class GuildLeave final : public ClientPacket
         {
         public:
-            explicit GuildLeave(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_LEAVE, std::move(packet)) { }
+            GuildLeave(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_LEAVE, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -626,7 +625,7 @@ namespace WorldPackets
         class GuildChangeNameRequest final : public ClientPacket
         {
         public:
-            explicit GuildChangeNameRequest(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_CHANGE_NAME_REQUEST, std::move(packet)) { }
+            GuildChangeNameRequest(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_CHANGE_NAME_REQUEST, std::move(packet)) { }
 
             void Read() override;
 
@@ -636,7 +635,7 @@ namespace WorldPackets
         class GuildFlaggedForRename final : public ServerPacket
         {
         public:
-            explicit GuildFlaggedForRename() : ServerPacket(SMSG_GUILD_FLAGGED_FOR_RENAME, 1) { }
+            GuildFlaggedForRename() : ServerPacket(SMSG_GUILD_FLAGGED_FOR_RENAME, 1) { }
 
             WorldPacket const* Write() override;
 
@@ -646,7 +645,7 @@ namespace WorldPackets
         class RequestGuildPartyState final : public ClientPacket
         {
         public:
-            explicit RequestGuildPartyState(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_GUILD_PARTY_STATE, std::move(packet)) { }
+            RequestGuildPartyState(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_GUILD_PARTY_STATE, std::move(packet)) { }
 
             void Read() override;
 
@@ -656,7 +655,7 @@ namespace WorldPackets
         class GuildPartyState final : public ServerPacket
         {
         public:
-            explicit GuildPartyState() : ServerPacket(SMSG_GUILD_PARTY_STATE, 15) { }
+            GuildPartyState() : ServerPacket(SMSG_GUILD_PARTY_STATE, 15) { }
 
             WorldPacket const* Write() override;
 
@@ -669,7 +668,7 @@ namespace WorldPackets
         class RequestGuildRewardsList final : public ClientPacket
         {
         public:
-            explicit RequestGuildRewardsList(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_GUILD_REWARDS_LIST, std::move(packet)) { }
+            RequestGuildRewardsList(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_GUILD_REWARDS_LIST, std::move(packet)) { }
 
             void Read() override;
 
@@ -679,9 +678,9 @@ namespace WorldPackets
         struct GuildRewardItem
         {
             uint32 ItemID = 0;
-            uint32 AchievementLogic = 0;
+            uint32 Unk4 = 0;
             std::vector<uint32> AchievementsRequired;
-            Trinity::RaceMask<std::array<int32, 2>> RaceMask = { };
+            Trinity::RaceMask<uint64> RaceMask = { 0 };
             int32 MinGuildLevel = 0;
             int32 MinGuildRep = 0;
             uint64 Cost = 0;
@@ -690,7 +689,7 @@ namespace WorldPackets
         class GuildRewardList final : public ServerPacket
         {
         public:
-            explicit GuildRewardList() : ServerPacket(SMSG_GUILD_REWARD_LIST, 8) { }
+            GuildRewardList() : ServerPacket(SMSG_GUILD_REWARD_LIST, 8) { }
 
             WorldPacket const* Write() override;
 
@@ -701,7 +700,7 @@ namespace WorldPackets
         class GuildBankActivate final : public ClientPacket
         {
         public:
-            explicit GuildBankActivate(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_ACTIVATE, std::move(packet)) { }
+            GuildBankActivate(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_ACTIVATE, std::move(packet)) { }
 
             void Read() override;
 
@@ -712,7 +711,7 @@ namespace WorldPackets
         class GuildBankBuyTab final : public ClientPacket
         {
         public:
-            explicit GuildBankBuyTab(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_BUY_TAB, std::move(packet)) { }
+            GuildBankBuyTab(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_BUY_TAB, std::move(packet)) { }
 
             void Read() override;
 
@@ -723,7 +722,7 @@ namespace WorldPackets
         class GuildBankUpdateTab final : public ClientPacket
         {
         public:
-            explicit GuildBankUpdateTab(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_UPDATE_TAB, std::move(packet)) { }
+            GuildBankUpdateTab(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_UPDATE_TAB, std::move(packet)) { }
 
             void Read() override;
 
@@ -736,7 +735,7 @@ namespace WorldPackets
         class GuildBankDepositMoney final : public ClientPacket
         {
         public:
-            explicit GuildBankDepositMoney(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_DEPOSIT_MONEY, std::move(packet)) { }
+            GuildBankDepositMoney(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_DEPOSIT_MONEY, std::move(packet)) { }
 
             void Read() override;
 
@@ -747,7 +746,7 @@ namespace WorldPackets
         class GuildBankQueryTab final : public ClientPacket
         {
         public:
-            explicit GuildBankQueryTab(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_QUERY_TAB, std::move(packet)) { }
+            GuildBankQueryTab(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_QUERY_TAB, std::move(packet)) { }
 
             void Read() override;
 
@@ -759,7 +758,7 @@ namespace WorldPackets
         class GuildBankRemainingWithdrawMoneyQuery final : public ClientPacket
         {
         public:
-            explicit GuildBankRemainingWithdrawMoneyQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY_QUERY, std::move(packet)) { }
+            GuildBankRemainingWithdrawMoneyQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY_QUERY, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -767,7 +766,7 @@ namespace WorldPackets
         class GuildBankRemainingWithdrawMoney final : public ServerPacket
         {
         public:
-            explicit GuildBankRemainingWithdrawMoney() : ServerPacket(SMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY, 8) { }
+            GuildBankRemainingWithdrawMoney() : ServerPacket(SMSG_GUILD_BANK_REMAINING_WITHDRAW_MONEY, 8) { }
 
             WorldPacket const* Write() override;
 
@@ -777,7 +776,7 @@ namespace WorldPackets
         class GuildBankWithdrawMoney final : public ClientPacket
         {
         public:
-            explicit GuildBankWithdrawMoney(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_WITHDRAW_MONEY, std::move(packet)) { }
+            GuildBankWithdrawMoney(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_WITHDRAW_MONEY, std::move(packet)) { }
 
             void Read() override;
 
@@ -808,7 +807,7 @@ namespace WorldPackets
         class GuildBankQueryResults final : public ServerPacket
         {
         public:
-            explicit GuildBankQueryResults() : ServerPacket(SMSG_GUILD_BANK_QUERY_RESULTS, 25) { }
+            GuildBankQueryResults() : ServerPacket(SMSG_GUILD_BANK_QUERY_RESULTS, 25) { }
 
             WorldPacket const* Write() override;
 
@@ -823,7 +822,7 @@ namespace WorldPackets
         class AutoGuildBankItem final : public ClientPacket
         {
         public:
-            explicit AutoGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTO_GUILD_BANK_ITEM, std::move(packet)) { }
+            AutoGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTO_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -837,7 +836,7 @@ namespace WorldPackets
         class StoreGuildBankItem final : public ClientPacket
         {
         public:
-            explicit StoreGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_STORE_GUILD_BANK_ITEM, std::move(packet)) { }
+            StoreGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_STORE_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -851,7 +850,7 @@ namespace WorldPackets
         class SwapItemWithGuildBankItem final : public ClientPacket
         {
         public:
-            explicit SwapItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_SWAP_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
+            SwapItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_SWAP_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -865,7 +864,7 @@ namespace WorldPackets
         class SwapGuildBankItemWithGuildBankItem final : public ClientPacket
         {
         public:
-            explicit SwapGuildBankItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_SWAP_GUILD_BANK_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
+            SwapGuildBankItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_SWAP_GUILD_BANK_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -877,7 +876,7 @@ namespace WorldPackets
         class MoveGuildBankItem final : public ClientPacket
         {
         public:
-            explicit MoveGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_GUILD_BANK_ITEM, std::move(packet)) { }
+            MoveGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -891,7 +890,7 @@ namespace WorldPackets
         class MergeItemWithGuildBankItem final : public ClientPacket
         {
         public:
-            explicit MergeItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_MERGE_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
+            MergeItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_MERGE_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -906,7 +905,7 @@ namespace WorldPackets
         class SplitItemToGuildBank final : public ClientPacket
         {
         public:
-            explicit SplitItemToGuildBank(WorldPacket&& packet) : ClientPacket(CMSG_SPLIT_ITEM_TO_GUILD_BANK, std::move(packet)) { }
+            SplitItemToGuildBank(WorldPacket&& packet) : ClientPacket(CMSG_SPLIT_ITEM_TO_GUILD_BANK, std::move(packet)) { }
 
             void Read() override;
 
@@ -921,7 +920,7 @@ namespace WorldPackets
         class MergeGuildBankItemWithItem final : public ClientPacket
         {
         public:
-            explicit MergeGuildBankItemWithItem(WorldPacket&& packet) : ClientPacket(CMSG_MERGE_GUILD_BANK_ITEM_WITH_ITEM, std::move(packet)) { }
+            MergeGuildBankItemWithItem(WorldPacket&& packet) : ClientPacket(CMSG_MERGE_GUILD_BANK_ITEM_WITH_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -936,7 +935,7 @@ namespace WorldPackets
         class SplitGuildBankItemToInventory final : public ClientPacket
         {
         public:
-            explicit SplitGuildBankItemToInventory(WorldPacket&& packet) : ClientPacket(CMSG_SPLIT_GUILD_BANK_ITEM_TO_INVENTORY, std::move(packet)) { }
+            SplitGuildBankItemToInventory(WorldPacket&& packet) : ClientPacket(CMSG_SPLIT_GUILD_BANK_ITEM_TO_INVENTORY, std::move(packet)) { }
 
             void Read() override;
 
@@ -951,7 +950,7 @@ namespace WorldPackets
         class AutoStoreGuildBankItem final : public ClientPacket
         {
         public:
-            explicit AutoStoreGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTO_STORE_GUILD_BANK_ITEM, std::move(packet)) { }
+            AutoStoreGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_AUTO_STORE_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -963,7 +962,7 @@ namespace WorldPackets
         class MergeGuildBankItemWithGuildBankItem final : public ClientPacket
         {
         public:
-            explicit MergeGuildBankItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_MERGE_GUILD_BANK_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
+            MergeGuildBankItemWithGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_MERGE_GUILD_BANK_ITEM_WITH_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -978,7 +977,7 @@ namespace WorldPackets
         class SplitGuildBankItem final : public ClientPacket
         {
         public:
-            explicit SplitGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_SPLIT_GUILD_BANK_ITEM, std::move(packet)) { }
+            SplitGuildBankItem(WorldPacket&& packet) : ClientPacket(CMSG_SPLIT_GUILD_BANK_ITEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -993,7 +992,7 @@ namespace WorldPackets
         class GuildBankLogQuery final : public ClientPacket
         {
         public:
-            explicit GuildBankLogQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_LOG_QUERY, std::move(packet)) { }
+            GuildBankLogQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_LOG_QUERY, std::move(packet)) { }
 
             void Read() override;
 
@@ -1014,7 +1013,7 @@ namespace WorldPackets
         class GuildBankLogQueryResults final : public ServerPacket
         {
         public:
-            explicit GuildBankLogQueryResults() : ServerPacket(SMSG_GUILD_BANK_LOG_QUERY_RESULTS, 25) { }
+            GuildBankLogQueryResults() : ServerPacket(SMSG_GUILD_BANK_LOG_QUERY_RESULTS, 25) { }
 
             WorldPacket const* Write() override;
 
@@ -1026,7 +1025,7 @@ namespace WorldPackets
         class GuildBankTextQuery final : public ClientPacket
         {
         public:
-            explicit GuildBankTextQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_TEXT_QUERY, std::move(packet)) { }
+            GuildBankTextQuery(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_TEXT_QUERY, std::move(packet)) { }
 
             void Read() override;
 
@@ -1036,7 +1035,7 @@ namespace WorldPackets
         class GuildBankTextQueryResult : public ServerPacket
         {
         public:
-            explicit GuildBankTextQueryResult() : ServerPacket(SMSG_GUILD_BANK_TEXT_QUERY_RESULT, 4 + 2) { }
+            GuildBankTextQueryResult() : ServerPacket(SMSG_GUILD_BANK_TEXT_QUERY_RESULT, 4 + 2) { }
 
             WorldPacket const* Write() override;
 
@@ -1047,7 +1046,7 @@ namespace WorldPackets
         class GuildBankSetTabText final : public ClientPacket
         {
         public:
-            explicit GuildBankSetTabText(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_SET_TAB_TEXT, std::move(packet)) { }
+            GuildBankSetTabText(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_BANK_SET_TAB_TEXT, std::move(packet)) { }
 
             void Read() override;
 
@@ -1058,7 +1057,7 @@ namespace WorldPackets
         class GuildQueryNews final : public ClientPacket
         {
         public:
-            explicit GuildQueryNews(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_QUERY_NEWS, std::move(packet)) { }
+            GuildQueryNews(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_QUERY_NEWS, std::move(packet)) { }
 
             void Read() override;
 
@@ -1069,7 +1068,7 @@ namespace WorldPackets
         {
             int32 Id = 0;
             WowTime CompletedDate;
-            int8 Type = 0;
+            int32 Type = 0;
             int32 Flags = 0;
             std::array<int32, 2> Data = { };
             ObjectGuid MemberGuid;
@@ -1080,7 +1079,7 @@ namespace WorldPackets
         class GuildNews final : public ServerPacket
         {
         public:
-            explicit GuildNews() : ServerPacket(SMSG_GUILD_NEWS, 25) { }
+            GuildNews() : ServerPacket(SMSG_GUILD_NEWS, 25) { }
 
             WorldPacket const* Write() override;
 
@@ -1090,7 +1089,7 @@ namespace WorldPackets
         class GuildNewsUpdateSticky final : public ClientPacket
         {
         public:
-            explicit GuildNewsUpdateSticky(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_NEWS_UPDATE_STICKY, std::move(packet)) { }
+            GuildNewsUpdateSticky(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_NEWS_UPDATE_STICKY, std::move(packet)) { }
 
             void Read() override;
 
@@ -1102,7 +1101,7 @@ namespace WorldPackets
         class GuildReplaceGuildMaster final : public ClientPacket
         {
         public:
-            explicit GuildReplaceGuildMaster(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_REPLACE_GUILD_MASTER, std::move(packet)) { }
+            GuildReplaceGuildMaster(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_REPLACE_GUILD_MASTER, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -1110,7 +1109,7 @@ namespace WorldPackets
         class GuildSetGuildMaster final : public ClientPacket
         {
         public:
-            explicit GuildSetGuildMaster(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_GUILD_MASTER, std::move(packet)) { }
+            GuildSetGuildMaster(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_GUILD_MASTER, std::move(packet)) { }
 
             void Read() override;
 
@@ -1120,7 +1119,7 @@ namespace WorldPackets
         class GuildChallengeUpdateRequest final : public ClientPacket
         {
         public:
-            explicit GuildChallengeUpdateRequest(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_CHALLENGE_UPDATE_REQUEST, std::move(packet)) { }
+            GuildChallengeUpdateRequest(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_CHALLENGE_UPDATE_REQUEST, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -1128,7 +1127,7 @@ namespace WorldPackets
         class GuildChallengeUpdate final : public ServerPacket
         {
         public:
-            explicit GuildChallengeUpdate() : ServerPacket(SMSG_GUILD_CHALLENGE_UPDATE, 96) { }
+            GuildChallengeUpdate() : ServerPacket(SMSG_GUILD_CHALLENGE_UPDATE, 96) { }
 
             WorldPacket const* Write() override;
 
@@ -1141,7 +1140,7 @@ namespace WorldPackets
         class SaveGuildEmblem final : public ClientPacket
         {
         public:
-            explicit SaveGuildEmblem(WorldPacket&& packet) : ClientPacket(CMSG_SAVE_GUILD_EMBLEM, std::move(packet)) { }
+            SaveGuildEmblem(WorldPacket&& packet) : ClientPacket(CMSG_SAVE_GUILD_EMBLEM, std::move(packet)) { }
 
             void Read() override;
 
@@ -1156,7 +1155,7 @@ namespace WorldPackets
         class PlayerSaveGuildEmblem final : public ServerPacket
         {
         public:
-            explicit PlayerSaveGuildEmblem() : ServerPacket(SMSG_PLAYER_SAVE_GUILD_EMBLEM, 4) { }
+            PlayerSaveGuildEmblem() : ServerPacket(SMSG_PLAYER_SAVE_GUILD_EMBLEM, 4) { }
 
             WorldPacket const* Write() override;
 
@@ -1166,7 +1165,7 @@ namespace WorldPackets
         class GuildSetAchievementTracking final : public ClientPacket
         {
         public:
-            explicit GuildSetAchievementTracking(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_ACHIEVEMENT_TRACKING, std::move(packet)) { }
+            GuildSetAchievementTracking(WorldPacket&& packet) : ClientPacket(CMSG_GUILD_SET_ACHIEVEMENT_TRACKING, std::move(packet)) { }
 
             void Read() override;
 
@@ -1176,7 +1175,7 @@ namespace WorldPackets
         class GuildNameChanged final : ServerPacket
         {
         public:
-            explicit GuildNameChanged() : ServerPacket(SMSG_GUILD_NAME_CHANGED, 40) { }
+            GuildNameChanged() : ServerPacket(SMSG_GUILD_NAME_CHANGED, 40) { }
 
             WorldPacket const* Write() override;
 
@@ -1186,4 +1185,10 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_GUILDPACKETS_H
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Guild::GuildRosterProfessionData const& rosterProfessionData);
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Guild::GuildRosterMemberData const& rosterMemberData);
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Guild::GuildRankData const& rankData);
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Guild::GuildRewardItem const& rewardItem);
+ByteBuffer& operator<<(ByteBuffer& data, WorldPackets::Guild::GuildNewsEvent const& newsEvent);
+
+#endif // GuildPackets_h__

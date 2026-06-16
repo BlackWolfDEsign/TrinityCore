@@ -201,7 +201,7 @@ class spell_hallow_end_trick_or_treat : public SpellScript
         Unit* caster = GetCaster();
         if (Player* target = GetHitPlayer())
         {
-            caster->CastSpell(target, roll_chance(50) ? SPELL_TRICK : SPELL_TREAT, true);
+            caster->CastSpell(target, roll_chance_i(50) ? SPELL_TRICK : SPELL_TREAT, true);
             caster->CastSpell(target, SPELL_TRICKED_OR_TREATED, true);
         }
     }
@@ -228,7 +228,7 @@ class spell_hallow_end_tricky_treat : public SpellScript
     void HandleScript(SpellEffIndex /*effIndex*/)
     {
         Unit* caster = GetCaster();
-        if (caster->HasAura(SPELL_TRICKY_TREAT_TRIGGER) && caster->GetAuraCount(SPELL_TRICKY_TREAT_SPEED) > 3 && roll_chance(33))
+        if (caster->HasAura(SPELL_TRICKY_TREAT_TRIGGER) && caster->GetAuraCount(SPELL_TRICKY_TREAT_SPEED) > 3 && roll_chance_i(33))
             caster->CastSpell(caster, SPELL_UPSET_TUMMY, true);
     }
 
@@ -353,7 +353,7 @@ class spell_hallows_end_powder_blast : public AuraScript
     void HandleProc(AuraEffect* /*aurEff*/, ProcEventInfo& eventInfo)
     {
         GetTarget()->CastSpell(GetTarget(), SPELL_HALLOWS_END_DUMMY_NUKE);
-        eventInfo.GetActor()->CastSpell(GetTarget(), SPELL_HALLOWS_END_DREAD_FERTILIZER);
+        eventInfo.GetProcTarget()->CastSpell(GetTarget(), SPELL_HALLOWS_END_DREAD_FERTILIZER);
     }
 
     void Register() override

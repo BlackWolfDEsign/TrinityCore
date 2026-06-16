@@ -25,6 +25,7 @@
 #include "Player.h"
 #include "StringConvert.h"
 #include "World.h"
+#include <boost/algorithm/string/find.hpp>
 #include <fstream>
 #include <sstream>
 
@@ -100,17 +101,11 @@ DumpTable const DumpTables[] =
     { "character_declinedname",           DTT_CHAR_TABLE },
     { "character_favorite_auctions",      DTT_CHAR_TABLE },
     { "character_fishingsteps",           DTT_CHAR_TABLE },
-    { "character_garrison",               DTT_CHAR_TABLE },
-    { "character_garrison_blueprints",    DTT_CHAR_TABLE },
-    { "character_garrison_buildings",     DTT_CHAR_TABLE },
-    /// @todo: character_garrison_follower_abilities
-    /// @todo: character_garrison_followers
     { "character_glyphs",                 DTT_CHAR_TABLE },
     { "character_homebind",               DTT_CHAR_TABLE },
     { "character_inventory",              DTT_INVENTORY  },
     { "character_pet",                    DTT_PET        },
     { "character_pet_declinedname",       DTT_PET        },
-    { "character_pvp_talent",             DTT_CHAR_TABLE },
     { "character_queststatus",            DTT_CHAR_TABLE },
     { "character_queststatus_daily",      DTT_CHAR_TABLE },
     { "character_queststatus_monthly",    DTT_CHAR_TABLE },
@@ -121,13 +116,13 @@ DumpTable const DumpTables[] =
     { "character_queststatus_seasonal",   DTT_CHAR_TABLE },
     { "character_queststatus_weekly",     DTT_CHAR_TABLE },
     { "character_reputation",             DTT_CHAR_TABLE },
-    { "character_select_screen_equipment_cache", DTT_CHAR_TABLE },
     { "character_skills",                 DTT_CHAR_TABLE },
     { "character_spell",                  DTT_CHAR_TABLE },
     { "character_spell_charges",          DTT_CHAR_TABLE },
     { "character_spell_cooldown",         DTT_CHAR_TABLE },
     { "character_talent",                 DTT_CHAR_TABLE },
     { "character_transmog_outfits",       DTT_CHAR_TRANSMOG },
+    /// @todo: character_void_storage
     { "mail",                             DTT_MAIL       },
     { "mail_items",                       DTT_MAIL_ITEM  }, // must be after mail
     { "pet_aura",                         DTT_PET_TABLE  }, // must be after character_pet
@@ -138,12 +133,6 @@ DumpTable const DumpTables[] =
     { "item_instance",                    DTT_ITEM       }, // must be after character_inventory and mail_items
     { "character_equipmentsets",          DTT_EQSET_TABLE}, // must be after item_instance
     { "character_gifts",                  DTT_ITEM_GIFT  }, // must be after item_instance
-    { "item_instance_artifact",           DTT_ITEM_TABLE }, // must be after item_instance
-    { "item_instance_artifact_powers",    DTT_ITEM_TABLE }, // must be after item_instance
-    { "item_instance_azerite",            DTT_ITEM_TABLE }, // must be after item_instance
-    { "item_instance_azerite_empowered",  DTT_ITEM_TABLE }, // must be after item_instance
-    { "item_instance_azerite_milestone_power", DTT_ITEM_TABLE }, // must be after item_instance
-    { "item_instance_azerite_unlocked_essence", DTT_ITEM_TABLE }, // must be after item_instance
     { "item_instance_gems",               DTT_ITEM_TABLE }, // must be after item_instance
     { "item_instance_modifiers",          DTT_ITEM_TABLE }, // must be after item_instance
     { "item_instance_transmog",           DTT_ITEM_TABLE }, // must be after item_instance
@@ -302,7 +291,7 @@ void PlayerDump::InitializeTables()
 
             TableField f;
             f.FieldName = columnName;
-            f.IsBinaryField = StringContainsStringI(typeName, "binary"sv) || StringContainsStringI(typeName, "blob"sv);
+            f.IsBinaryField = !boost::ifind_first(typeName, "binary").empty() || !boost::ifind_first(typeName, "blob").empty();
 
             bool toUpperResult = Utf8ToUpperOnlyLatin(columnName);
             ASSERT(toUpperResult);
@@ -792,8 +781,6 @@ bool PlayerDumpWriter::AppendTable(StringTransaction& trans, ObjectGuid::LowType
     AppendTableDump(trans, tableStruct, result);
     return true;
 }
-
-PlayerDumpWriter::PlayerDumpWriter() = default;
 
 bool PlayerDumpWriter::GetDump(ObjectGuid::LowType guid, std::string& dump)
 {

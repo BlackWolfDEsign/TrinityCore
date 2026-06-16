@@ -19,15 +19,16 @@
 #include "throne_of_the_tides.h"
 #include "InstanceScript.h"
 
-static constexpr ObjectData const creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_LADY_NAZJAR,          BOSS_LADY_NAZJAR        },
     { NPC_COMMANDER_ULTHOK,     BOSS_COMMANDER_ULTHOK   },
     { NPC_MINDBENDER_GURSHA,    BOSS_MINDBENDER_GURSHA  },
     { NPC_OZUMAT,               DATA_OZUMAT             },
+    { 0,                        0                       } // END
 };
 
-static constexpr DungeonEncounterData const encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_LADY_NAZJAR,         {{ 1045 }}  },
     { BOSS_COMMANDER_ULTHOK,    {{ 1044 }}  },
@@ -46,7 +47,7 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDungeonEncounterData(encounters);
         }
     };

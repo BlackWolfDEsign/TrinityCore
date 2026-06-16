@@ -74,7 +74,7 @@ BossBoundaryData const boundaries =
     { DATA_SINDRAGOSA,            new EllipseBoundary(Position(4408.6f, 2484.0f), 100.0f, 75.0f) }
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_LORD_MARROWGAR_S_ENTRANCE,           DATA_LORD_MARROWGAR,        EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_ICEWALL,                             DATA_LORD_MARROWGAR,        EncounterDoorBehavior::OpenWhenDone },
@@ -101,9 +101,10 @@ static constexpr DoorData doorData[] =
     { GO_SINDRAGOSA_SHORTCUT_EXIT_DOOR,       DATA_SINDRAGOSA,            EncounterDoorBehavior::OpenWhenDone },
     { GO_ICE_WALL,                            DATA_SINDRAGOSA,            EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_ICE_WALL,                            DATA_SINDRAGOSA,            EncounterDoorBehavior::OpenWhenNotInProgress },
+    { 0,                                      0,                          EncounterDoorBehavior::OpenWhenNotInProgress }  // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_LORD_MARROWGAR, {{ 1101 }} },
     { DATA_LADY_DEATHWHISPER, {{ 1100 }} },
@@ -120,10 +121,10 @@ static constexpr DungeonEncounterData encounters[] =
 };
 
 // NPCs spawned at Light's Hammer on Lich King dead
-static constexpr Position JainaSpawnPos    = { -48.65278f, 2211.026f, 27.98586f, 3.124139f };
-static constexpr Position MuradinSpawnPos  = { -47.34549f, 2208.087f, 27.98586f, 3.106686f };
-static constexpr Position UtherSpawnPos    = { -26.58507f, 2211.524f, 30.19898f, 3.124139f };
-static constexpr Position SylvanasSpawnPos = { -41.45833f, 2222.891f, 27.98586f, 3.647738f };
+Position const JainaSpawnPos    = { -48.65278f, 2211.026f, 27.98586f, 3.124139f };
+Position const MuradinSpawnPos  = { -47.34549f, 2208.087f, 27.98586f, 3.106686f };
+Position const UtherSpawnPos    = { -26.58507f, 2211.524f, 30.19898f, 3.124139f };
+Position const SylvanasSpawnPos = { -41.45833f, 2222.891f, 27.98586f, 3.647738f };
 
 class instance_icecrown_citadel : public InstanceMapScript
 {
@@ -1014,20 +1015,18 @@ class instance_icecrown_citadel : public InstanceMapScript
                 }
             }
 
-            void SetData64(uint32 type, uint64 data) override
+            void SetGuidData(uint32 type, ObjectGuid guid) override
             {
                 switch (type)
                 {
                     case DATA_SINDRAGOSA_FROSTWYRMS:
-                        FrostwyrmGUIDs.insert(data);
+                        FrostwyrmGUIDs.insert(guid.GetCounter());
                         break;
                     case DATA_SPINESTALKER:
-                        SpinestalkerTrash.insert(data);
+                        SpinestalkerTrash.insert(guid.GetCounter());
                         break;
                     case DATA_RIMEFANG:
-                        RimefangTrash.insert(data);
-                        break;
-                    default:
+                        RimefangTrash.insert(guid.GetCounter());
                         break;
                 }
             }

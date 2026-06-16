@@ -41,10 +41,10 @@ enum SSCreatureIds
     NPC_MORTIMER_MOLOCH  = 46482
 };
 
-template <class AI, class T>
-inline AI* GetStormwindStockadeAI(T* obj)
+template<typename AI>
+inline AI* GetStormwindStockadeAI(Creature* creature)
 {
-    return GetInstanceAI<AI>(obj, StormwindStockadeScriptName);
+    return GetInstanceAI<AI>(creature, StormwindStockadeScriptName);
 }
 
 #define RegisterStormwindStockadesAI(AI) RegisterCreatureAIWithFactory(AI, GetStormwindStockadeAI)

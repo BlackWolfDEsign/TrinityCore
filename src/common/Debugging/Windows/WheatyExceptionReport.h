@@ -1,18 +1,20 @@
 #ifndef _WHEATYEXCEPTIONREPORT_
 #define _WHEATYEXCEPTIONREPORT_
 
+#define _NO_CVCONST_H
+
 #include "Define.h"
 #include "Optional.h"
-#include <Windows.h>
-#include <dbghelp.h>
+#include <windows.h>
 #include <winnt.h>
 #include <winternl.h>
+#include <dbghelp.h>
 #include <compare>
 #include <set>
-#include <stack>
-#include <string>
-#include <cstdio>
 #include <cstdlib>
+#include <cstdio>
+#include <stack>
+#include <mutex>
 
 #define WER_MAX_ARRAY_ELEMENTS_COUNT 10
 #define WER_MAX_NESTING_LEVEL 4
@@ -39,10 +41,6 @@ enum BasicType                                              // Stolen from CVCON
     btBit = 29,
     btBSTR = 30,
     btHresult = 31,
-    btChar16 = 32,  // char16_t
-    btChar32 = 33,  // char32_t
-    btChar8 = 34,  // char8_t
-    btVector = 35,
 
     // Custom types
     btStdString = 101
@@ -60,55 +58,6 @@ enum DataKind                                              // Stolen from CVCONS
     DataIsMember,
     DataIsStaticMember,
     DataIsConstant
-};
-
-enum SymTagEnum                                              // Stolen from CVCONST.H in the DIA 2.0 SDK
-{
-    SymTagNull,
-    SymTagExe,
-    SymTagCompiland,
-    SymTagCompilandDetails,
-    SymTagCompilandEnv,
-    SymTagFunction,
-    SymTagBlock,
-    SymTagData,
-    SymTagAnnotation,
-    SymTagLabel,
-    SymTagPublicSymbol,
-    SymTagUDT,
-    SymTagEnum,
-    SymTagFunctionType,
-    SymTagPointerType,
-    SymTagArrayType,
-    SymTagBaseType,
-    SymTagTypedef,
-    SymTagBaseClass,
-    SymTagFriend,
-    SymTagFunctionArgType,
-    SymTagFuncDebugStart,
-    SymTagFuncDebugEnd,
-    SymTagUsingNamespace,
-    SymTagVTableShape,
-    SymTagVTable,
-    SymTagCustom,
-    SymTagThunk,
-    SymTagCustomType,
-    SymTagManagedType,
-    SymTagDimension,
-    SymTagCallSite,
-    SymTagInlineSite,
-    SymTagBaseInterface,
-    SymTagVectorType,
-    SymTagMatrixType,
-    SymTagHLSLType,
-    SymTagCaller,
-    SymTagCallee,
-    SymTagExport,
-    SymTagHeapAllocationSite,
-    SymTagCoffGroup,
-    SymTagInlinee,
-    SymTagTaggedUnionCase,
-    SymTagMax
 };
 
 enum CpuRegister                                           // Stolen from CVCONST.H in the DIA SDK
@@ -335,11 +284,7 @@ char const* const rgBaseType[] =
     "<complex>",                                          // btComplex = 28,
     "<bit>",                                              // btBit = 29,
     "BSTR",                                               // btBSTR = 30,
-    "HRESULT",                                            // btHresult = 31
-    "char16_t",
-    "char32_t",
-    "char8_t",
-    "<vector>"
+    "HRESULT"                                             // btHresult = 31
 };
 
 struct SymbolPair
@@ -361,6 +306,8 @@ typedef std::set<SymbolPair> SymbolPairs;
 struct SymbolDetail
 {
     SymbolDetail() : Prefix(), Type(), Suffix(), Name(), Value(), Logged(false), HasChildren(false) {}
+
+    std::string ToString();
 
     bool empty() const
     {
@@ -391,7 +338,7 @@ class TC_COMMON_API WheatyExceptionReport
         static LONG WINAPI WheatyUnhandledExceptionFilter(
             PEXCEPTION_POINTERS pExceptionInfo);
 
-        LONG UnhandledExceptionFilterImpl(PEXCEPTION_POINTERS pExceptionInfo) noexcept;
+        LONG UnhandledExceptionFilterImpl(PEXCEPTION_POINTERS pExceptionInfo);
 
         static void __cdecl WheatyCrtHandler(wchar_t const* expression, wchar_t const* function, wchar_t const* file, unsigned int line, uintptr_t pReserved);
 
@@ -401,7 +348,7 @@ class TC_COMMON_API WheatyExceptionReport
         void GenerateExceptionReport(PEXCEPTION_POINTERS pExceptionInfo);
         void PrintSystemInfo();
         BOOL _GetWindowsVersion(TCHAR* szVersion, DWORD cntMax);
-        static BOOL _GetWindowsVersionFromWMI(TCHAR* szVersion, DWORD cntMax) noexcept;
+        static BOOL _GetWindowsVersionFromWMI(TCHAR* szVersion, DWORD cntMax);
         static BOOL _GetProcessorName(TCHAR* sProcessorName, DWORD maxcount);
 
         // Helper functions
@@ -427,15 +374,10 @@ class TC_COMMON_API WheatyExceptionReport
 
         void DumpTypeIndex(DWORD64, DWORD, DWORD_PTR, bool &, char const*, char const*, bool, bool);
 
-        template <typename T>
-        void FormatOutputValueNumeric(char* buffer, size_t bufferSize, char const* format, LPCVOID address);
-
-        void FormatOutputValue(char * pszCurrBuffer, BasicType basicType, DWORD64 length, PVOID pAddress, size_t bufferSize, size_t countOverride = 0);
+        static void FormatOutputValue(char * pszCurrBuffer, BasicType basicType, DWORD64 length, PVOID pAddress, size_t bufferSize, size_t countOverride = 0);
 
         BasicType GetBasicType(DWORD typeIndex, DWORD64 modBase) const;
-
-        template <typename T> requires (std::is_scalar_v<T>)
-        Optional<T> DereferenceUnsafePointer(LPCVOID address);
+        static DWORD_PTR DereferenceUnsafePointer(DWORD_PTR address);
 
         int Log(const TCHAR * format, ...);
 
@@ -445,8 +387,8 @@ class TC_COMMON_API WheatyExceptionReport
         static Optional<DWORD_PTR> GetIntegerRegisterValue(PCONTEXT context, ULONG registerId);
 
         // Variables used by the class
-        TCHAR* m_tempPathBuffer;
-        static constexpr SIZE_T m_tempPathBufferChars = 0x8000;
+        TCHAR m_logFileName[MAX_PATH];
+        TCHAR m_dumpFileName[MAX_PATH];
         LPTOP_LEVEL_EXCEPTION_FILTER m_previousFilter;
         _invalid_parameter_handler m_previousCrtHandler;
         FILE* m_reportFile;
@@ -455,11 +397,11 @@ class TC_COMMON_API WheatyExceptionReport
         SymbolPairs m_symbols;
         std::stack<SymbolDetail> m_symbolDetails;
         bool m_alreadyCrashed;
-        SRWLOCK m_alreadyCrashedLock;
+        std::mutex m_alreadyCrashedLock;
         typedef NTSTATUS(NTAPI* pRtlGetVersion)(PRTL_OSVERSIONINFOW lpVersionInformation);
         pRtlGetVersion RtlGetVersion;
 
-        SymbolDetail& PushSymbolDetail();
+        void PushSymbolDetail();
         void PopSymbolDetail();
         void PrintSymbolDetail();
 };

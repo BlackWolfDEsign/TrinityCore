@@ -66,12 +66,8 @@ struct Petition
 class TC_GAME_API PetitionMgr
 {
     public:
-        PetitionMgr() = default;
-        PetitionMgr(PetitionMgr const&) = delete;
-        PetitionMgr(PetitionMgr&&) = delete;
-        PetitionMgr& operator=(PetitionMgr const&) = delete;
-        PetitionMgr& operator=(PetitionMgr&&) = delete;
-        ~PetitionMgr() = default;
+        PetitionMgr() { }
+        ~PetitionMgr() { }
 
         static PetitionMgr* instance();
 

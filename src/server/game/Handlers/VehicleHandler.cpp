@@ -88,7 +88,9 @@ void WorldSession::HandleMoveChangeVehicleSeats(WorldPackets::Vehicle::MoveChang
         return;
     }
 
-    if (!ValidateMovementInfo(&moveChangeVehicleSeats.Status))
+    GetPlayer()->ValidateMovementInfo(&moveChangeVehicleSeats.Status);
+
+    if (vehicle_base->GetGUID() != moveChangeVehicleSeats.Status.guid)
         return;
 
     vehicle_base->m_movementInfo = moveChangeVehicleSeats.Status;
@@ -194,5 +196,5 @@ void WorldSession::HandleRequestVehicleExit(WorldPackets::Vehicle::RequestVehicl
 
 void WorldSession::HandleMoveSetVehicleRecAck(WorldPackets::Vehicle::MoveSetVehicleRecIdAck& setVehicleRecIdAck)
 {
-    ValidateMovementInfo(&setVehicleRecIdAck.Data.Status);
+    GetPlayer()->ValidateMovementInfo(&setVehicleRecIdAck.Data.Status);
 }

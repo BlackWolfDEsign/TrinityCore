@@ -155,9 +155,12 @@ void WorldSession::HandleLootMoneyOpcode(WorldPackets::Loot::LootMoney& /*packet
             Group* group = player->GetGroup();
 
             std::vector<Player*> playersNear;
-            for (GroupReference const& itr : group->GetMembers())
+            for (GroupReference* itr = group->GetFirstMember(); itr != nullptr; itr = itr->next())
             {
-                Player* member = itr.GetSource();
+                Player* member = itr->GetSource();
+                if (!member)
+                    continue;
+
                 if (!loot->HasAllowedLooter(member->GetGUID()))
                     continue;
 
@@ -234,10 +237,8 @@ void WorldSession::HandleLootOpcode(WorldPackets::Loot::LootUnit& packet)
     std::vector<Creature*> corpses;
     if (aeLootEnabled)
     {
-        Trinity::CreatureListSearcher searcher(_player, corpses, check);
+        Trinity::CreatureListSearcher<AELootCreatureCheck> searcher(_player, corpses, check);
         Cell::VisitGridObjects(_player, searcher, AELootCreatureCheck::LootDistance);
-        if (corpses.size() > 49)
-            corpses.resize(49); // lootTarget is 50th, not in corpses vector
     }
 
     if (!corpses.empty())
@@ -469,10 +470,8 @@ void WorldSession::HandleLootMasterGiveOpcode(WorldPackets::Loot::MasterLootItem
         }
 
         // now move item from loot to target inventory
-        if (Item* newitem = target->StoreNewItem(dest, item.itemid, true, item.randomBonusListId, item.GetAllowedLooters(), item.context, &item.BonusListIDs))
-            aeResult.Add(newitem, item.count, loot->loot_type, loot->GetDungeonEncounterId());
-        else
-            target->ApplyItemLootedSpell(sObjectMgr->GetItemTemplate(item.itemid));
+        Item* newitem = target->StoreNewItem(dest, item.itemid, true, item.randomBonusListId, item.randomPropertiesId, item.GetAllowedLooters(), item.context, &item.BonusListIDs);
+        aeResult.Add(newitem, item.count, loot->loot_type, loot->GetDungeonEncounterId());
 
         // mark as looted
         item.count = 0;
@@ -498,16 +497,4 @@ void WorldSession::HandleLootRoll(WorldPackets::Loot::LootRoll& packet)
         return;
 
     lootRoll->PlayerVote(GetPlayer(), RollVote(packet.RollType));
-}
-
-void WorldSession::HandleSetLootSpecialization(WorldPackets::Loot::SetLootSpecialization& packet)
-{
-    if (packet.SpecID)
-    {
-        if (ChrSpecializationEntry const* chrSpec = sChrSpecializationStore.LookupEntry(packet.SpecID))
-            if (chrSpec->ClassID == GetPlayer()->GetClass())
-                GetPlayer()->SetLootSpecId(packet.SpecID);
-    }
-    else
-        GetPlayer()->SetLootSpecId(0);
 }

@@ -47,7 +47,7 @@ namespace TwinPeaks
         static constexpr uint32 Gate2 = 208207;
         static constexpr uint32 Gate3 = 208206;
         static constexpr uint32 Portcullis = 203710;
-        static constexpr uint32 HordeFlag = 227740;
+        static constexpr uint32 HordeFlag = 227740;;
         static constexpr uint32 AllianceFlag = 227741;
         static constexpr uint32 WildHammerGate1 = 206653;
         static constexpr uint32 WildHammerGate2 = 206654;
@@ -190,8 +190,7 @@ struct battleground_twin_peaks : BattlegroundScript
         TriggerGameEvent(TwinPeaks::Events::StartBattle);
     }
 
-    template <std::invocable<Player*> Action>
-    void DoForFlagKeepers(Action const& action) const
+    void DoForFlagKeepers(std::function<void(Player*)> const& action) const
     {
         for (ObjectGuid flagGUID : _flags)
             if (GameObject const* flag = battlegroundMap->GetGameObject(flagGUID))

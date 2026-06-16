@@ -243,8 +243,11 @@ void Battlefield::InvitePlayerToWar(Player* player)
     if (player->IsInFlight())
         return;
 
-    if (player->GetBattleground())
+    if (player->InArena() || player->GetBattleground())
+    {
+        m_PlayersInQueue[player->GetTeamId()].erase(player->GetGUID());
         return;
+    }
 
     // If the player does not match minimal level requirements for the battlefield, kick him
     if (player->GetLevel() < m_MinLevel)
@@ -548,11 +551,6 @@ bool Battlefield::AddOrSetPlayerToCorrectBfGroup(Player* player)
 //--------------------
 //-Battlefield Method-
 //--------------------
-void Battlefield::SetGraveyardNumber(uint32 number)
-{
-    m_GraveyardList.resize(number);
-}
-
 BfGraveyard* Battlefield::GetGraveyardById(uint32 id) const
 {
     if (id < m_GraveyardList.size())
@@ -597,14 +595,12 @@ WorldSafeLocsEntry const* Battlefield::GetClosestGraveyard(Player* player)
 // ----------------------
 // - BfGraveyard Method -
 // ----------------------
-BfGraveyard::BfGraveyard(Battlefield* bf)
+BfGraveyard::BfGraveyard(Battlefield* battlefield)
 {
-    m_Bf = bf;
+    m_Bf = battlefield;
     m_GraveyardId = 0;
     m_ControlTeam = TEAM_NEUTRAL;
 }
-
-BfGraveyard::~BfGraveyard() = default;
 
 void BfGraveyard::Initialize(TeamId startControl, uint32 graveyardId)
 {
@@ -735,8 +731,6 @@ GameObject* Battlefield::GetGameObject(ObjectGuid guid)
 BattlefieldControlZoneHandler::BattlefieldControlZoneHandler(Battlefield* bf) : _battlefield(bf)
 {
 }
-
-BattlefieldControlZoneHandler::~BattlefieldControlZoneHandler() = default;
 
 Battlefield* BattlefieldControlZoneHandler::GetBattlefield()
 {

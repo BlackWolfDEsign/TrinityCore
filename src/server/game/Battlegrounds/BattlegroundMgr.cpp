@@ -23,7 +23,6 @@
 #include "DatabaseEnv.h"
 #include "DisableMgr.h"
 #include "GameEventMgr.h"
-#include "GossipDef.h"
 #include "Language.h"
 #include "Log.h"
 #include "MapManager.h"
@@ -32,11 +31,10 @@
 #include "Player.h"
 #include "SharedDefines.h"
 #include "World.h"
-#include "WorldSession.h"
 
 bool BattlegroundTemplate::IsArena() const
 {
-    return BattlemasterEntry->GetType() == BattlemasterType::Arena;
+    return BattlemasterEntry->InstanceType == MAP_ARENA;
 }
 
 uint16 BattlegroundTemplate::GetMinPlayersPerTeam() const
@@ -65,7 +63,7 @@ uint8 BattlegroundTemplate::GetMaxLevel() const
 
 BattlegroundMgr::BattlegroundMgr() :
     m_NextRatedArenaUpdate(sWorld->getIntConfig(CONFIG_ARENA_RATED_UPDATE_TIMER)),
-    m_UpdateTimer(0), m_ArenaTesting(0), m_Testing(false)
+    m_UpdateTimer(0), m_ArenaTesting(false), m_Testing(false)
 { }
 
 BattlegroundMgr::~BattlegroundMgr()
@@ -75,10 +73,6 @@ BattlegroundMgr::~BattlegroundMgr()
 
 void BattlegroundMgr::DeleteAllBattlegrounds()
 {
-    for (auto& [_, data] : m_BGFreeSlotQueue)
-        for (Battleground* battleground : data)
-            battleground->RemoveFromBGFreeSlotQueueOnShutdown();
-
     bgDataStore.clear();
     m_BGFreeSlotQueue.clear();
 }
@@ -166,7 +160,7 @@ void BattlegroundMgr::BuildBattlegroundStatusHeader(WorldPackets::Battleground::
     header->Ticket.Time = joinTime;
     header->QueueID.push_back(queueId.GetPacked());
     header->RangeMin = 0; // seems to always be 0
-    header->RangeMax = GetMaxLevelForExpansion(CURRENT_EXPANSION); // alwyas max level of current expansion. Might be limited to account
+    header->RangeMax = DEFAULT_MAX_LEVEL; // alwyas max level of current expansion. Might be limited to account
     header->TeamSize = queueId.TeamSize;
     header->InstanceID = 0; // seems to always be 0
     header->RegisteredMatch = queueId.Rated;
@@ -288,7 +282,7 @@ void BattlegroundMgr::LoadBattlegroundScriptTemplate()
         BattlegroundScriptTemplate& scriptTemplate = _battlegroundScriptTemplates[{ mapID, bgTypeId }];
         scriptTemplate.MapId = mapID;
         scriptTemplate.Id = bgTypeId;
-        scriptTemplate.ScriptId = sObjectMgr->GetScriptId(fields[2].GetStringView());
+        scriptTemplate.ScriptId = sObjectMgr->GetScriptId(fields[2].GetString());
 
         ++count;
     } while (result->NextRow());
@@ -303,15 +297,6 @@ BattlegroundScriptTemplate const* BattlegroundMgr::FindBattlegroundScriptTemplat
 
     // fall back to 0 for no specific battleground type id
     return Trinity::Containers::MapGetValuePtr(_battlegroundScriptTemplates, { mapId, BATTLEGROUND_TYPE_NONE });
-}
-
-void BattlegroundMgr::QueuePlayerForArena(Player const* player, uint8 teamSize, uint8 roles)
-{
-    WorldPackets::Battleground::BattlemasterJoinArena packet((WorldPacket(CMSG_BATTLEMASTER_JOIN_ARENA)));
-    packet.TeamSizeIndex = teamSize;
-    packet.Roles = roles;
-
-    player->GetSession()->HandleBattlemasterJoinArena(packet);
 }
 
 uint32 BattlegroundMgr::CreateClientVisibleInstanceId(BattlegroundTypeId bgTypeId, BattlegroundBracketId bracket_id)
@@ -420,9 +405,9 @@ void BattlegroundMgr::LoadBattlegroundTemplates()
         float dist                   = fields[3].GetFloat();
         bgTemplate.MaxStartDistSq    = dist * dist;
         bgTemplate.Weight            = fields[4].GetUInt8();
-        bgTemplate.ScriptId          = sObjectMgr->GetScriptId(fields[5].GetStringView());
+        bgTemplate.ScriptId          = sObjectMgr->GetScriptId(fields[5].GetString());
         bgTemplate.BattlemasterEntry = bl;
-        bgTemplate.MapIDs            = std::move(mapsByBattleground[bgTypeId]);
+        bgTemplate.MapIDs = std::move(mapsByBattleground[bgTypeId]);
 
         if (bgTemplate.Id != BATTLEGROUND_AA && !IsRandomBattleground(bgTemplate.Id))
         {
@@ -467,8 +452,6 @@ void BattlegroundMgr::SendBattlegroundList(Player* player, ObjectGuid const& gui
     if (!bgTemplate)
         return;
 
-    player->PlayerTalkClass->GetInteractionData().StartInteraction(guid, PlayerInteractionType::BattleMaster);
-
     WorldPackets::Battleground::BattlefieldList battlefieldList;
     battlefieldList.BattlemasterGuid = guid;
     battlefieldList.BattlemasterListID = bgTypeId;
@@ -479,20 +462,19 @@ void BattlegroundMgr::SendBattlegroundList(Player* player, ObjectGuid const& gui
     player->SendDirectMessage(battlefieldList.Write());
 }
 
-/*static*/ void BattlegroundMgr::SendToBattleground(Player* player, Battleground const* battleground)
+void BattlegroundMgr::SendToBattleground(Player* player, uint32 instanceId, BattlegroundTypeId bgTypeId)
 {
-    if (!battleground)
+    if (Battleground* bg = GetBattleground(instanceId, bgTypeId))
     {
-        TC_LOG_ERROR("bg.battleground", "BattlegroundMgr::SendToBattleground: Battleground not found while trying to teleport player {}", player->GetName());
-        return;
+        uint32 mapid = bg->GetMapId();
+        Team team = player->GetBGTeam();
+
+        WorldSafeLocsEntry const* pos = bg->GetTeamStartPosition(Battleground::GetTeamIndexByTeamId(team));
+        TC_LOG_DEBUG("bg.battleground", "BattlegroundMgr::SendToBattleground: Sending {} to map {}, {} (bgType {})", player->GetName(), mapid, pos->Loc.ToString(), bgTypeId);
+        player->TeleportTo({ .Location = pos->Loc, .TransportGuid = pos->TransportSpawnId ? ObjectGuid::Create<HighGuid::Transport>(*pos->TransportSpawnId) : ObjectGuid::Empty });
     }
-
-    uint32 mapid = battleground->GetMapId();
-    Team team = player->GetBGTeam();
-
-    WorldSafeLocsEntry const* pos = battleground->GetTeamStartPosition(Battleground::GetTeamIndexByTeamId(team));
-    TC_LOG_DEBUG("bg.battleground", "BattlegroundMgr::SendToBattleground: Sending {} to map {}, {} (bgType {})", player->GetName(), mapid, pos->Loc, battleground->GetTypeID());
-    player->TeleportTo({ .Location = pos->Loc, .TransportGuid = pos->TransportSpawnId ? ObjectGuid::Create<HighGuid::Transport>(*pos->TransportSpawnId) : ObjectGuid::Empty });
+    else
+        TC_LOG_ERROR("bg.battleground", "BattlegroundMgr::SendToBattleground: Instance {} (bgType {}) not found while trying to teleport player {}", instanceId, bgTypeId, player->GetName());
 }
 
 bool BattlegroundMgr::IsArenaType(BattlegroundTypeId bgTypeId)
@@ -507,7 +489,7 @@ bool BattlegroundMgr::IsArenaType(BattlegroundTypeId bgTypeId)
 
 bool BattlegroundMgr::IsRandomBattleground(uint32 battlemasterListId)
 {
-    return battlemasterListId == BATTLEGROUND_RB || battlemasterListId == BATTLEGROUND_RANDOM_EPIC;
+    return battlemasterListId == BATTLEGROUND_RB;
 }
 
 BattlegroundQueueTypeId BattlegroundMgr::BGQueueTypeId(uint16 battlemasterListId, BattlegroundQueueIdType type, bool rated, uint8 teamSize)
@@ -521,23 +503,10 @@ void BattlegroundMgr::ToggleTesting()
     sWorld->SendWorldText(m_Testing ? LANG_DEBUG_BG_ON : LANG_DEBUG_BG_OFF);
 }
 
-bool BattlegroundMgr::ToggleArenaTesting(uint32 battlemasterListId)
+void BattlegroundMgr::ToggleArenaTesting()
 {
-    if (battlemasterListId != 0)
-    {
-        BattlegroundTemplate const* bgTemplate = GetBattlegroundTemplateByTypeId(static_cast<BattlegroundTypeId>(battlemasterListId));
-        if (!bgTemplate)
-            return false;
-
-        if (!bgTemplate->IsArena())
-            return false;
-    }
-
-    if (m_ArenaTesting != battlemasterListId)
-        sWorld->SendWorldText((battlemasterListId != 0) ? LANG_DEBUG_ARENA_ON : LANG_DEBUG_ARENA_OFF);
-
-    m_ArenaTesting = battlemasterListId;
-    return true;
+    m_ArenaTesting = !m_ArenaTesting;
+    sWorld->SendWorldText(m_ArenaTesting ? LANG_DEBUG_ARENA_ON : LANG_DEBUG_ARENA_OFF);
 }
 
 bool BattlegroundMgr::IsValidQueueId(BattlegroundQueueTypeId bgQueueTypeId)
@@ -549,13 +518,13 @@ bool BattlegroundMgr::IsValidQueueId(BattlegroundQueueTypeId bgQueueTypeId)
     switch (BattlegroundQueueIdType(bgQueueTypeId.Type))
     {
         case BattlegroundQueueIdType::Battleground:
-            if (battlemasterList->GetType() != BattlemasterType::Battleground)
+            if (battlemasterList->InstanceType != MAP_BATTLEGROUND)
                 return false;
             if (bgQueueTypeId.TeamSize)
                 return false;
             break;
         case BattlegroundQueueIdType::Arena:
-            if (battlemasterList->GetType() != BattlemasterType::Arena)
+            if (battlemasterList->InstanceType != MAP_ARENA)
                 return false;
             if (!bgQueueTypeId.Rated)
                 return false;
@@ -567,7 +536,7 @@ bool BattlegroundMgr::IsValidQueueId(BattlegroundQueueTypeId bgQueueTypeId)
                 return false;
             break;
         case BattlegroundQueueIdType::ArenaSkirmish:
-            if (battlemasterList->GetType() != BattlemasterType::Arena)
+            if (battlemasterList->InstanceType != MAP_ARENA)
                 return false;
             if (!bgQueueTypeId.Rated)
                 return false;
@@ -713,9 +682,6 @@ BattlegroundTypeId BattlegroundMgr::GetRandomBG(BattlegroundTypeId bgTypeId)
 {
     if (BattlegroundTemplate const* bgTemplate = GetBattlegroundTemplateByTypeId(bgTypeId))
     {
-        if (bgTemplate->IsArena() && isArenaTesting())
-            return static_cast<BattlegroundTypeId>(m_ArenaTesting);
-
         std::vector<BattlegroundTemplate const*> ids;
         ids.reserve(bgTemplate->MapIDs.size());
         for (int32 mapId : bgTemplate->MapIDs)
@@ -741,12 +707,13 @@ void BattlegroundMgr::AddToBGFreeSlotQueue(Battleground* bg)
 
 void BattlegroundMgr::RemoveFromBGFreeSlotQueue(uint32 mapId, uint32 instanceId)
 {
-    if (BGFreeSlotQueueContainer* freeSlotQueue = Trinity::Containers::MapGetValuePtr(m_BGFreeSlotQueue, mapId))
-    {
-        auto itr = std::ranges::find(*freeSlotQueue, instanceId, [](Battleground const* bg) { return bg->GetInstanceID(); });
-        if (itr != freeSlotQueue->end())
-            freeSlotQueue->erase(itr);
-    }
+    BGFreeSlotQueueContainer& queues = m_BGFreeSlotQueue[mapId];
+    for (BGFreeSlotQueueContainer::iterator itr = queues.begin(); itr != queues.end(); ++itr)
+        if ((*itr)->GetInstanceID() == instanceId)
+        {
+            queues.erase(itr);
+            return;
+        }
 }
 
 void BattlegroundMgr::AddBattleground(Battleground* bg)

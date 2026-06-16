@@ -15,11 +15,32 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_BNET_SERVICE_DISPATCHER_H
-#define TRINITYCORE_BNET_SERVICE_DISPATCHER_H
+#ifndef ServiceDispatcher_h__
+#define ServiceDispatcher_h__
 
 #include "MessageBuffer.h"
-#include <unordered_map>
+#include "AccountService.h"
+#include "AuthenticationService.h"
+#include "api/client/v1/block_list_listener.pb.h"
+#include "api/client/v1/block_list_service.pb.h"
+#include "challenge_service.pb.h"
+#include "api/client/v1/club_listener.pb.h"
+#include "api/client/v1/club_membership_listener.pb.h"
+#include "api/client/v1/club_membership_service.pb.h"
+#include "api/client/v1/club_service.pb.h"
+#include "ConnectionService.h"
+#include "friends_service.pb.h"
+#include "GameUtilitiesService.h"
+#include "notification_service.pb.h"
+#include "api/client/v2/notification_listener.pb.h"
+#include "api/client/v2/notification_service.pb.h"
+#include "presence_listener.pb.h"
+#include "presence_service.pb.h"
+#include "report_service.pb.h"
+#include "api/client/v2/report_service.pb.h"
+#include "resource_service.pb.h"
+#include "api/client/v2/whisper_listener.pb.h"
+#include "api/client/v2/whisper_service.pb.h"
 
 namespace Battlenet
 {
@@ -54,4 +75,4 @@ namespace Battlenet
 
 #define sServiceDispatcher ServiceDispatcher::Instance()
 
-#endif // TRINITYCORE_BNET_SERVICE_DISPATCHER_H
+#endif // ServiceDispatcher_h__

@@ -25,7 +25,6 @@
 #include "MoveSplineInit.h"
 #include "MovementDefines.h"
 #include "PathGenerator.h"
-#include "Player.h"
 #include "Transport.h"
 #include "WaypointManager.h"
 #include <span>
@@ -35,80 +34,72 @@ namespace
 constexpr Milliseconds SEND_NEXT_POINT_EARLY_DELTA = 1500ms;
 }
 
-template <typename T>
-WaypointMovementGenerator<T>::WaypointMovementGenerator(uint32 pathId, bool repeating, Optional<Milliseconds> duration, Optional<float> speed,
+WaypointMovementGenerator<Creature>::WaypointMovementGenerator(uint32 pathId, bool repeating, Optional<Milliseconds> duration, Optional<float> speed,
     MovementWalkRunSpeedSelectionMode speedSelectionMode, Optional<std::pair<Milliseconds, Milliseconds>> waitTimeRangeAtPathEnd,
     Optional<float> wanderDistanceAtPathEnds, Optional<bool> followPathBackwardsFromEndToStart, Optional<bool> exactSplinePath, bool generatePath,
-    Optional<MovementFadeObject> fadeObject /*= {}*/,
-    Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult /*= {}*/)
-    : PathMovementBase(sWaypointMgr->GetPath(pathId)), _speed(speed), _speedSelectionMode(speedSelectionMode),
+    Optional<Scripting::v2::ActionResultSetter<MovementStopReason>>&& scriptResult /*= {}*/)
+    : PathMovementBase(PathType(std::in_place_type<WaypointPath const*>)), _pathId(pathId), _speed(speed), _speedSelectionMode(speedSelectionMode),
     _waitTimeRangeAtPathEnd(std::move(waitTimeRangeAtPathEnd)), _wanderDistanceAtPathEnds(wanderDistanceAtPathEnds),
     _followPathBackwardsFromEndToStart(followPathBackwardsFromEndToStart), _exactSplinePath(exactSplinePath), _repeating(repeating), _generatePath(generatePath),
-    _fadeObject(fadeObject), _moveTimer(0), _nextMoveTime(0), _waypointTransitionSplinePointsIndex(0), _isReturningToStart(false)
+    _moveTimer(0), _nextMoveTime(0), _waypointTransitionSplinePointsIndex(0), _isReturningToStart(false)
 {
-    this->Mode = MOTION_MODE_DEFAULT;
-    this->Priority = MOTION_PRIORITY_NORMAL;
-    this->Flags = MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING;
-    this->BaseUnitState = UNIT_STATE_ROAMING;
-    this->ScriptResult = std::move(scriptResult);
+    Mode = MOTION_MODE_DEFAULT;
+    Priority = MOTION_PRIORITY_NORMAL;
+    Flags = MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING;
+    BaseUnitState = UNIT_STATE_ROAMING;
+    ScriptResult = std::move(scriptResult);
     if (duration)
         _duration.emplace(*duration);
 }
 
-template <typename T>
-WaypointMovementGenerator<T>::WaypointMovementGenerator(WaypointPath const& path, bool repeating, Optional<Milliseconds> duration, Optional<float> speed,
+WaypointMovementGenerator<Creature>::WaypointMovementGenerator(WaypointPath const& path, bool repeating, Optional<Milliseconds> duration, Optional<float> speed,
     MovementWalkRunSpeedSelectionMode speedSelectionMode, Optional<std::pair<Milliseconds, Milliseconds>> waitTimeRangeAtPathEnd,
     Optional<float> wanderDistanceAtPathEnds, Optional<bool> followPathBackwardsFromEndToStart, Optional<bool> exactSplinePath, bool generatePath,
-    Optional<MovementFadeObject> fadeObject,
-    Scripting::v2::ActionResultSetter<MovementStopReason>&& scriptResult /*= {}*/)
-    : PathMovementBase(std::make_unique<WaypointPath>(path)), _speed(speed), _speedSelectionMode(speedSelectionMode),
+    Optional<Scripting::v2::ActionResultSetter<MovementStopReason>>&& scriptResult /*= {}*/)
+    : PathMovementBase(std::make_unique<WaypointPath>(path)), _pathId(0), _speed(speed), _speedSelectionMode(speedSelectionMode),
     _waitTimeRangeAtPathEnd(std::move(waitTimeRangeAtPathEnd)), _wanderDistanceAtPathEnds(wanderDistanceAtPathEnds),
     _followPathBackwardsFromEndToStart(followPathBackwardsFromEndToStart), _exactSplinePath(exactSplinePath), _repeating(repeating), _generatePath(generatePath),
-    _fadeObject(fadeObject), _moveTimer(0), _nextMoveTime(0), _waypointTransitionSplinePointsIndex(0), _isReturningToStart(false)
+    _moveTimer(0), _nextMoveTime(0), _waypointTransitionSplinePointsIndex(0), _isReturningToStart(false)
 {
-    this->Mode = MOTION_MODE_DEFAULT;
-    this->Priority = MOTION_PRIORITY_NORMAL;
-    this->Flags = MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING;
-    this->BaseUnitState = UNIT_STATE_ROAMING;
-    this->ScriptResult = std::move(scriptResult);
+    Mode = MOTION_MODE_DEFAULT;
+    Priority = MOTION_PRIORITY_NORMAL;
+    Flags = MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING;
+    BaseUnitState = UNIT_STATE_ROAMING;
+    ScriptResult = std::move(scriptResult);
     if (duration)
         _duration.emplace(*duration);
 
-    std::get<std::unique_ptr<WaypointPath>>(this->_path)->BuildSegments();
+    std::get<std::unique_ptr<WaypointPath>>(_path)->BuildSegments();
 }
 
-template <typename T>
-WaypointMovementGenerator<T>::~WaypointMovementGenerator() = default;
+WaypointMovementGenerator<Creature>::~WaypointMovementGenerator() = default;
 
-template <typename T>
-MovementGeneratorType WaypointMovementGenerator<T>::GetMovementGeneratorType() const
+MovementGeneratorType WaypointMovementGenerator<Creature>::GetMovementGeneratorType() const
 {
     return WAYPOINT_MOTION_TYPE;
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::Pause(uint32 timer)
+void WaypointMovementGenerator<Creature>::Pause(uint32 timer)
 {
     if (timer)
     {
         // Don't try to paused an already paused generator
-        if (this->HasFlag(MOVEMENTGENERATOR_FLAG_PAUSED))
+        if (HasFlag(MOVEMENTGENERATOR_FLAG_PAUSED))
             return;
 
-        this->AddFlag(MOVEMENTGENERATOR_FLAG_TIMED_PAUSED);
+        AddFlag(MOVEMENTGENERATOR_FLAG_TIMED_PAUSED);
         _nextMoveTime.Reset(timer);
-        this->RemoveFlag(MOVEMENTGENERATOR_FLAG_PAUSED);
+        RemoveFlag(MOVEMENTGENERATOR_FLAG_PAUSED);
     }
     else
     {
-        this->AddFlag(MOVEMENTGENERATOR_FLAG_PAUSED);
+        AddFlag(MOVEMENTGENERATOR_FLAG_PAUSED);
         _nextMoveTime.Reset(1); // Needed so that Update does not behave as if node was reached
-        this->RemoveFlag(MOVEMENTGENERATOR_FLAG_TIMED_PAUSED);
+        RemoveFlag(MOVEMENTGENERATOR_FLAG_TIMED_PAUSED);
     }
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::Resume(uint32 overrideTimer)
+void WaypointMovementGenerator<Creature>::Resume(uint32 overrideTimer)
 {
     if (overrideTimer)
         _nextMoveTime.Reset(overrideTimer);
@@ -116,11 +107,10 @@ void WaypointMovementGenerator<T>::Resume(uint32 overrideTimer)
     if (_nextMoveTime.Passed())
         _nextMoveTime.Reset(1); // Needed so that Update does not behave as if node was reached
 
-    this->RemoveFlag(MOVEMENTGENERATOR_FLAG_PAUSED);
+    RemoveFlag(MOVEMENTGENERATOR_FLAG_PAUSED);
 }
 
-template <typename T>
-bool WaypointMovementGenerator<T>::GetResetPosition(Unit* /*owner*/, float& x, float& y, float& z)
+bool WaypointMovementGenerator<Creature>::GetResetPosition(Unit* /*owner*/, float& x, float& y, float& z)
 {
     // prevent a crash at empty waypoint path.
     WaypointPath const* path = GetPath();
@@ -136,15 +126,22 @@ bool WaypointMovementGenerator<T>::GetResetPosition(Unit* /*owner*/, float& x, f
     return true;
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::DoInitialize(T* owner)
+void WaypointMovementGenerator<Creature>::DoInitialize(Creature* owner)
 {
-    this->RemoveFlag(MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING | MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+    RemoveFlag(MOVEMENTGENERATOR_FLAG_INITIALIZATION_PENDING | MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+
+    if (IsLoadedFromDB())
+    {
+        if (!_pathId)
+            _pathId = owner->GetWaypointPathId();
+
+        _path = sWaypointMgr->GetPath(_pathId);
+    }
 
     WaypointPath const* path = GetPath();
     if (!path)
     {
-        TC_LOG_ERROR("sql.sql", "WaypointMovementGenerator::DoInitialize: couldn't load path for {}", owner->GetGUID());
+        TC_LOG_ERROR("sql.sql", "WaypointMovementGenerator::DoInitialize: couldn't load path for creature ({}) (_pathId: {})", owner->GetGUID(), _pathId);
         return;
     }
 
@@ -156,24 +153,22 @@ void WaypointMovementGenerator<T>::DoInitialize(T* owner)
     _nextMoveTime.Reset(1000);
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::DoReset(T* owner)
+void WaypointMovementGenerator<Creature>::DoReset(Creature* owner)
 {
-    this->RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+    RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_DEACTIVATED);
 
     owner->StopMoving();
 
-    if (!this->HasFlag(MOVEMENTGENERATOR_FLAG_FINALIZED) && _nextMoveTime.Passed())
+    if (!HasFlag(MOVEMENTGENERATOR_FLAG_FINALIZED) && _nextMoveTime.Passed())
         _nextMoveTime.Reset(1); // Needed so that Update does not behave as if node was reached
 }
 
-template <typename T>
-bool WaypointMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
+bool WaypointMovementGenerator<Creature>::DoUpdate(Creature* owner, uint32 diff)
 {
-    if (!owner->IsAlive())
+    if (!owner || !owner->IsAlive())
         return true;
 
-    if (this->HasFlag(MOVEMENTGENERATOR_FLAG_FINALIZED | MOVEMENTGENERATOR_FLAG_PAUSED))
+    if (HasFlag(MOVEMENTGENERATOR_FLAG_FINALIZED | MOVEMENTGENERATOR_FLAG_PAUSED))
         return true;
 
     WaypointPath const* path = GetPath();
@@ -185,25 +180,23 @@ bool WaypointMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
         _duration->Update(diff);
         if (_duration->Passed())
         {
-            if constexpr (std::is_base_of_v<Creature, T>)
-                owner->UpdateCurrentWaypointInfo(0, 0);
-
-            this->RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY);
-            this->AddFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED);
-            this->AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
-            this->SetScriptResult(MovementStopReason::Finished);
+            RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY);
+            AddFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED);
+            AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
+            owner->UpdateCurrentWaypointInfo(0, 0);
+            SetScriptResult(MovementStopReason::Finished);
             return false;
         }
     }
 
     if (owner->HasUnitState(UNIT_STATE_NOT_MOVE | UNIT_STATE_LOST_CONTROL) || owner->IsMovementPreventedByCasting())
     {
-        this->AddFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
+        AddFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
         owner->StopMoving();
         return true;
     }
 
-    if (this->HasFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED))
+    if (HasFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED))
     {
         /*
          *  relaunch only if
@@ -215,22 +208,21 @@ bool WaypointMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
          *
          *  TODO: ((_nextMoveTime.Passed() && VALID_MOVEMENT) || (!_nextMoveTime.Passed() && !HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED)))
          */
-        if (this->HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED) && (_nextMoveTime.Passed() || !this->HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED)))
+        if (HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED) && (_nextMoveTime.Passed() || !HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED)))
         {
             StartMove(owner, true);
             return true;
         }
 
-        this->RemoveFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
+        RemoveFlag(MOVEMENTGENERATOR_FLAG_INTERRUPTED);
     }
 
     // if it's moving
     if (!UpdateMoveTimer(diff) && !owner->movespline->Finalized())
     {
         // set home position at place (every MotionMaster::UpdateMotion)
-        if constexpr (std::is_base_of_v<Creature, T>)
-            if (owner->GetTransGUID().IsEmpty())
-                owner->SetHomePosition(owner->GetPosition());
+        if (owner->GetTransGUID().IsEmpty())
+            owner->SetHomePosition(owner->GetPosition());
 
         // handle switching points in continuous segments
         if (IsExactSplinePath())
@@ -241,28 +233,25 @@ bool WaypointMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
                 OnArrived(owner);
                 ++_waypointTransitionSplinePointsIndex;
                 if (ComputeNextNode())
-                {
-                    if constexpr (std::is_base_of_v<Creature, T>)
-                        if (CreatureAI* ai = owner->AI())
-                            ai->WaypointStarted(path->Nodes[_currentNode].Id, path->Id);
-                }
+                    if (CreatureAI* ai = owner->AI())
+                        ai->WaypointStarted(path->Nodes[_currentNode].Id, path->Id);
             }
         }
 
         // relaunch movement if its speed has changed
-        if (this->HasFlag(MOVEMENTGENERATOR_FLAG_SPEED_UPDATE_PENDING))
+        if (HasFlag(MOVEMENTGENERATOR_FLAG_SPEED_UPDATE_PENDING))
             StartMove(owner, true);
     }
     else if (!_nextMoveTime.Passed()) // it's not moving, is there a timer?
     {
         if (UpdateWaitTimer(diff))
         {
-            if (!this->HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED)) // initial movement call
+            if (!HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED)) // initial movement call
             {
                 StartMove(owner);
                 return true;
             }
-            else if (!this->HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED)) // timer set before node was reached, resume now
+            else if (!HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED)) // timer set before node was reached, resume now
             {
                 StartMove(owner, true);
                 return true;
@@ -273,10 +262,10 @@ bool WaypointMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
     }
     else // not moving, no timer
     {
-        if (this->HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED) && !this->HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED))
+        if (HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED) && !HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED))
         {
             OnArrived(owner); // hooks and wait timer reset (if necessary)
-            this->AddFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED); // signals to future StartMove that it reached a node
+            AddFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED); // signals to future StartMove that it reached a node
         }
 
         if (_nextMoveTime.Passed()) // OnArrived might have set a timer
@@ -286,36 +275,27 @@ bool WaypointMovementGenerator<T>::DoUpdate(T* owner, uint32 diff)
     return true;
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::DoDeactivate(T* owner)
+void WaypointMovementGenerator<Creature>::DoDeactivate(Creature* owner)
 {
-    this->AddFlag(MOVEMENTGENERATOR_FLAG_DEACTIVATED);
+    AddFlag(MOVEMENTGENERATOR_FLAG_DEACTIVATED);
     owner->ClearUnitState(UNIT_STATE_ROAMING_MOVE);
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::DoFinalize(T* owner, bool active, bool movementInform)
+void WaypointMovementGenerator<Creature>::DoFinalize(Creature* owner, bool active, bool movementInform)
 {
-    this->AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
+    AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
     if (active)
     {
         owner->ClearUnitState(UNIT_STATE_ROAMING_MOVE);
 
         // TODO: Research if this modification is needed, which most likely isnt
-        if constexpr (std::is_base_of_v<Creature, T>)
-            owner->SetWalk(false);
+        owner->SetWalk(false);
     }
 
     if (movementInform)
-        this->SetScriptResult(MovementStopReason::Finished);
+        SetScriptResult(MovementStopReason::Finished);
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::MovementInform(T const* /*owner*/) const
-{
-}
-
-template <>
 void WaypointMovementGenerator<Creature>::MovementInform(Creature const* owner) const
 {
     WaypointPath const* path = GetPath();
@@ -327,8 +307,7 @@ void WaypointMovementGenerator<Creature>::MovementInform(Creature const* owner) 
     }
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::OnArrived(T* owner)
+void WaypointMovementGenerator<Creature>::OnArrived(Creature* owner)
 {
     WaypointPath const* path = GetPath();
     if (!path || path->Nodes.empty())
@@ -352,15 +331,14 @@ void WaypointMovementGenerator<T>::OnArrived(T* owner)
             _duration->Update(waitTime); // count the random movement time as part of waypoing movement action
 
         if (_wanderDistanceAtPathEnds)
-            owner->GetMotionMaster()->MoveRandom(*_wanderDistanceAtPathEnds, waitTime, _speed, _speedSelectionMode, MOTION_SLOT_ACTIVE);
+            owner->GetMotionMaster()->MoveRandom(*_wanderDistanceAtPathEnds, waitTime, MOTION_SLOT_ACTIVE);
         else
             _nextMoveTime.Reset(waitTime);
     }
 
     MovementInform(owner);
 
-    if constexpr (std::is_base_of_v<Creature, T>)
-        owner->UpdateCurrentWaypointInfo(waypoint.Id, path->Id);
+    owner->UpdateCurrentWaypointInfo(waypoint.Id, path->Id);
 }
 
 namespace
@@ -463,91 +441,74 @@ void CreateMergedPath(Unit const* owner, WaypointPath const* path, uint32 previo
 }
 }
 
-template <typename T>
-void WaypointMovementGenerator<T>::StartMove(T* owner, bool relaunch/* = false*/)
+void WaypointMovementGenerator<Creature>::StartMove(Creature* owner, bool relaunch/* = false*/)
 {
     // sanity checks
-    if (!owner->IsAlive() || this->HasFlag(MOVEMENTGENERATOR_FLAG_FINALIZED)
-        || (relaunch && (this->HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED) || !this->HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED))))
+    if (!owner || !owner->IsAlive() || HasFlag(MOVEMENTGENERATOR_FLAG_FINALIZED) || (relaunch && (HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED) || !HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED))))
         return;
 
     WaypointPath const* path = GetPath();
     if (!path || path->Nodes.empty())
         return;
 
-    if (owner->HasUnitState(UNIT_STATE_NOT_MOVE) || owner->IsMovementPreventedByCasting()) // if cannot move
+    if (owner->HasUnitState(UNIT_STATE_NOT_MOVE) || owner->IsMovementPreventedByCasting() || (owner->IsFormationLeader() && !owner->IsFormationLeaderMoveAllowed())) // if cannot move OR cannot move because of formation
     {
         _nextMoveTime.Reset(1000); // delay 1s
         return;
     }
 
-    if constexpr (std::is_base_of_v<Creature, T>)
-    {
-        if (owner->IsFormationLeader() && !owner->IsFormationLeaderMoveAllowed()) // if cannot move because of formation
-        {
-            _nextMoveTime.Reset(1000); // delay 1s
-            return;
-        }
-    }
-
     bool const transportPath = !owner->GetTransGUID().IsEmpty();
 
     uint32 previousNode = _currentNode;
-    if (this->HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED) && this->HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED))
+    if (HasFlag(MOVEMENTGENERATOR_FLAG_INFORM_ENABLED) && HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED))
     {
         if (ComputeNextNode())
         {
             ASSERT(_currentNode < path->Nodes.size(), "WaypointMovementGenerator::StartMove: tried to reference a node id (%u) which is not included in path (%u)", _currentNode, path->Id);
 
             // inform AI
-            if constexpr (std::is_base_of_v<Creature, T>)
-                if (CreatureAI* AI = owner->AI())
-                    AI->WaypointStarted(path->Nodes[_currentNode].Id, path->Id);
+            if (CreatureAI* AI = owner->AI())
+                AI->WaypointStarted(path->Nodes[_currentNode].Id, path->Id);
         }
         else
         {
-            this->AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
+            WaypointNode const& waypoint = path->Nodes[_currentNode];
+            float x = waypoint.X;
+            float y = waypoint.Y;
+            float z = waypoint.Z;
+            float o = owner->GetOrientation();
 
-            if constexpr (std::is_base_of_v<Creature, T>)
+            if (!transportPath)
+                owner->SetHomePosition(x, y, z, o);
+            else
             {
-                owner->UpdateCurrentWaypointInfo(0, 0);
-
-                WaypointNode const& waypoint = path->Nodes[_currentNode];
-                float x = waypoint.X;
-                float y = waypoint.Y;
-                float z = waypoint.Z;
-                float o = owner->GetOrientation();
-
-                if (!transportPath)
-                    owner->SetHomePosition(x, y, z, o);
-                else
+                if (TransportBase* trans = owner->GetTransport())
                 {
-                    if (TransportBase* trans = owner->GetTransport())
-                    {
-                        o -= trans->GetTransportOrientation();
-                        owner->SetTransportHomePosition(x, y, z, o);
-                        owner->SetHomePosition(trans->GetPositionWithOffset(owner->GetTransportHomePosition()));
-                    }
-                    // else if (vehicle) - this should never happen, vehicle offsets are const
+                    o -= trans->GetTransportOrientation();
+                    owner->SetTransportHomePosition(x, y, z, o);
+                    trans->CalculatePassengerPosition(x, y, z, &o);
+                    owner->SetHomePosition(x, y, z, o);
                 }
-
-                // inform AI
-                if (CreatureAI* AI = owner->AI())
-                    AI->WaypointPathEnded(waypoint.Id, path->Id);
+                // else if (vehicle) - this should never happen, vehicle offsets are const
             }
+            AddFlag(MOVEMENTGENERATOR_FLAG_FINALIZED);
+            owner->UpdateCurrentWaypointInfo(0, 0);
 
-            this->SetScriptResult(MovementStopReason::Finished);
+            // inform AI
+            if (CreatureAI* AI = owner->AI())
+                AI->WaypointPathEnded(waypoint.Id, path->Id);
+
+            SetScriptResult(MovementStopReason::Finished);
             return;
         }
     }
-    else if (!this->HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED))
+    else if (!HasFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED))
     {
-        this->AddFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED);
+        AddFlag(MOVEMENTGENERATOR_FLAG_INITIALIZED);
 
         // inform AI
-        if constexpr (std::is_base_of_v<Creature, T>)
-            if (CreatureAI* AI = owner->AI())
-                AI->WaypointStarted(path->Nodes[_currentNode].Id, path->Id);
+        if (CreatureAI* AI = owner->AI())
+            AI->WaypointStarted(path->Nodes[_currentNode].Id, path->Id);
     }
 
     ASSERT(_currentNode < path->Nodes.size(), "WaypointMovementGenerator::StartMove: tried to reference a node id (%u) which is not included in path (%u)", _currentNode, path->Id);
@@ -564,7 +525,7 @@ void WaypointMovementGenerator<T>::StartMove(T* owner, bool relaunch/* = false*/
 
     _waypointTransitionSplinePointsIndex = 0;
 
-    this->RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_INFORM_ENABLED | MOVEMENTGENERATOR_FLAG_TIMED_PAUSED);
+    RemoveFlag(MOVEMENTGENERATOR_FLAG_TRANSITORY | MOVEMENTGENERATOR_FLAG_INFORM_ENABLED | MOVEMENTGENERATOR_FLAG_TIMED_PAUSED);
 
     owner->AddUnitState(UNIT_STATE_ROAMING_MOVE);
 
@@ -594,23 +555,7 @@ void WaypointMovementGenerator<T>::StartMove(T* owner, bool relaunch/* = false*/
         && (lastWaypointForSegment->Delay || (_isReturningToStart ? _currentNode == 0 : _currentNode == path->Nodes.size() - 1)))
         init.SetFacing(*lastWaypointForSegment->Orientation);
 
-    if (_fadeObject && !_repeating)
-    {
-        std::size_t lastWaypointForPath = IsFollowingPathBackwardsFromEndToStart() ? 0 : path->Nodes.size() - 1;
-        if (IsExactSplinePath())
-        {
-            auto [lastSegmentFirstNode, segmentLength] = path->ContinuousSegments[IsFollowingPathBackwardsFromEndToStart() ? 0 : path->ContinuousSegments.size() - 1];
-            if (lastWaypointForPath >= lastSegmentFirstNode && lastWaypointForPath < lastSegmentFirstNode + segmentLength)
-                init.SetFadeObject(_fadeObject->Duration.value_or(1s));
-        }
-        else
-        {
-            if (lastWaypointForSegment->Id == path->Nodes[lastWaypointForPath].Id)
-                init.SetFadeObject(_fadeObject->Duration.value_or(1s));
-        }
-    }
-
-    switch (lastWaypointForSegment->MoveType.value_or(path->MoveType))
+    switch (path->MoveType)
     {
         case WaypointMoveType::Land:
             init.SetAnimation(AnimTier::Ground);
@@ -669,12 +614,10 @@ void WaypointMovementGenerator<T>::StartMove(T* owner, bool relaunch/* = false*/
     _moveTimer.Reset(duration);
 
     // inform formation
-    if constexpr (std::is_base_of_v<Creature, T>)
-        owner->SignalFormationMovement();
+    owner->SignalFormationMovement();
 }
 
-template <typename T>
-bool WaypointMovementGenerator<T>::ComputeNextNode()
+bool WaypointMovementGenerator<Creature>::ComputeNextNode()
 {
     WaypointPath const* path = GetPath();
     if ((_currentNode == path->Nodes.size() - 1) && !_repeating)
@@ -705,8 +648,7 @@ bool WaypointMovementGenerator<T>::ComputeNextNode()
     return true;
 }
 
-template <typename T>
-bool WaypointMovementGenerator<T>::IsFollowingPathBackwardsFromEndToStart() const
+bool WaypointMovementGenerator<Creature>::IsFollowingPathBackwardsFromEndToStart() const
 {
     if (_followPathBackwardsFromEndToStart)
         return *_followPathBackwardsFromEndToStart;
@@ -714,8 +656,7 @@ bool WaypointMovementGenerator<T>::IsFollowingPathBackwardsFromEndToStart() cons
     return GetPath()->Flags.HasFlag(WaypointPathFlags::FollowPathBackwardsFromEndToStart);
 }
 
-template <typename T>
-bool WaypointMovementGenerator<T>::IsExactSplinePath() const
+bool WaypointMovementGenerator<Creature>::IsExactSplinePath() const
 {
     if (_exactSplinePath)
         return *_exactSplinePath;
@@ -723,8 +664,7 @@ bool WaypointMovementGenerator<T>::IsExactSplinePath() const
     return GetPath()->Flags.HasFlag(WaypointPathFlags::ExactSplinePath);
 }
 
-template <typename T>
-bool WaypointMovementGenerator<T>::IsCyclic() const
+bool WaypointMovementGenerator<Creature>::IsCyclic() const
 {
     return !IsFollowingPathBackwardsFromEndToStart()
         && IsExactSplinePath()
@@ -732,18 +672,14 @@ bool WaypointMovementGenerator<T>::IsCyclic() const
         && GetPath()->ContinuousSegments.size() == 1;
 }
 
-template <typename T>
-std::string WaypointMovementGenerator<T>::GetDebugInfo() const
+std::string WaypointMovementGenerator<Creature>::GetDebugInfo() const
 {
     return Trinity::StringFormat("{}\n{}",
         PathMovementBase::GetDebugInfo(),
-        MovementGeneratorMedium<T, WaypointMovementGenerator>::GetDebugInfo());
+        MovementGeneratorMedium::GetDebugInfo());
 }
 
-MovementGenerator* WaypointMovementFactory::Create(Unit* object) const
+MovementGenerator* WaypointMovementFactory::Create(Unit* /*object*/) const
 {
-    return new WaypointMovementGenerator<Creature>(object->ToCreature()->GetWaypointPathId(), true);
+    return new WaypointMovementGenerator<Creature>(0, true);
 }
-
-template class WaypointMovementGenerator<Creature>;
-template class WaypointMovementGenerator<Player>;

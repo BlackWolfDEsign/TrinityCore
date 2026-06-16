@@ -33,22 +33,21 @@ class TC_GAME_API Conversation final : public WorldObject, public GridObject<Con
         ~Conversation();
 
     protected:
-        void BuildValuesCreate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void BuildValuesUpdate(UF::UpdateFieldFlag flags, ByteBuffer& data, Player const* target) const override;
-        void ClearValuesChangesMask() override;
+        void BuildValuesCreate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void BuildValuesUpdate(ByteBuffer* data, UF::UpdateFieldFlag flags, Player const* target) const override;
+        void ClearUpdateMask(bool remove) override;
 
     public:
         void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
-            UF::ConversationData::Mask const& requestedConversationMask, Player const* target, bool ignoreNestedChangesMask) const;
+            UF::ConversationData::Mask const& requestedConversationMask, Player const* target) const;
 
         struct ValuesUpdateForPlayerWithMaskSender // sender compatible with MessageDistDeliverer
         {
-            explicit ValuesUpdateForPlayerWithMaskSender(Conversation const* owner) : Owner(owner), IgnoreNestedChangesMask(false) { }
+            explicit ValuesUpdateForPlayerWithMaskSender(Conversation const* owner) : Owner(owner) { }
 
             Conversation const* Owner;
             UF::ObjectData::Base ObjectMask;
             UF::ConversationData::Base ConversationMask;
-            bool IgnoreNestedChangesMask;
 
             void operator()(Player const* player) const;
         };
@@ -71,7 +70,10 @@ class TC_GAME_API Conversation final : public WorldObject, public GridObject<Con
         ObjectGuid GetOwnerGUID() const override { return GetCreatorGUID(); }
         uint32 GetFaction() const override { return 0; }
 
-        Position const& GetStationaryPosition() const override { return _stationaryPosition; }
+        float GetStationaryX() const override { return _stationaryPosition.GetPositionX(); }
+        float GetStationaryY() const override { return _stationaryPosition.GetPositionY(); }
+        float GetStationaryZ() const override { return _stationaryPosition.GetPositionZ(); }
+        float GetStationaryO() const override { return _stationaryPosition.GetOrientation(); }
         void RelocateStationaryPosition(Position const& pos) { _stationaryPosition.Relocate(pos); }
 
         Milliseconds const* GetLineStartTime(LocaleConstant locale, int32 lineId) const;

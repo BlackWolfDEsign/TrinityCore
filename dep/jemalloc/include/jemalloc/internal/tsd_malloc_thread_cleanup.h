@@ -1,11 +1,7 @@
 #ifdef JEMALLOC_INTERNAL_TSD_MALLOC_THREAD_CLEANUP_H
-#	error This file should be included only once, by tsd.h.
+#error This file should be included only once, by tsd.h.
 #endif
 #define JEMALLOC_INTERNAL_TSD_MALLOC_THREAD_CLEANUP_H
-
-#include "jemalloc/internal/jemalloc_preamble.h"
-#include "jemalloc/internal/tsd_internals.h"
-#include "jemalloc/internal/tsd_types.h"
 
 #define JEMALLOC_TSD_TYPE_ATTR(type) __thread type JEMALLOC_TLS_MODEL
 
@@ -25,7 +21,7 @@ tsd_cleanup_wrapper(void) {
 
 JEMALLOC_ALWAYS_INLINE bool
 tsd_boot0(void) {
-	_malloc_tsd_cleanup_register(&tsd_cleanup_wrapper);
+	malloc_tsd_cleanup_register(&tsd_cleanup_wrapper);
 	tsd_booted = true;
 	return false;
 }

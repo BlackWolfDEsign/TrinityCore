@@ -19,14 +19,15 @@
 #include "bastion_of_twilight.h"
 #include "InstanceScript.h"
 
-static constexpr ObjectData creatureData[] =
+ObjectData const creatureData[] =
 {
     { NPC_HALFUS_WYRMBREAKER,   BOSS_HALFUS_WYRMBREAKER },
     { NPC_CHOGALL,              BOSS_CHOGALL            },
     { NPC_SINESTRA,             BOSS_SINESTRA           },
+    { 0,                        0                       } // END
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_HALFUS_ENTRANCE,               BOSS_HALFUS_WYRMBREAKER,        EncounterDoorBehavior::OpenWhenNotInProgress    },
     { GO_HALFUS_EXIT,                   BOSS_HALFUS_WYRMBREAKER,        EncounterDoorBehavior::OpenWhenDone             },
@@ -35,9 +36,10 @@ static constexpr DoorData doorData[] =
     { GO_ASCENDANT_COUNCIL_ENTRANCE,    BOSS_ASCENDANT_COUNCIL,         EncounterDoorBehavior::OpenWhenNotInProgress    },
     { GO_ASCENDANT_COUNCIL_EXIT,        BOSS_ASCENDANT_COUNCIL,         EncounterDoorBehavior::OpenWhenDone             },
     { GO_CHOGALL_ENTRANCE,              BOSS_CHOGALL,                   EncounterDoorBehavior::OpenWhenNotInProgress    },
+    { 0,                                0,                              EncounterDoorBehavior::OpenWhenNotInProgress    }  // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_HALFUS_WYRMBREAKER,      {{ 1030 }}          },
     { BOSS_THERALION_AND_VALIONA,   {{ 1032 }}          },
@@ -57,7 +59,7 @@ public:
         {
             SetHeaders(DataHeader);
             SetBossNumber(EncounterCount);
-            LoadObjectData(creatureData, {});
+            LoadObjectData(creatureData, nullptr);
             LoadDoorData(doorData);
             LoadDungeonEncounterData(encounters);
         }

@@ -29,12 +29,6 @@
 
 constexpr uint32 AuctionHouseIds[MAX_AUCTION_HOUSE_TYPE] = { 1, 2, 6 };
 
-AuctionBotConfig::AuctionBotConfig() : _itemsPerCycleBoost(1000), _itemsPerCycleNormal(20), _configUint32Values(), _configBoolValues(), _configFloatValues()
-{
-}
-
-AuctionBotConfig::~AuctionBotConfig() = default;
-
 AuctionBotConfig* AuctionBotConfig::instance()
 {
     static AuctionBotConfig instance;
@@ -486,7 +480,7 @@ void AuctionHouseBot::ReloadAllConfig()
     InitializeAgents();
 }
 
-void AuctionHouseBot::PrepareStatusInfos(std::array<AuctionHouseBotStatusInfoPerType, MAX_AUCTION_HOUSE_TYPE>& statusInfo)
+void AuctionHouseBot::PrepareStatusInfos(std::unordered_map<AuctionHouseType, AuctionHouseBotStatusInfoPerType>& statusInfo)
 {
     for (AuctionHouseType ahType : EnumUtils::Iterate<AuctionHouseType>())
     {

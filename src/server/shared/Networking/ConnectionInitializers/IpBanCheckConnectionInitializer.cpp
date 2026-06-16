@@ -17,13 +17,11 @@
 
 #include "IpBanCheckConnectionInitializer.h"
 #include "DatabaseEnv.h"
-#include "IpAddress.h"
-#include "Log.h"
 
-QueryCallback Trinity::Net::IpBanCheckHelpers::AsyncQuery(boost::asio::ip::address const& ipAddress)
+QueryCallback Trinity::Net::IpBanCheckHelpers::AsyncQuery(std::string_view ipAddress)
 {
     LoginDatabasePreparedStatement* stmt = LoginDatabase.GetPreparedStatement(LOGIN_SEL_IP_INFO);
-    stmt->setString(0, ipAddress.to_string());
+    stmt->setString(0, ipAddress);
     return LoginDatabase.AsyncQuery(stmt);
 }
 
@@ -41,9 +39,4 @@ bool Trinity::Net::IpBanCheckHelpers::IsBanned(PreparedQueryResult const& result
     }
 
     return false;
-}
-
-void Trinity::Net::IpBanCheckHelpers::LogFailure(boost::asio::ip::address const& ipAddress)
-{
-    TC_LOG_ERROR("network", "IpBanCheckConnectionInitializer: IP {} is banned.", ipAddress);
 }

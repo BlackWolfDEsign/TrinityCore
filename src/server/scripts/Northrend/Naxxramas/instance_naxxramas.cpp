@@ -17,13 +17,14 @@
 
 #include "ScriptMgr.h"
 #include "AreaBoundary.h"
-#include "Creature.h"
 #include "CreatureAI.h"
 #include "EventMap.h"
 #include "GameObject.h"
 #include "InstanceScript.h"
 #include "Map.h"
 #include "naxxramas.h"
+#include "TemporarySummon.h"
+#include <sstream>
 
 BossBoundaryData const boundaries =
 {
@@ -58,7 +59,7 @@ BossBoundaryData const boundaries =
     { BOSS_KELTHUZAD, new CircleBoundary(Position(3716.0f, -5107.0f), 85.0f) }
 };
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_ROOM_ANUBREKHAN,       BOSS_ANUBREKHAN,    EncounterDoorBehavior::OpenWhenNotInProgress },
     { GO_PASSAGE_ANUBREKHAN,    BOSS_ANUBREKHAN,    EncounterDoorBehavior::OpenWhenDone },
@@ -93,18 +94,20 @@ static constexpr DoorData doorData[] =
     { GO_MILI_EYE_RAMP_BOSS,    BOSS_HORSEMEN,      EncounterDoorBehavior::OpenWhenDone },
     { GO_CONS_EYE_RAMP,         BOSS_THADDIUS,      EncounterDoorBehavior::OpenWhenDone },
     { GO_CONS_EYE_RAMP_BOSS,    BOSS_THADDIUS,      EncounterDoorBehavior::OpenWhenDone },
+    { 0,                        0,                  EncounterDoorBehavior::OpenWhenNotInProgress }
 };
 
-static constexpr ObjectData objectData[] =
+ObjectData const objectData[] =
 {
     { GO_NAXX_PORTAL_ARACHNID,  DATA_NAXX_PORTAL_ARACHNID  },
     { GO_NAXX_PORTAL_CONSTRUCT, DATA_NAXX_PORTAL_CONSTRUCT },
     { GO_NAXX_PORTAL_PLAGUE,    DATA_NAXX_PORTAL_PLAGUE    },
     { GO_NAXX_PORTAL_MILITARY,  DATA_NAXX_PORTAL_MILITARY  },
     { GO_KELTHUZAD_THRONE,      DATA_KELTHUZAD_THRONE      },
+    { 0,                        0,                         }
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { BOSS_ANUBREKHAN, {{ 1107 }} },
     { BOSS_FAERLINA, {{  1110 }} },
@@ -136,7 +139,7 @@ class instance_naxxramas : public InstanceMapScript
                 SetBossNumber(EncounterCount);
                 LoadBossBoundaries(boundaries);
                 LoadDoorData(doorData);
-                LoadObjectData({}, objectData);
+                LoadObjectData(nullptr, objectData);
                 LoadDungeonEncounterData(encounters);
 
                 hadSapphironBirth       = false;

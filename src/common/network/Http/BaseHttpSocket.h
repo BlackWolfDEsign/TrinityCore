@@ -129,7 +129,8 @@ struct HttpConnectionInitializer final : SocketConnectionInitializer
     {
         _socket->ResetHttpParser();
 
-        this->InvokeNext();
+        if (this->next)
+            this->next->Start();
     }
 
 private:

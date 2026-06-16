@@ -21,19 +21,21 @@
 #include "InstanceScript.h"
 #include "utgarde_keep.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_GIANT_PORTCULLIS_1,    DATA_INGVAR,    EncounterDoorBehavior::OpenWhenDone },
     { GO_GIANT_PORTCULLIS_2,    DATA_INGVAR,    EncounterDoorBehavior::OpenWhenDone },
+    { 0,                        0,              EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr MinionData minionData[] =
+MinionData const minionData[] =
 {
     { NPC_SKARVALD,     DATA_SKARVALD_DALRONN },
     { NPC_DALRONN,      DATA_SKARVALD_DALRONN },
+    { 0,                0 }
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_PRINCE_KELESETH, {{ 2026 }} },
     { DATA_SKARVALD_DALRONN, {{ 2024 }} },

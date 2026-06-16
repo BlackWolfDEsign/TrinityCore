@@ -16,6 +16,5 @@
  */
 
 #include "DatabaseEnv.h"
-#include "Errors.h"
 #include "Log.h"
 #include "MySQLHacks.h"

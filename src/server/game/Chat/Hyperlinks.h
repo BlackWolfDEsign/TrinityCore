@@ -25,30 +25,19 @@
 #include <string_view>
 
 struct AchievementEntry;
-struct ArtifactPowerRankEntry;
-struct AzeriteEssenceEntry;
 struct BattlePetAbilityEntry;
 struct BattlePetSpeciesEntry;
-struct ChrSpecializationEntry;
 struct CurrencyContainerEntry;
 struct CurrencyTypesEntry;
-struct GarrAbilityEntry;
-struct GarrFollowerEntry;
-struct GarrMissionEntry;
 struct GlyphPropertiesEntry;
 struct ItemModifiedAppearanceEntry;
 struct ItemNameDescriptionEntry;
-enum ItemQualities : uint8;
 struct ItemTemplate;
 struct LocalizedString;
 struct MapEntry;
 struct MapChallengeModeEntry;
-struct MawPowerEntry;
-struct PerksActivityEntry;
-struct PvpTalentEntry;
 class Quest;
 struct SkillLineEntry;
-struct SoulbindConduitRankEntry;
 class SpellInfo;
 struct SpellItemEnchantmentEntry;
 struct TalentEntry;
@@ -74,19 +63,6 @@ namespace Trinity::Hyperlinks
         std::string_view Type;
         std::string_view Name;
         std::string_view Parent;
-    };
-
-    struct ArtifactPowerLinkData
-    {
-        ArtifactPowerRankEntry const* ArtifactPower = nullptr;
-        uint8 PurchasedRank = 0;
-        uint8 CurrentRankWithBonus = 0;
-    };
-
-    struct AzeriteEssenceLinkData
-    {
-        AzeriteEssenceEntry const* Essence = nullptr;
-        uint8 Rank = 0;
     };
 
     struct BattlePetLinkData
@@ -137,23 +113,6 @@ namespace Trinity::Hyperlinks
         };
 
         std::vector<Dungeon> Dungeons;
-    };
-
-    struct GarrisonFollowerLinkData
-    {
-        GarrFollowerEntry const* Follower = nullptr;
-        uint32 Quality = 0;
-        uint32 Level = 0;
-        uint32 ItemLevel = 0;
-        std::array<uint32, 4> Abilities = { };
-        uint32 Traits[4] = { };
-        uint32 Specialization = 0;
-    };
-
-    struct GarrisonMissionLinkData
-    {
-        GarrMissionEntry const* Mission = nullptr;
-        uint64 DbID = 0;
     };
 
     struct InstanceLockLinkData
@@ -229,13 +188,6 @@ namespace Trinity::Hyperlinks
     {
         SpellInfo const* Spell = nullptr;
         GlyphPropertiesEntry const* Glyph = nullptr;
-    };
-
-    struct TalentBuildLinkData
-    {
-        ChrSpecializationEntry const* Spec = nullptr;
-        uint32 Level = 0;
-        std::string_view ImportString;
     };
 
     struct TradeskillLinkData
@@ -342,20 +294,6 @@ namespace Trinity::Hyperlinks
             static bool StoreTo(ApiLinkData& val, std::string_view text);
         };
 
-        struct TC_GAME_API apower
-        {
-            using value_type = ArtifactPowerLinkData const&;
-            static constexpr std::string_view tag() { return "apower"; }
-            static bool StoreTo(ArtifactPowerLinkData& val, std::string_view text);
-        };
-
-        struct TC_GAME_API azessence
-        {
-            using value_type = AzeriteEssenceLinkData const&;
-            static constexpr std::string_view tag() { return "azessence"; }
-            static bool StoreTo(AzeriteEssenceLinkData& val, std::string_view text);
-        };
-
         struct TC_GAME_API battlepet
         {
             using value_type = BattlePetLinkData const&;
@@ -368,20 +306,6 @@ namespace Trinity::Hyperlinks
             using value_type = BattlePetAbilLinkData const&;
             static constexpr std::string_view tag() { return "battlePetAbil"; }
             static bool StoreTo(BattlePetAbilLinkData& val, std::string_view text);
-        };
-
-        struct TC_GAME_API conduit
-        {
-            using value_type = SoulbindConduitRankEntry const*;
-            static constexpr std::string_view tag() { return "conduit"; }
-            static bool StoreTo(SoulbindConduitRankEntry const*& val, std::string_view text);
-        };
-
-        struct TC_GAME_API curio
-        {
-            using value_type = SpellInfo const*;
-            static constexpr std::string_view tag() { return "curio"; }
-            static bool StoreTo(SpellInfo const*& val, std::string_view text);
         };
 
         struct TC_GAME_API currency
@@ -403,27 +327,6 @@ namespace Trinity::Hyperlinks
             using value_type = SpellInfo const*;
             static constexpr std::string_view tag() { return "enchant"; }
             static bool StoreTo(SpellInfo const*& val, std::string_view text);
-        };
-
-        struct TC_GAME_API garrfollower
-        {
-            using value_type = GarrisonFollowerLinkData const&;
-            static constexpr std::string_view tag() { return "garrfollower"; }
-            static bool StoreTo(GarrisonFollowerLinkData& val, std::string_view text);
-        };
-
-        struct TC_GAME_API garrfollowerability
-        {
-            using value_type = GarrAbilityEntry const*;
-            static constexpr std::string_view tag() { return "garrfollowerability"; }
-            static bool StoreTo(GarrAbilityEntry const*& val, std::string_view text);
-        };
-
-        struct TC_GAME_API garrmission
-        {
-            using value_type = GarrisonMissionLinkData const&;
-            static constexpr std::string_view tag() { return "garrmission"; }
-            static bool StoreTo(GarrisonMissionLinkData& val, std::string_view text);
         };
 
         struct TC_GAME_API instancelock
@@ -454,32 +357,11 @@ namespace Trinity::Hyperlinks
             static bool StoreTo(KeystoneLinkData& val, std::string_view text);
         };
 
-        struct TC_GAME_API mawpower
-        {
-            using value_type = MawPowerEntry const*;
-            static constexpr std::string_view tag() { return "mawpower"; }
-            static bool StoreTo(MawPowerEntry const*& val, std::string_view text);
-        };
-
         struct TC_GAME_API mount
         {
             using value_type = MountLinkData const&;
             static constexpr std::string_view tag() { return "mount"; }
             static bool StoreTo(MountLinkData& val, std::string_view text);
-        };
-
-        struct TC_GAME_API perksactivity
-        {
-            using value_type = PerksActivityEntry const*;
-            static constexpr std::string_view tag() { return "perksactivity"; }
-            static bool StoreTo(PerksActivityEntry const*& val, std::string_view text);
-        };
-
-        struct TC_GAME_API pvptal
-        {
-            using value_type = PvpTalentEntry const*;
-            static constexpr std::string_view tag() { return "pvptal"; }
-            static bool StoreTo(PvpTalentEntry const*& val, std::string_view text);
         };
 
         struct TC_GAME_API quest
@@ -503,13 +385,6 @@ namespace Trinity::Hyperlinks
             static bool StoreTo(TalentEntry const*& val, std::string_view text);
         };
 
-        struct TC_GAME_API talentbuild
-        {
-            using value_type = TalentBuildLinkData const&;
-            static constexpr std::string_view tag() { return "talentbuild"; }
-            static bool StoreTo(TalentBuildLinkData& val, std::string_view text);
-        };
-
         struct TC_GAME_API trade
         {
             using value_type = TradeskillLinkData const&;
@@ -522,13 +397,6 @@ namespace Trinity::Hyperlinks
             using value_type = ItemModifiedAppearanceEntry const*;
             static constexpr std::string_view tag() { return "transmogappearance"; }
             static bool StoreTo(ItemModifiedAppearanceEntry const*& val, std::string_view text);
-        };
-
-        struct TC_GAME_API transmogillusion
-        {
-            using value_type = SpellItemEnchantmentEntry const*;
-            static constexpr std::string_view tag() { return "transmogillusion"; }
-            static bool StoreTo(SpellItemEnchantmentEntry const*& val, std::string_view text);
         };
 
         struct TC_GAME_API transmogset
@@ -548,24 +416,29 @@ namespace Trinity::Hyperlinks
 
     struct HyperlinkColor
     {
-        HyperlinkColor() = default;
-        HyperlinkColor(std::string_view c) : data(c) {}
-        std::string_view data;
+        HyperlinkColor(uint32 c) : r(c >> 16), g(c >> 8), b(c), a(c >> 24) {}
+        uint8 const r, g, b, a;
         bool operator==(uint32 c) const
         {
-            return Trinity::StringTo<uint32>(data, 16) == c;
+            if ((c & 0xff) ^ b)
+                return false;
+            if (((c >>= 8) & 0xff) ^ g)
+                return false;
+            if (((c >>= 8) & 0xff) ^ r)
+                return false;
+            if ((c >>= 8) ^ a)
+                return false;
+            return true;
         }
-
-        bool operator==(ItemQualities q) const;
     };
 
     struct HyperlinkInfo
     {
-        HyperlinkInfo() : ok(false) {}
-        HyperlinkInfo(std::string_view t, std::string_view c, std::string_view ta, std::string_view d, std::string_view te) :
+        HyperlinkInfo() : ok(false), color(0) {}
+        HyperlinkInfo(std::string_view t, uint32 c, std::string_view ta, std::string_view d, std::string_view te) :
             ok(true), tail(t), color(c), tag(ta), data(d), text(te) {}
 
-        explicit operator bool() const { return ok; }
+        explicit operator bool() { return ok; }
         bool const ok;
         std::string_view const tail;
         HyperlinkColor const color;

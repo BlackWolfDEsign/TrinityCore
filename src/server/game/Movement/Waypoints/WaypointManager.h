@@ -19,7 +19,7 @@
 #define TRINITY_WAYPOINTMANAGER_H
 
 #include "Define.h"
-#include "DatabaseEnvFwd.h"
+#include "Field.h"
 #include "Hash.h"
 #include "ObjectGuid.h"
 #include "Position.h"
@@ -30,15 +30,7 @@ class Unit;
 
 class TC_GAME_API WaypointMgr
 {
-        struct PathQueryResult;
-        struct PathNodeQueryResult;
-
     public:
-        WaypointMgr(WaypointMgr const&) = delete;
-        WaypointMgr(WaypointMgr&&) = delete;
-        WaypointMgr& operator=(WaypointMgr const&) = delete;
-        WaypointMgr& operator=(WaypointMgr&&) = delete;
-
         static WaypointMgr* instance();
 
         // Attempts to reload a single path from database
@@ -46,8 +38,8 @@ class TC_GAME_API WaypointMgr
 
         // Loads all paths from database, should only run on startup
         void LoadPaths();
-        void LoadPathFromDB(PathQueryResult const& fields);
-        void LoadPathNodesFromDB(PathNodeQueryResult const& fields);
+        void LoadPathFromDB(Field* fields);
+        void LoadPathNodesFromDB(Field* fields);
         void DoPostLoadingChecks();
 
         void VisualizePath(Unit* owner, WaypointPath const* path, Optional<uint32> displayId);
@@ -65,8 +57,7 @@ class TC_GAME_API WaypointMgr
         ObjectGuid const& GetVisualGUIDByNode(uint32 pathId, uint32 nodeId) const;
 
     private:
-        WaypointMgr();
-        ~WaypointMgr();
+        WaypointMgr() { }
 
         void _LoadPaths();
         void _LoadPathNodes();

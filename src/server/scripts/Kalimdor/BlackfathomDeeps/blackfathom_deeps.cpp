@@ -208,7 +208,7 @@ public:
         void HandleScript(SpellEffIndex /*effIndex*/)
         {
             if (Unit* hitUnit = GetHitUnit())
-                GetCaster()->CastSpell(hitUnit, uint32(GetEffectValueAsInt()), true);
+                GetCaster()->CastSpell(hitUnit, uint32(GetEffectValue()), true);
         }
 
         void Register() override

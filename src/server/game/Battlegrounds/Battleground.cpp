@@ -30,7 +30,6 @@
 #include "GameTime.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
-#include "GroupMgr.h"
 #include "Guild.h"
 #include "GuildMgr.h"
 #include "KillRewarder.h"
@@ -81,6 +80,9 @@ Battleground::Battleground(BattlegroundTemplate const* battlegroundTemplate) : _
 
     m_Map               = nullptr;
 
+    m_ArenaTeamIds[TEAM_ALLIANCE]   = 0;
+    m_ArenaTeamIds[TEAM_HORDE]      = 0;
+
     m_ArenaTeamMMR[TEAM_ALLIANCE]   = 0;
     m_ArenaTeamMMR[TEAM_HORDE]      = 0;
 
@@ -94,6 +96,7 @@ Battleground::Battleground(BattlegroundTemplate const* battlegroundTemplate) : _
     m_TeamScores[TEAM_HORDE]         = 0;
 
     m_PrematureCountDown = false;
+    m_PrematureCountDownTimer = 0;
 
     m_LastPlayerPositionBroadcast = 0;
 
@@ -122,12 +125,6 @@ Battleground::~Battleground()
         m_Map->SetBG(nullptr);
         m_Map = nullptr;
     }
-
-    // Clear Group::m_bgGroup, Group might later reference it in its own destructor
-    for (Group* bgRaid : m_BgRaids)
-        if (bgRaid)
-            bgRaid->SetBattlegroundGroup(nullptr);
-
     // remove from bg free slot queue
     RemoveFromBGFreeSlotQueue();
 
@@ -182,7 +179,10 @@ void Battleground::Update(uint32 diff)
             }
             else
             {
-                _ProcessProgress(diff);
+                if (sBattlegroundMgr->GetPrematureFinishTime() && (GetPlayersCountByTeam(ALLIANCE) < GetMinPlayersPerTeam() || GetPlayersCountByTeam(HORDE) < GetMinPlayersPerTeam()))
+                    _ProcessProgress(diff);
+                else if (m_PrematureCountDown)
+                    m_PrematureCountDown = false;
             }
             break;
         case STATUS_WAIT_LEAVE:
@@ -287,42 +287,33 @@ inline void Battleground::_ProcessProgress(uint32 diff)
     // ***           BATTLEGROUND BALLANCE SYSTEM            ***
     // *********************************************************
     // if less then minimum players are in on one side, then start premature finish timer
-    bool broadcastStatusUpdate = false;
-    if (!sBattlegroundMgr->isTesting() && sBattlegroundMgr->GetPrematureFinishTime() && (GetPlayersCountByTeam(ALLIANCE) < GetMinPlayersPerTeam() || GetPlayersCountByTeam(HORDE) < GetMinPlayersPerTeam()))
+    if (!m_PrematureCountDown)
     {
-        if (!m_PrematureCountDown)
-        {
-            m_PrematureCountDown = true;
-            SetRemainingTime(sBattlegroundMgr->GetPrematureFinishTime());
-            broadcastStatusUpdate = true;
-        }
-        else if ((m_EndTime -= int32(diff)) < 0)
-        {
-            // time's up!
-            EndBattleground(GetPrematureWinner());
-            m_PrematureCountDown = false;
-        }
+        m_PrematureCountDown = true;
+        m_PrematureCountDownTimer = sBattlegroundMgr->GetPrematureFinishTime();
     }
-    else if (m_PrematureCountDown)
+    else if (m_PrematureCountDownTimer < diff)
     {
+        // time's up!
+        EndBattleground(GetPrematureWinner());
         m_PrematureCountDown = false;
-        SetRemainingTime(0);
-        broadcastStatusUpdate = true;
     }
-
-    if (broadcastStatusUpdate)
+    else if (!sBattlegroundMgr->isTesting())
     {
-        for (auto const& [guid, playerData] : m_Players)
+        uint32 newtime = m_PrematureCountDownTimer - diff;
+        // announce every minute
+        if (newtime > (MINUTE * IN_MILLISECONDS))
         {
-            if (Player* player = _GetPlayer(guid, false, "_ProcessProgress"))
-            {
-                WorldPackets::Battleground::BattlefieldStatusActive battlefieldStatus;
-                BattlegroundMgr::BuildBattlegroundStatusActive(&battlefieldStatus, this, player,
-                    player->GetBattlegroundQueueIndex(playerData.queueTypeId),
-                    player->GetBattlegroundQueueJoinTime(playerData.queueTypeId), playerData.queueTypeId);
-                player->SendDirectMessage(battlefieldStatus.Write());
-            }
+            if (newtime / (MINUTE * IN_MILLISECONDS) != m_PrematureCountDownTimer / (MINUTE * IN_MILLISECONDS))
+                PSendMessageToAll(LANG_BATTLEGROUND_PREMATURE_FINISH_WARNING, CHAT_MSG_SYSTEM, nullptr, (uint32)(m_PrematureCountDownTimer / (MINUTE * IN_MILLISECONDS)));
         }
+        else
+        {
+            //announce every 15 seconds
+            if (newtime / (15 * IN_MILLISECONDS) != m_PrematureCountDownTimer / (15 * IN_MILLISECONDS))
+                PSendMessageToAll(LANG_BATTLEGROUND_PREMATURE_FINISH_WARNING_SECS, CHAT_MSG_SYSTEM, nullptr, (uint32)(m_PrematureCountDownTimer / IN_MILLISECONDS));
+        }
+        m_PrematureCountDownTimer = newtime;
     }
 }
 
@@ -332,6 +323,9 @@ inline void Battleground::_ProcessJoin(uint32 diff)
     // ***           BATTLEGROUND STARTING SYSTEM            ***
     // *********************************************************
     ModifyStartDelayTime(diff);
+
+    if (!isArena())
+        SetRemainingTime(300000);
 
     if (m_ResetStatTimer > 5000)
     {
@@ -450,6 +444,9 @@ inline void Battleground::_ProcessJoin(uint32 diff)
                 sWorld->SendWorldText(LANG_BG_STARTED_ANNOUNCE_WORLD, GetName(), GetMinLevel(), GetMaxLevel());
         }
     }
+
+    if (GetRemainingTime() > 0 && (m_EndTime -= diff) > 0)
+        SetRemainingTime(GetRemainingTime() - diff);
 }
 
 inline void Battleground::_ProcessLeave(uint32 diff)
@@ -582,7 +579,7 @@ void Battleground::RewardHonorToTeam(uint32 Honor, Team team)
 {
     for (BattlegroundPlayerMap::const_iterator itr = m_Players.begin(); itr != m_Players.end(); ++itr)
         if (Player* player = _GetPlayerForTeam(team, itr, "RewardHonorToTeam"))
-            UpdatePlayerScore(player, SCORE_BONUS_HONOR, Honor, true, HonorGainSource::TeamContribution);
+            UpdatePlayerScore(player, SCORE_BONUS_HONOR, Honor);
 }
 
 void Battleground::RewardReputationToTeam(uint32 faction_id, uint32 Reputation, Team team)
@@ -609,7 +606,7 @@ void Battleground::RewardReputationToTeam(uint32 faction_id, uint32 Reputation, 
 
 void Battleground::UpdateWorldState(int32 worldStateId, int32 value, bool hidden /*= false*/)
 {
-    WorldStateMgr::SetValue(worldStateId, value, hidden, GetBgMap());
+    sWorldStateMgr->SetValue(worldStateId, value, hidden, GetBgMap());
 }
 
 void Battleground::EndBattleground(Team winner)
@@ -669,7 +666,8 @@ void Battleground::EndBattleground(Team winner)
     WorldPackets::Battleground::PVPMatchComplete pvpMatchComplete;
     pvpMatchComplete.Winner = GetWinner();
     pvpMatchComplete.Duration = std::chrono::duration_cast<Seconds>(Milliseconds(std::max<int32>(0, (GetElapsedTime() - BG_START_DELAY_2M))));
-    BuildPvPLogDataPacket(pvpMatchComplete.LogData.emplace());
+    pvpMatchComplete.LogData.emplace();
+    BuildPvPLogDataPacket(*pvpMatchComplete.LogData);
     pvpMatchComplete.Write();
 
     for (BattlegroundPlayerMap::iterator itr = m_Players.begin(); itr != m_Players.end(); ++itr)
@@ -731,11 +729,7 @@ void Battleground::EndBattleground(Team winner)
                 if (BattlegroundMgr::IsRandomBattleground(bgPlayer->queueTypeId.BattlemasterListId)
                     || BattlegroundMgr::IsBGWeekend(BattlegroundTypeId(bgPlayer->queueTypeId.BattlemasterListId)))
                 {
-                    HonorGainSource source = HonorGainSource::BGCompletion;
-                    if (!player->GetRandomWinner())
-                        source = BattlegroundMgr::IsRandomBattleground(bgPlayer->queueTypeId.BattlemasterListId) ? HonorGainSource::RandomBGCompletion : HonorGainSource::HolidayBGCompletion;
-
-                    UpdatePlayerScore(player, SCORE_BONUS_HONOR, GetBonusHonorFromKill(winnerKills), true, source);
+                    UpdatePlayerScore(player, SCORE_BONUS_HONOR, GetBonusHonorFromKill(winnerKills));
                     if (!player->GetRandomWinner())
                     {
                         player->SetRandomWinner(true);
@@ -765,7 +759,7 @@ void Battleground::EndBattleground(Team winner)
             {
                 if (BattlegroundMgr::IsRandomBattleground(bgPlayer->queueTypeId.BattlemasterListId)
                     || BattlegroundMgr::IsBGWeekend(BattlegroundTypeId(bgPlayer->queueTypeId.BattlemasterListId)))
-                    UpdatePlayerScore(player, SCORE_BONUS_HONOR, GetBonusHonorFromKill(loserKills), true, HonorGainSource::BGCompletion);
+                    UpdatePlayerScore(player, SCORE_BONUS_HONOR, GetBonusHonorFromKill(loserKills));
             }
         }
 
@@ -961,7 +955,7 @@ void Battleground::StartBattleground()
     sBattlegroundMgr->AddBattleground(this);
 
     if (m_IsRated)
-        TC_LOG_DEBUG("bg.arena", "Arena match type: {} started.", m_ArenaType);
+        TC_LOG_DEBUG("bg.arena", "Arena match type: {} for Team1Id: {} - Team2Id: {} started.", m_ArenaType, m_ArenaTeamIds[TEAM_ALLIANCE], m_ArenaTeamIds[TEAM_HORDE]);
 }
 
 void Battleground::TeleportPlayerToExploitLocation(Player* player)
@@ -1089,7 +1083,6 @@ void Battleground::AddOrSetPlayerToCorrectBgGroup(Player* player, Team team)
         group = new Group;
         SetBgRaid(team, group);
         group->Create(player);
-        sGroupMgr->AddGroup(group);
         Seconds countdownMaxForBGType = Seconds(StartDelayTimes[BG_STARTING_EVENT_FIRST]  / 1000);
         if (_preparationStartTime)
             group->StartCountdown(CountdownTimerType::Pvp, countdownMaxForBGType, _preparationStartTime);
@@ -1270,7 +1263,7 @@ void Battleground::BuildPvPLogDataPacket(WorldPackets::Battleground::PVPMatchSta
             score.second->BuildPvPLogPlayerDataPacket(playerData);
 
             playerData.IsInWorld = true;
-            playerData.PrimaryTalentTree = AsUnderlyingType(player->GetPrimarySpecialization());
+            playerData.PrimaryTalentTree = player->GetPrimaryTalentTree();
             playerData.Sex = player->GetGender();
             playerData.Race = player->GetRace();
             playerData.Class = player->GetClass();
@@ -1289,14 +1282,14 @@ BattlegroundScore const* Battleground::GetBattlegroundScore(Player* player) cons
     return Trinity::Containers::MapGetValuePtr(PlayerScores, player->GetGUID());
 }
 
-bool Battleground::UpdatePlayerScore(Player* player, uint32 type, uint32 value, bool doAddHonor, Optional<HonorGainSource> source)
+bool Battleground::UpdatePlayerScore(Player* player, uint32 type, uint32 value, bool doAddHonor)
 {
     BattlegroundScoreMap::const_iterator itr = PlayerScores.find(player->GetGUID());
     if (itr == PlayerScores.end()) // player not found...
         return false;
 
     if (type == SCORE_BONUS_HONOR && doAddHonor && isBattleground())
-        player->RewardHonor(nullptr, 1, value, source.value_or(HonorGainSource::Kill)); // RewardHonor calls UpdatePlayerScore with doAddHonor = false
+        player->RewardHonor(nullptr, 1, value); // RewardHonor calls UpdatePlayerScore with doAddHonor = false
     else
         itr->second->UpdateScore(type, value);
 
@@ -1333,6 +1326,21 @@ void Battleground::SendMessageToAll(uint32 entry, ChatMsg msgType, Player const*
     BroadcastWorker(localizer);
 }
 
+void Battleground::PSendMessageToAll(uint32 entry, ChatMsg msgType, Player const* source, ...)
+{
+    if (!entry)
+        return;
+
+    va_list ap;
+    va_start(ap, source);
+
+    Trinity::TrinityStringChatBuilder builder(nullptr, msgType, entry, source, &ap);
+    Trinity::LocalizedDo<Trinity::TrinityStringChatBuilder> localizer(builder);
+    BroadcastWorker(localizer);
+
+    va_end(ap);
+}
+
 void Battleground::AddPlayerPosition(WorldPackets::Battleground::BattlegroundPlayerPosition const& position)
 {
     _playerPositions.push_back(position);
@@ -1340,8 +1348,12 @@ void Battleground::AddPlayerPosition(WorldPackets::Battleground::BattlegroundPla
 
 void Battleground::RemovePlayerPosition(ObjectGuid guid)
 {
-    auto itr = std::ranges::remove(_playerPositions, guid, &WorldPackets::Battleground::BattlegroundPlayerPosition::Guid);
-    _playerPositions.erase(itr.begin(), itr.end());
+    auto itr = std::remove_if(_playerPositions.begin(), _playerPositions.end(), [guid](WorldPackets::Battleground::BattlegroundPlayerPosition const& playerPosition)
+    {
+        return playerPosition.Guid == guid;
+    });
+
+    _playerPositions.erase(itr, _playerPositions.end());
 }
 
 void Battleground::EndNow()
@@ -1368,7 +1380,6 @@ void Battleground::HandleKillPlayer(Player* victim, Player* killer)
 
         UpdatePlayerScore(killer, SCORE_HONORABLE_KILLS, 1);
         UpdatePlayerScore(killer, SCORE_KILLING_BLOWS, 1);
-        killer->UpdateCriteria(CriteriaType::KillPlayer, 1, 0, 0, victim);
 
         for (BattlegroundPlayerMap::const_iterator itr = m_Players.begin(); itr != m_Players.end(); ++itr)
         {
@@ -1377,10 +1388,7 @@ void Battleground::HandleKillPlayer(Player* victim, Player* killer)
                 continue;
 
             if (itr->second.Team == killerTeam && creditedPlayer->IsAtGroupRewardDistance(victim))
-            {
                 UpdatePlayerScore(creditedPlayer, SCORE_HONORABLE_KILLS, 1);
-                creditedPlayer->UpdateCriteria(CriteriaType::KillPlayer, 1, 0, 0, victim);
-            }
         }
     }
 

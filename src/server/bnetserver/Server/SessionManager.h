@@ -23,23 +23,17 @@
 
 namespace Battlenet
 {
-    class SessionNetworkThread final : public Trinity::Net::NetworkThread<Session, SessionNetworkThread>
+    class SessionManager : public Trinity::Net::SocketMgr<Session>
     {
-    };
+        typedef SocketMgr<Session> BaseSocketMgr;
 
-    class SessionManager;
-
-    struct SessionManagerTraits
-    {
-        using Self = SessionManager;
-        using SocketType = Session;
-        using ThreadType = SessionNetworkThread;
-    };
-
-    class SessionManager final : public Trinity::Net::SocketMgr<SessionManagerTraits>
-    {
     public:
         static SessionManager& Instance();
+
+        bool StartNetwork(Trinity::Asio::IoContext& ioContext, std::string const& bindIp, uint16 port, int threadCount = 1) override;
+
+    protected:
+        Trinity::Net::NetworkThread<Session>* CreateThreads() const override;
     };
 }
 

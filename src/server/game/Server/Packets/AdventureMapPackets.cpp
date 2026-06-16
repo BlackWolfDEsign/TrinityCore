@@ -16,9 +16,10 @@
  */
 
 #include "AdventureMapPackets.h"
-#include "PacketOperators.h"
 
-namespace WorldPackets::AdventureMap
+namespace WorldPackets
+{
+namespace AdventureMap
 {
 void CheckIsAdventureMapPoiValid::Read()
 {
@@ -28,7 +29,7 @@ void CheckIsAdventureMapPoiValid::Read()
 WorldPacket const* PlayerIsAdventureMapPoiValid::Write()
 {
     _worldPacket << AdventureMapPoiID;
-    _worldPacket << Bits<1>(IsVisible);
+    _worldPacket.WriteBit(IsVisible);
     _worldPacket.FlushBits();
 
     return &_worldPacket;
@@ -37,5 +38,6 @@ WorldPacket const* PlayerIsAdventureMapPoiValid::Write()
 void AdventureMapStartQuest::Read()
 {
     _worldPacket >> QuestID;
+}
 }
 }

@@ -354,8 +354,7 @@ void WatcherKqueue::watch() {
 	bool needScan = false;
 
 	// Then we get the the events of the current folder
-	while ( !mChangeList.empty() &&
-			( nev = kevent( mKqueue, mChangeList.data(), mChangeListCount + 1, &event, 1,
+	while ( ( nev = kevent( mKqueue, &mChangeList[0], mChangeListCount + 1, &event, 1,
 							&mWatcher->mTimeOut ) ) != 0 ) {
 		// An error ocurred?
 		if ( nev == -1 ) {

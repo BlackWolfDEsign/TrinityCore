@@ -79,6 +79,4 @@ public:
     std::function<void(SQLQueryHolderBase const&)> m_callback;
 };
 
-inline bool InvokeAsyncCallbackIfReady(SQLQueryHolderCallback& callback) { return callback.InvokeIfReady(); }
-
 #endif

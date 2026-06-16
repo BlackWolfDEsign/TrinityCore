@@ -21,17 +21,19 @@
 #include "InstanceScript.h"
 #include "sethekk_halls.h"
 
-static constexpr DoorData doorData[] =
+DoorData const doorData[] =
 {
     { GO_IKISS_DOOR, DATA_TALON_KING_IKISS, EncounterDoorBehavior::OpenWhenDone },
+    { 0,             0,                     EncounterDoorBehavior::OpenWhenNotInProgress } // END
 };
 
-static constexpr ObjectData gameObjectData[] =
+ObjectData const gameObjectData[] =
 {
     { GO_TALON_KING_COFFER, DATA_TALON_KING_COFFER },
+    { 0,                    0                      } // END
 };
 
-static constexpr DungeonEncounterData encounters[] =
+DungeonEncounterData const encounters[] =
 {
     { DATA_DARKWEAVER_SYTH, {{ 1903 }} },
     { DATA_TALON_KING_IKISS, {{ 1902 }} },
@@ -50,7 +52,7 @@ class instance_sethekk_halls : public InstanceMapScript
                 SetHeaders(DataHeader);
                 SetBossNumber(EncounterCount);
                 LoadDoorData(doorData);
-                LoadObjectData({}, gameObjectData);
+                LoadObjectData(nullptr, gameObjectData);
                 LoadDungeonEncounterData(encounters);
             }
 

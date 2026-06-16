@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_VEHICLE_PACKETS_H
-#define TRINITYCORE_VEHICLE_PACKETS_H
+#ifndef VehiclePackets_h__
+#define VehiclePackets_h__
 
 #include "Packet.h"
 #include "MovementPackets.h"
@@ -28,7 +28,7 @@ namespace WorldPackets
         class MoveSetVehicleRecID final : public ServerPacket
         {
         public:
-            explicit MoveSetVehicleRecID() : ServerPacket(SMSG_MOVE_SET_VEHICLE_REC_ID, 16 + 4 + 4) { }
+            MoveSetVehicleRecID() : ServerPacket(SMSG_MOVE_SET_VEHICLE_REC_ID, 16 + 4 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -40,7 +40,7 @@ namespace WorldPackets
         class MoveSetVehicleRecIdAck final : public ClientPacket
         {
         public:
-            explicit MoveSetVehicleRecIdAck(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_SET_VEHICLE_REC_ID_ACK, std::move(packet)) { }
+            MoveSetVehicleRecIdAck(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_SET_VEHICLE_REC_ID_ACK, std::move(packet)) { }
 
             void Read() override;
 
@@ -51,7 +51,7 @@ namespace WorldPackets
         class SetVehicleRecID final : public ServerPacket
         {
         public:
-            explicit SetVehicleRecID() : ServerPacket(SMSG_SET_VEHICLE_REC_ID, 16 + 4) { }
+            SetVehicleRecID() : ServerPacket(SMSG_SET_VEHICLE_REC_ID, 16 + 4) { }
 
             WorldPacket const* Write() override;
 
@@ -62,7 +62,7 @@ namespace WorldPackets
         class OnCancelExpectedRideVehicleAura final : public ServerPacket
         {
         public:
-            explicit OnCancelExpectedRideVehicleAura() : ServerPacket(SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA, 0) { }
+            OnCancelExpectedRideVehicleAura() : ServerPacket(SMSG_ON_CANCEL_EXPECTED_RIDE_VEHICLE_AURA, 0) { }
 
             WorldPacket const* Write() override { return &_worldPacket; }
         };
@@ -70,7 +70,7 @@ namespace WorldPackets
         class MoveDismissVehicle final : public ClientPacket
         {
         public:
-            explicit MoveDismissVehicle(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_DISMISS_VEHICLE, std::move(packet)) { }
+            MoveDismissVehicle(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_DISMISS_VEHICLE, std::move(packet)) { }
 
             void Read() override;
 
@@ -80,7 +80,7 @@ namespace WorldPackets
         class RequestVehiclePrevSeat final : public ClientPacket
         {
         public:
-            explicit RequestVehiclePrevSeat(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_PREV_SEAT, std::move(packet)) { }
+            RequestVehiclePrevSeat(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_PREV_SEAT, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -88,7 +88,7 @@ namespace WorldPackets
         class RequestVehicleNextSeat final : public ClientPacket
         {
         public:
-            explicit RequestVehicleNextSeat(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_NEXT_SEAT, std::move(packet)) { }
+            RequestVehicleNextSeat(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_NEXT_SEAT, std::move(packet)) { }
 
             void Read() override { }
         };
@@ -96,7 +96,7 @@ namespace WorldPackets
         class MoveChangeVehicleSeats final : public ClientPacket
         {
         public:
-            explicit MoveChangeVehicleSeats(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_CHANGE_VEHICLE_SEATS, std::move(packet)) { }
+            MoveChangeVehicleSeats(WorldPacket&& packet) : ClientPacket(CMSG_MOVE_CHANGE_VEHICLE_SEATS, std::move(packet)) { }
 
             void Read() override;
 
@@ -108,7 +108,7 @@ namespace WorldPackets
         class RequestVehicleSwitchSeat final : public ClientPacket
         {
         public:
-            explicit RequestVehicleSwitchSeat(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_SWITCH_SEAT, std::move(packet)) { }
+            RequestVehicleSwitchSeat(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_SWITCH_SEAT, std::move(packet)) { }
 
             void Read() override;
 
@@ -119,7 +119,7 @@ namespace WorldPackets
         class RideVehicleInteract final : public ClientPacket
         {
         public:
-            explicit RideVehicleInteract(WorldPacket&& packet) : ClientPacket(CMSG_RIDE_VEHICLE_INTERACT, std::move(packet)) { }
+            RideVehicleInteract(WorldPacket&& packet) : ClientPacket(CMSG_RIDE_VEHICLE_INTERACT, std::move(packet)) { }
 
             void Read() override;
 
@@ -129,7 +129,7 @@ namespace WorldPackets
         class EjectPassenger final : public ClientPacket
         {
         public:
-            explicit EjectPassenger(WorldPacket&& packet) : ClientPacket(CMSG_EJECT_PASSENGER, std::move(packet)) { }
+            EjectPassenger(WorldPacket&& packet) : ClientPacket(CMSG_EJECT_PASSENGER, std::move(packet)) { }
 
             void Read() override;
 
@@ -139,11 +139,11 @@ namespace WorldPackets
         class RequestVehicleExit final : public ClientPacket
         {
         public:
-            explicit RequestVehicleExit(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_EXIT, std::move(packet)) { }
+            RequestVehicleExit(WorldPacket&& packet) : ClientPacket(CMSG_REQUEST_VEHICLE_EXIT, std::move(packet)) { }
 
             void Read() override { }
         };
     }
 }
 
-#endif // TRINITYCORE_VEHICLE_PACKETS_H
+#endif // VehiclePackets_h__

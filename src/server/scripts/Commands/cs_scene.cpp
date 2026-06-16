@@ -32,7 +32,7 @@ class scene_commandscript : public CommandScript
 public:
     scene_commandscript() : CommandScript("scene_commandscript") { }
 
-    std::span<ChatCommandBuilder const> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
         static ChatCommandTable sceneCommandTable =
         {

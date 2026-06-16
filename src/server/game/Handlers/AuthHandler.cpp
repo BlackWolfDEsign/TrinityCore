@@ -27,7 +27,6 @@
 #include "RealmList.h"
 #include "SystemPackets.h"
 #include "Timezone.h"
-#include "Util.h"
 #include "World.h"
 
 void WorldSession::SendAuthResponse(uint32 code, bool queued, uint32 queuePos)
@@ -40,7 +39,7 @@ void WorldSession::SendAuthResponse(uint32 code, bool queued, uint32 queuePos)
         response.SuccessInfo.emplace();
 
         response.SuccessInfo->ActiveExpansionLevel = GetExpansion();
-        response.SuccessInfo->AccountExpansionLevel = GetAccountExpansion();
+        response.SuccessInfo->AccountExpansionLevel = 0; // GetAccountExpansion(); -- Classic Only: always send as 0
         response.SuccessInfo->Time = int32(GameTime::GetGameTime());
 
         // Send current home realm. Also there is no need to send it later in realm queries.
@@ -101,7 +100,7 @@ void WorldSession::SendSetTimeZoneInformation()
     WorldPackets::System::SetTimeZoneInformation packet;
     packet.ServerTimeTZ = clientSupportedTZ;
     packet.GameTimeTZ = clientSupportedTZ;
-    packet.ServerRegionalTimeTZ = clientSupportedTZ;
+    packet.ServerRegionalTZ = clientSupportedTZ;
     SendPacket(packet.Write());
 }
 
@@ -111,8 +110,9 @@ void WorldSession::SendFeatureSystemStatusGlueScreen()
     features.BpayStoreAvailable = false;
     features.BpayStoreDisabledByParentalControls = false;
     features.CharUndeleteEnabled = sWorld->getBoolConfig(CONFIG_FEATURE_SYSTEM_CHARACTER_UNDELETE_ENABLED);
-    features.MaxCharactersOnThisRealm = sWorld->getIntConfig(CONFIG_CHARACTERS_PER_REALM);
-    features.MinimumExpansionLevel = EXPANSION_CLASSIC;
+    features.BpayStoreEnabled = sWorld->getBoolConfig(CONFIG_FEATURE_SYSTEM_BPAY_STORE_ENABLED);
+    features.MaxCharactersPerRealm = sWorld->getIntConfig(CONFIG_CHARACTERS_PER_REALM);
+    features.MinimumExpansionLevel = EXPANSION_THE_BURNING_CRUSADE;
     features.MaximumExpansionLevel = sWorld->getIntConfig(CONFIG_EXPANSION);
 
     features.EuropaTicketSystemStatus.emplace();
@@ -125,42 +125,5 @@ void WorldSession::SendFeatureSystemStatusGlueScreen()
     features.EuropaTicketSystemStatus->ComplaintsEnabled = sWorld->getBoolConfig(CONFIG_SUPPORT_COMPLAINTS_ENABLED);
     features.EuropaTicketSystemStatus->SuggestionsEnabled = sWorld->getBoolConfig(CONFIG_SUPPORT_SUGGESTIONS_ENABLED);
 
-    for (World::GameRule const& gameRule : sWorld->GetGameRules())
-    {
-        WorldPackets::System::GameRuleValuePair& rule = features.GameRules.emplace_back();
-        rule.Rule = AsUnderlyingType(gameRule.Rule);
-        std::visit([&]<typename T>(T value)
-        {
-            if constexpr (std::is_same_v<T, float>)
-                rule.ValueF = value;
-            else
-                rule.Value = value;
-        }, gameRule.Value);
-    }
-
-    features.AvailableGameModeIDs.push_back(8); // GameMode.db2, standard
-
     SendPacket(features.Write());
-
-    WorldPackets::System::MirrorVarSingle vars[] =
-    {
-        { "raidLockoutExtendEnabled"sv, "1"sv },
-        { "sellAllJunkEnabled"sv, "1"sv },
-        { "bypassItemLevelScalingCode"sv, "0"sv },
-        { "shop2Enabled"sv, "0"sv },
-        { "bpayStoreEnable"sv, "0"sv },
-        { "recentAlliesEnabledClient"sv, "0"sv },
-        { "browserEnabled"sv, "0"sv },
-        { "housingEnableCreateGuildNeighborhood"sv, "0"sv },
-        { "housingEnableDeleteHouse"sv, "0"sv },
-        { "housingServiceEnabled"sv, "0"sv },
-        { "housingEnableMoveHouse"sv, "0"sv },
-        { "housingEnableCreateCharterNeighborhood"sv, "0"sv },
-        { "housingEnableBuyHouse"sv, "0"sv },
-        { "housingMarketEnabled"sv, "0"sv },
-    };
-
-    WorldPackets::System::MirrorVars variables;
-    variables.Variables = vars;
-    SendPacket(variables.Write());
 }

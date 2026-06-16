@@ -71,7 +71,6 @@ class TC_GAME_API Vehicle final : public TransportBase
         void RemovePendingEventsForPassenger(Unit* passenger);
 
         Milliseconds GetDespawnDelay();
-        float GetPitch();
 
         std::string GetDebugInfo() const;
 
@@ -95,13 +94,23 @@ class TC_GAME_API Vehicle final : public TransportBase
 
         float GetTransportOrientation() const override { return GetBase()->GetOrientation(); }
 
-        void AddPassenger(WorldObject* /*passenger*/, Position const& /*offset*/) override { ABORT_MSG("Vehicle cannot directly gain passengers without auras"); }
+        void AddPassenger(WorldObject* /*passenger*/) override { ABORT_MSG("Vehicle cannot directly gain passengers without auras"); }
 
         /// This method transforms supplied transport offsets into global coordinates
-        Position GetPositionWithOffset(Position const& offset) const override { return GetBase()->GetPositionWithOffset(offset); }
+        void CalculatePassengerPosition(float& x, float& y, float& z, float* o /*= nullptr*/) const override
+        {
+            TransportBase::CalculatePassengerPosition(x, y, z, o,
+                GetBase()->GetPositionX(), GetBase()->GetPositionY(),
+                GetBase()->GetPositionZ(), GetBase()->GetOrientation());
+        }
 
         /// This method transforms supplied global coordinates into local offsets
-        Position GetPositionOffsetTo(Position const& endPos) const override { return GetBase()->GetPositionOffsetTo(endPos); }
+        void CalculatePassengerOffset(float& x, float& y, float& z, float* o /*= nullptr*/) const override
+        {
+            TransportBase::CalculatePassengerOffset(x, y, z, o,
+                GetBase()->GetPositionX(), GetBase()->GetPositionY(),
+                GetBase()->GetPositionZ(), GetBase()->GetOrientation());
+        }
 
         int32 GetMapIdForSpawning() const override { return GetBase()->GetMapId(); }
 
@@ -120,6 +129,19 @@ class TC_GAME_API Vehicle final : public TransportBase
 
         typedef std::list<VehicleJoinEvent*> PendingJoinEventContainer;
         PendingJoinEventContainer _pendingJoinEvents;       ///< Collection of delayed join events for prospective passengers
+};
+
+class TC_GAME_API VehicleJoinEvent : public BasicEvent
+{
+    friend class Vehicle;
+    protected:
+        VehicleJoinEvent(Vehicle* v, Unit* u) : Target(v), Passenger(u), Seat(Target->Seats.end()) { }
+        bool Execute(uint64, uint32) override;
+        void Abort(uint64) override;
+
+        Vehicle* Target;
+        Unit* Passenger;
+        SeatMap::iterator Seat;
 };
 
 #endif

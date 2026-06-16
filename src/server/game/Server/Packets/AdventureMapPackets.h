@@ -15,8 +15,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef TRINITYCORE_ADVENTURE_MAP_PACKETS_H
-#define TRINITYCORE_ADVENTURE_MAP_PACKETS_H
+#ifndef AdventureMapPackets_h__
+#define AdventureMapPackets_h__
 
 #include "Packet.h"
 
@@ -27,7 +27,7 @@ namespace WorldPackets
         class CheckIsAdventureMapPoiValid final : public ClientPacket
         {
         public:
-            explicit CheckIsAdventureMapPoiValid(WorldPacket&& packet) : ClientPacket(CMSG_CHECK_IS_ADVENTURE_MAP_POI_VALID, std::move(packet)) { }
+            CheckIsAdventureMapPoiValid(WorldPacket&& packet) : ClientPacket(CMSG_CHECK_IS_ADVENTURE_MAP_POI_VALID, std::move(packet)) { }
 
             void Read() override;
 
@@ -37,7 +37,7 @@ namespace WorldPackets
         class PlayerIsAdventureMapPoiValid final : public ServerPacket
         {
         public:
-            explicit PlayerIsAdventureMapPoiValid() : ServerPacket(SMSG_PLAYER_IS_ADVENTURE_MAP_POI_VALID) { }
+            PlayerIsAdventureMapPoiValid() : ServerPacket(SMSG_PLAYER_IS_ADVENTURE_MAP_POI_VALID) { }
 
             WorldPacket const* Write() override;
 
@@ -48,7 +48,7 @@ namespace WorldPackets
         class AdventureMapStartQuest final : public ClientPacket
         {
         public:
-            explicit AdventureMapStartQuest(WorldPacket&& packet) : ClientPacket(CMSG_ADVENTURE_MAP_START_QUEST, std::move(packet)) { }
+            AdventureMapStartQuest(WorldPacket&& packet) : ClientPacket(CMSG_ADVENTURE_MAP_START_QUEST, std::move(packet)) { }
 
             void Read() override;
 
@@ -57,4 +57,4 @@ namespace WorldPackets
     }
 }
 
-#endif // TRINITYCORE_ADVENTURE_MAP_PACKETS_H
+#endif // AdventureMapPackets_h__

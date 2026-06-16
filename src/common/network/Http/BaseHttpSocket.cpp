@@ -16,7 +16,6 @@
  */
 
 #include "BaseHttpSocket.h"
-#include "IpAddress.h"
 #include <boost/asio/buffers_iterator.hpp>
 #include <boost/beast/http/serializer.hpp>
 #include <boost/uuid/uuid_io.hpp>
@@ -165,7 +164,7 @@ void AbstractSocket::LogRequestAndResponse(RequestContext const& context, Messag
 
 std::string AbstractSocket::GetClientInfo(boost::asio::ip::address const& address, uint16 port, SessionState const* state)
 {
-    std::string info = StringFormat("[{}:{}", address, port);
+    std::string info = StringFormat("[{}:{}", address.to_string(), port);
     if (state)
     {
         info.append(", Session Id: ");

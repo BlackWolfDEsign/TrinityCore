@@ -92,7 +92,7 @@ struct MovementInfo
     // advflying
     struct AdvFlying
     {
-        AdvFlying() : forwardVelocity(0.0f), upVelocity(0.0f) { }
+        AdvFlying() : forwardVelocity(0.0f), upVelocity(0.0f) {}
 
         float forwardVelocity;
         float upVelocity;
@@ -100,7 +100,7 @@ struct MovementInfo
 
     struct Drive
     {
-        Drive() : speed(0.0f), movementAngle(0.0f), accelerating(false), drifting(false) { }
+        Drive() : speed(0.0f), movementAngle(0.0f), accelerating(false), drifting(false) {}
 
         float speed;
         float movementAngle;
@@ -111,8 +111,6 @@ struct MovementInfo
     Optional<AdvFlying> advFlying;
 
     Optional<Drive> driveStatus;
-
-    float gravityModifier = 1.0f;
 
     Optional<ObjectGuid> standingOnGameObjectGUID;
 
@@ -164,10 +162,7 @@ struct MovementForce
     uint32 TransportID = 0;
     float Magnitude = 0.0f;
     MovementForceType Type = MovementForceType::SingleDirectional;
-    int32 MovementForceID = 0;
-    int32 DurationMs = 0;
-    uint32 EndTimestamp = 0;
-    uint32 Flags = 0;
+    int32 Unused910 = 0;
 };
 
 class MovementForces

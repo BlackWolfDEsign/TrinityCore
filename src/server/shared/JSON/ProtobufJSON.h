@@ -20,7 +20,6 @@
 
 #include "Define.h"
 #include <string>
-#include <string_view>
 
 namespace google
 {
@@ -33,7 +32,7 @@ namespace google
 namespace JSON
 {
     TC_SHARED_API std::string Serialize(google::protobuf::Message const& message);
-    TC_SHARED_API bool Deserialize(std::string_view json, google::protobuf::Message* message);
+    TC_SHARED_API bool Deserialize(std::string const& json, google::protobuf::Message* message);
 }
 
 #endif // ProtobufJSON_h__

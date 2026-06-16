@@ -18,10 +18,9 @@
 #ifndef MODEL_H
 #define MODEL_H
 
+#include "vec3d.h"
 #include "modelheaders.h"
-#include <string>
 #include <vector>
-#include <cstdio> // for FILE*
 
 class CASCFile;
 struct ADTOutputCache;

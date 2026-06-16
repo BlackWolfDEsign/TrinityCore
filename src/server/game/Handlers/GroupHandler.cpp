@@ -20,7 +20,6 @@
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "GroupMgr.h"
-#include "LFG.h"
 #include "Log.h"
 #include "Loot.h"
 #include "MiscPackets.h"
@@ -339,7 +338,10 @@ void WorldSession::HandleLeaveGroupOpcode(WorldPackets::Party::LeaveGroup& packe
         return;
 
     if (_player->InBattleground())
+    {
+        SendPartyResult(PARTY_OP_INVITE, "", ERR_INVITE_RESTRICTED);
         return;
+    }
 
     /** error handling **/
     /********************/
@@ -357,10 +359,8 @@ void WorldSession::HandleLeaveGroupOpcode(WorldPackets::Party::LeaveGroup& packe
     }
 }
 
-void WorldSession::HandleSetLootMethodOpcode(WorldPackets::Party::SetLootMethod& /*packet*/)
+void WorldSession::HandleSetLootMethodOpcode(WorldPackets::Party::SetLootMethod& packet)
 {
-    // not allowed to change
-    /*
     Group* group = GetPlayer()->GetGroup(packet.PartyIndex);
     if (!group)
         return;
@@ -371,16 +371,8 @@ void WorldSession::HandleSetLootMethodOpcode(WorldPackets::Party::SetLootMethod&
     if (group->isLFGGroup())
         return;
 
-    switch (packet.LootMethod)
-    {
-        case FREE_FOR_ALL:
-        case MASTER_LOOT:
-        case GROUP_LOOT:
-        case PERSONAL_LOOT:
-            break;
-        default:
-            return;
-    }
+    if (packet.LootMethod > NEED_BEFORE_GREED)
+        return;
 
     if (packet.LootThreshold < ITEM_QUALITY_UNCOMMON || packet.LootThreshold > ITEM_QUALITY_ARTIFACT)
         return;
@@ -393,7 +385,6 @@ void WorldSession::HandleSetLootMethodOpcode(WorldPackets::Party::SetLootMethod&
     group->SetMasterLooterGuid(packet.LootMasterGUID);
     group->SetLootThreshold(static_cast<ItemQualities>(packet.LootThreshold));
     group->SendUpdate();
-    */
 }
 
 void WorldSession::HandleMinimapPingOpcode(WorldPackets::Party::MinimapPingClient& packet)
@@ -575,21 +566,18 @@ void WorldSession::HandleReadyCheckResponseOpcode(WorldPackets::Party::ReadyChec
 
 void WorldSession::HandleRequestPartyMemberStatsOpcode(WorldPackets::Party::RequestPartyMemberStats& packet)
 {
-    for (ObjectGuid const& target : packet.Targets)
+    WorldPackets::Party::PartyMemberFullState partyMemberStats;
+
+    Player* player = ObjectAccessor::FindConnectedPlayer(packet.TargetGUID);
+    if (!player)
     {
-        WorldPackets::Party::PartyMemberFullState partyMemberStats;
-        Player* player = ObjectAccessor::FindConnectedPlayer(target);
-        if (!player || !GetPlayer()->IsInSameRaidWith(player))
-        {
-            partyMemberStats.MemberGuid = target;
-            partyMemberStats.MemberStats.Status = MEMBER_STATUS_OFFLINE;
-        }
-        else
-        {
-            partyMemberStats.Initialize(player);
-        }
-        SendPacket(partyMemberStats.Write());
+        partyMemberStats.MemberGuid = packet.TargetGUID;
+        partyMemberStats.MemberStats.Status = MEMBER_STATUS_OFFLINE;
     }
+    else
+        partyMemberStats.Initialize(player);
+
+    SendPacket(partyMemberStats.Write());
 }
 
 void WorldSession::HandleRequestRaidInfoOpcode(WorldPackets::Party::RequestRaidInfo& /*packet*/)
@@ -649,112 +637,4 @@ void WorldSession::HandleClearRaidMarker(WorldPackets::Party::ClearRaidMarker& p
         return;
 
     group->DeleteRaidMarker(packet.MarkerId);
-}
-
-namespace
-{
-bool CanSendPing(Player const& player, PingSubjectType type, Group const*& group)
-{
-    if (type >= PingSubjectType::Max)
-        return false;
-
-    if (!player.GetSession()->CanSpeak())
-        return false;
-
-    group = player.GetGroup();
-    if (!group)
-        return false;
-
-    if (group->IsLeader(player.GetGUID()))
-        return true;
-
-    switch (group->GetRestrictPings())
-    {
-        case RestrictPingsTo::None:
-            return true;
-        case RestrictPingsTo::Lead:
-            return false;
-        case RestrictPingsTo::Assist:
-            if (!group->IsAssistant(player.GetGUID()))
-                return false;
-            break;
-        case RestrictPingsTo::TankHealer:
-            if (!(group->GetLfgRoles(player.GetGUID()) & (lfg::PLAYER_ROLE_TANK | lfg::PLAYER_ROLE_HEALER)))
-                return false;
-            break;
-    }
-
-    return true;
-}
-}
-
-void WorldSession::HandleSetRestrictPingsToAssistants(WorldPackets::Party::SetRestrictPingsToAssistants const& setRestrictPingsToAssistants)
-{
-    Group* group = GetPlayer()->GetGroup(setRestrictPingsToAssistants.PartyIndex);
-    if (!group)
-        return;
-
-    if (!group->IsLeader(GetPlayer()->GetGUID()))
-        return;
-
-    group->SetRestrictPingsTo(setRestrictPingsToAssistants.RestrictTo);
-}
-
-void WorldSession::HandleSendPingUnit(WorldPackets::Party::SendPingUnit const& pingUnit)
-{
-    Group const* group = nullptr;
-    if (!CanSendPing(*_player, pingUnit.Type, group))
-        return;
-
-    Unit const* target = ObjectAccessor::GetUnit(*_player, pingUnit.TargetGUID);
-    if (!target || !_player->HaveAtClient(target))
-        return;
-
-    WorldPackets::Party::ReceivePingUnit broadcastPingUnit;
-    broadcastPingUnit.SenderGUID = _player->GetGUID();
-    broadcastPingUnit.TargetGUID = pingUnit.TargetGUID;
-    broadcastPingUnit.Type = pingUnit.Type;
-    broadcastPingUnit.PinFrameID = pingUnit.PinFrameID;
-    broadcastPingUnit.PingDuration = pingUnit.PingDuration;
-    broadcastPingUnit.CreatureID = pingUnit.CreatureID;
-    broadcastPingUnit.SpellOverrideNameID = pingUnit.SpellOverrideNameID;
-    broadcastPingUnit.Write();
-
-    for (GroupReference const& itr : group->GetMembers())
-    {
-        Player const* member = itr.GetSource();
-        if (_player == member || !_player->IsInMap(member))
-            continue;
-
-        member->SendDirectMessage(broadcastPingUnit.GetRawPacket());
-    }
-}
-
-void WorldSession::HandleSendPingWorldPoint(WorldPackets::Party::SendPingWorldPoint const& pingWorldPoint)
-{
-    Group const* group = nullptr;
-    if (!CanSendPing(*_player, pingWorldPoint.Type, group))
-        return;
-
-    if (_player->GetMapId() != pingWorldPoint.MapID)
-        return;
-
-    WorldPackets::Party::ReceivePingWorldPoint broadcastPingWorldPoint;
-    broadcastPingWorldPoint.SenderGUID = _player->GetGUID();
-    broadcastPingWorldPoint.MapID = pingWorldPoint.MapID;
-    broadcastPingWorldPoint.Point = pingWorldPoint.Point;
-    broadcastPingWorldPoint.Type = pingWorldPoint.Type;
-    broadcastPingWorldPoint.PinFrameID = pingWorldPoint.PinFrameID;
-    broadcastPingWorldPoint.Transport = pingWorldPoint.Transport;
-    broadcastPingWorldPoint.PingDuration = pingWorldPoint.PingDuration;
-    broadcastPingWorldPoint.Write();
-
-    for (GroupReference const& itr : group->GetMembers())
-    {
-        Player const* member = itr.GetSource();
-        if (_player == member || !_player->IsInMap(member))
-            continue;
-
-        member->SendDirectMessage(broadcastPingWorldPoint.GetRawPacket());
-    }
 }

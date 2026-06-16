@@ -24,16 +24,13 @@
 #include "MapUtils.h"
 #include "ScenarioPackets.h"
 
-ScenarioMgr::ScenarioMgr() = default;
-ScenarioMgr::~ScenarioMgr() = default;
-
 ScenarioMgr* ScenarioMgr::Instance()
 {
     static ScenarioMgr instance;
     return &instance;
 }
 
-InstanceScenario* ScenarioMgr::CreateInstanceScenarioForTeam(InstanceMap* map, TeamId team) const
+InstanceScenario* ScenarioMgr::CreateInstanceScenario(InstanceMap* map, TeamId team) const
 {
     auto dbDataItr = _scenarioDBData.find(std::make_pair(map->GetId(), map->GetDifficultyID()));
     // No scenario registered for this map and difficulty in the database
@@ -53,15 +50,10 @@ InstanceScenario* ScenarioMgr::CreateInstanceScenarioForTeam(InstanceMap* map, T
             break;
     }
 
-    return CreateInstanceScenario(map, scenarioID);
-}
-
-InstanceScenario* ScenarioMgr::CreateInstanceScenario(InstanceMap* map, uint32 scenarioID) const
-{
     auto itr = _scenarioData.find(scenarioID);
     if (itr == _scenarioData.end())
     {
-        TC_LOG_ERROR("scenario", "No scenario data was found related to scenario (Id: {}) for map (Id: {}), difficulty (Id: {}).", scenarioID, map->GetId(), map->GetDifficultyID());
+        TC_LOG_ERROR("scenario", "Table `scenarios` contained data linking scenario (Id: {}) to map (Id: {}), difficulty (Id: {}) but no scenario data was found related to that scenario Id.", scenarioID, map->GetId(), map->GetDifficultyID());
         return nullptr;
     }
 
@@ -87,17 +79,17 @@ void ScenarioMgr::LoadDBData()
         Field* fields = result->Fetch();
 
         uint32 mapId = fields[0].GetUInt32();
-        Difficulty difficulty = Difficulty(fields[1].GetInt32());
+        uint8 difficulty = fields[1].GetUInt8();
 
         uint32 scenarioAllianceId = fields[2].GetUInt32();
-        if (scenarioAllianceId > 0 && !_scenarioData.contains(scenarioAllianceId))
+        if (scenarioAllianceId > 0 && _scenarioData.find(scenarioAllianceId) == _scenarioData.end())
         {
             TC_LOG_ERROR("sql.sql", "ScenarioMgr::LoadDBData: DB Table `scenarios`, column scenario_A contained an invalid scenario (Id: {})!", scenarioAllianceId);
             continue;
         }
 
         uint32 scenarioHordeId = fields[3].GetUInt32();
-        if (scenarioHordeId > 0 && !_scenarioData.contains(scenarioHordeId))
+        if (scenarioHordeId > 0 && _scenarioData.find(scenarioHordeId) == _scenarioData.end())
         {
             TC_LOG_ERROR("sql.sql", "ScenarioMgr::LoadDBData: DB Table `scenarios`, column scenario_H contained an invalid scenario (Id: {})!", scenarioHordeId);
             continue;
@@ -127,7 +119,7 @@ void ScenarioMgr::LoadDB2Data()
     for (ScenarioStepEntry const* step : sScenarioStepStore)
     {
         scenarioSteps[step->ScenarioID][step->OrderIndex] = step;
-        if (CriteriaTree const* tree = sCriteriaMgr->GetCriteriaTree(step->Criteriatreeid))
+        if (CriteriaTree const* tree = sCriteriaMgr->GetCriteriaTree(step->CriteriatreeID))
         {
             uint32 criteriaTreeSize = 0;
             CriteriaMgr::WalkCriteriaTree(tree, [&criteriaTreeSize](CriteriaTree const* /*tree*/)

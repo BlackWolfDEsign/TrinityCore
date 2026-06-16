@@ -35,8 +35,7 @@ namespace VMAP
     enum ModelInstanceFlags
     {
         MOD_HAS_BOUND       = 1 << 0,
-        MOD_PARENT_SPAWN    = 1 << 1,
-        MOD_PATH_ONLY       = 1 << 2
+        MOD_PARENT_SPAWN    = 1 << 1
     };
 
     struct ModelMinimalData

@@ -18,7 +18,7 @@
 #include "ItemPacketsCommon.h"
 #include "Item.h"
 #include "Loot.h"
-#include "PacketOperators.h"
+#include "Player.h"
 
 namespace WorldPackets::Item
 {
@@ -27,12 +27,23 @@ bool ItemBonuses::operator==(ItemBonuses const& r) const
     if (Context != r.Context)
         return false;
 
-    return std::ranges::is_permutation(BonusListIDs, r.BonusListIDs);
+    if (BonusListIDs.size() != r.BonusListIDs.size())
+        return false;
+
+    return std::is_permutation(BonusListIDs.begin(), BonusListIDs.end(), r.BonusListIDs.begin());
+}
+
+bool ItemMod::operator==(ItemMod const& r) const
+{
+    return Value == r.Value && Type == r.Type;
 }
 
 bool ItemModList::operator==(ItemModList const& r) const
 {
-    return std::ranges::is_permutation(Values, r.Values);
+    if (Values.size() != r.Values.size())
+        return false;
+
+    return std::is_permutation(Values.begin(), Values.end(), r.Values.begin());
 }
 
 void ItemInstance::Initialize(::Item const* item)
@@ -46,8 +57,11 @@ void ItemInstance::Initialize(::Item const* item)
         ItemBonus->Context = item->GetContext();
     }
 
+    RandomPropertiesID = item->m_itemData->RandomPropertiesID;
+    RandomPropertiesSeed = item->m_itemData->PropertySeed;
+
     for (UF::ItemMod mod : item->m_itemData->Modifiers->Values)
-        Modifications.Values.push_back({ .Value = mod.Value, .Type = ItemModifier(mod.Type) });
+        Modifications.Values.emplace_back(mod.Value, ItemModifier(mod.Type));
 }
 
 void ItemInstance::Initialize(UF::SocketedGem const* gem)
@@ -76,6 +90,27 @@ void ItemInstance::Initialize(::LootItem const& lootItem)
         if (lootItem.randomBonusListId)
             ItemBonus->BonusListIDs.push_back(lootItem.randomBonusListId);
     }
+
+    RandomPropertiesID = lootItem.randomPropertiesId;
+    RandomPropertiesSeed = lootItem.randomPropertiesSeed;
+}
+
+void ItemInstance::Initialize(::VoidStorageItem const* voidItem)
+{
+    ItemID = voidItem->ItemEntry;
+
+    if (voidItem->FixedScalingLevel)
+        Modifications.Values.emplace_back(voidItem->FixedScalingLevel, ITEM_MODIFIER_TIMEWALKER_LEVEL);
+
+    if (voidItem->ArtifactKnowledgeLevel)
+        Modifications.Values.emplace_back(voidItem->ArtifactKnowledgeLevel, ITEM_MODIFIER_ARTIFACT_KNOWLEDGE_LEVEL);
+
+    if (!voidItem->BonusListIDs.empty())
+    {
+        ItemBonus.emplace();
+        ItemBonus->Context = voidItem->Context;
+        ItemBonus->BonusListIDs = voidItem->BonusListIDs;
+    }
 }
 
 bool ItemInstance::operator==(ItemInstance const& r) const
@@ -100,16 +135,13 @@ bool ItemBonusKey::operator==(ItemBonusKey const& right) const
     if (BonusListIDs != right.BonusListIDs)
         return false;
 
-    if (Modifications != right.Modifications)
-        return false;
-
     return true;
 }
 
 ByteBuffer& operator<<(ByteBuffer& data, ItemBonuses const& itemBonusInstanceData)
 {
     data << uint8(itemBonusInstanceData.Context);
-    data << Size<uint32>(itemBonusInstanceData.BonusListIDs);
+    data << uint32(itemBonusInstanceData.BonusListIDs.size());
     for (uint32 bonusID : itemBonusInstanceData.BonusListIDs)
         data << uint32(bonusID);
 
@@ -118,11 +150,11 @@ ByteBuffer& operator<<(ByteBuffer& data, ItemBonuses const& itemBonusInstanceDat
 
 ByteBuffer& operator>>(ByteBuffer& data, ItemBonuses& itemBonusInstanceData)
 {
-    data >> As<uint8>(itemBonusInstanceData.Context);
+    itemBonusInstanceData.Context = data.read<ItemContext>();
     uint32 bonusListIdSize;
     data >> bonusListIdSize;
     if (bonusListIdSize > 32)
-        OnInvalidArraySize(bonusListIdSize, 32);
+        throw PacketArrayMaxCapacityException(bonusListIdSize, 32);
 
     itemBonusInstanceData.BonusListIDs.resize(bonusListIdSize);
 
@@ -173,8 +205,10 @@ ByteBuffer& operator>>(ByteBuffer& data, ItemModList& itemModList)
 ByteBuffer& operator<<(ByteBuffer& data, ItemInstance const& itemInstance)
 {
     data << int32(itemInstance.ItemID);
+    data << int32(itemInstance.RandomPropertiesSeed);
+    data << int32(itemInstance.RandomPropertiesID);
 
-    data << OptionalInit(itemInstance.ItemBonus);
+    data.WriteBit(itemInstance.ItemBonus.has_value());
     data.FlushBits();
 
     data << itemInstance.Modifications;
@@ -188,13 +222,19 @@ ByteBuffer& operator<<(ByteBuffer& data, ItemInstance const& itemInstance)
 ByteBuffer& operator>>(ByteBuffer& data, ItemInstance& itemInstance)
 {
     data >> itemInstance.ItemID;
-    data >> OptionalInit(itemInstance.ItemBonus);
+    data >> itemInstance.RandomPropertiesSeed;
+    data >> itemInstance.RandomPropertiesID;
+
+    bool hasItemBonus = data.ReadBit();
     data.ResetBitPos();
 
     data >> itemInstance.Modifications;
 
-    if (itemInstance.ItemBonus)
+    if (hasItemBonus)
+    {
+        itemInstance.ItemBonus.emplace();
         data >> *itemInstance.ItemBonus;
+    }
 
     return data;
 }
@@ -202,14 +242,10 @@ ByteBuffer& operator>>(ByteBuffer& data, ItemInstance& itemInstance)
 ByteBuffer& operator<<(ByteBuffer& data, ItemBonusKey const& itemBonusKey)
 {
     data << int32(itemBonusKey.ItemID);
-    data << Size<uint32>(itemBonusKey.BonusListIDs);
-    data << Size<uint32>(itemBonusKey.Modifications);
+    data << uint32(itemBonusKey.BonusListIDs.size());
 
     if (!itemBonusKey.BonusListIDs.empty())
         data.append(itemBonusKey.BonusListIDs.data(), itemBonusKey.BonusListIDs.size());
-
-    for (ItemMod const& modification : itemBonusKey.Modifications)
-        data << modification;
 
     return data;
 }
@@ -239,7 +275,7 @@ ByteBuffer& operator>>(ByteBuffer& data, ItemGemData& itemGemData)
 
 ByteBuffer& operator>>(ByteBuffer& data, InvUpdate& invUpdate)
 {
-    data >> BitsSize<2>(invUpdate.Items);
+    invUpdate.Items.resize(data.ReadBits(2));
     data.ResetBitPos();
     for (InvUpdate::InvItem& item : invUpdate.Items)
     {

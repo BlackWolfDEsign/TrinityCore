@@ -21,7 +21,7 @@
 
 namespace WowCS
 {
-void EntityFragmentsHolder::Add(EntityFragment fragment, bool update, void const* data /*= nullptr*/)
+void EntityFragmentsHolder::Add(EntityFragment fragment, bool update)
 {
     ASSERT(Count < Ids.size());
 
@@ -43,32 +43,23 @@ void EntityFragmentsHolder::Add(EntityFragment fragment, bool update, void const
 
     if (IsUpdateableFragment(fragment))
     {
-        ASSERT(UpdateableCount < Updateable.Ids.size());
-        ASSERT(data);
+        ASSERT(UpdateableCount < UpdateableIds.size());
 
-        auto insertedItr = insertSorted(Updateable.Ids, UpdateableCount, fragment).first;
-        std::ptrdiff_t index = std::ranges::distance(Updateable.Ids.begin(), insertedItr);
+        auto insertedItr = insertSorted(UpdateableIds, UpdateableCount, fragment).first;
+        std::ptrdiff_t index = std::ranges::distance(UpdateableIds.begin(), insertedItr);
         uint8 maskLowPart = ContentsChangedMask & ((1 << index) - 1);
         uint8 maskHighPart = (ContentsChangedMask & ~((1 << index) - 1)) << (1 + IsIndirectFragment(fragment));
         ContentsChangedMask = maskLowPart | maskHighPart;
         for (uint8 i = 0, maskIndex = 0; i < UpdateableCount; ++i)
         {
-            Updateable.Masks[i] = 1 << maskIndex++;
-            if (IsIndirectFragment(Updateable.Ids[i]))
+            UpdateableMasks[i] = 1 << maskIndex++;
+            if (IsIndirectFragment(UpdateableIds[i]))
             {
-                ContentsChangedMask |= Updateable.Masks[i]; // set the first bit to true to activate fragment
+                ContentsChangedMask |= UpdateableMasks[i]; // set the first bit to true to activate fragment
                 ++maskIndex;
-                Updateable.Masks[i] <<= 1;
+                UpdateableMasks[i] <<= 1;
             }
         }
-
-        auto insertAtIndex = []<typename T, size_t N>(std::array<T, N>& arr, uint8 size, std::ptrdiff_t i, T value)
-        {
-            std::ranges::move_backward(arr.begin() + i, arr.begin() + size - 1, arr.begin() + size);
-            arr[i] = value;
-        };
-
-        insertAtIndex(Updateable.Data, UpdateableCount, index, data);
     }
 
     if (update)
@@ -95,52 +86,25 @@ void EntityFragmentsHolder::Remove(EntityFragment fragment)
 
     if (IsUpdateableFragment(fragment))
     {
-        auto [removedItr, removed] = removeSorted(Updateable.Ids, UpdateableCount, fragment);
+        auto [removedItr, removed] = removeSorted(UpdateableIds, UpdateableCount, fragment);
         if (removed)
         {
-            std::ptrdiff_t index = std::ranges::distance(Updateable.Ids.begin(), removedItr);
+            std::ptrdiff_t index = std::ranges::distance(UpdateableIds.begin(), removedItr);
             uint8 maskLowPart = ContentsChangedMask & ((1 << index) - 1);
             uint8 maskHighPart = (ContentsChangedMask & ~((1 << index) - 1)) >> (1 + IsIndirectFragment(fragment));
             ContentsChangedMask = maskLowPart | maskHighPart;
             for (uint8 i = 0, maskIndex = 0; i < UpdateableCount; ++i)
             {
-                Updateable.Masks[i] = 1 << maskIndex++;
-                if (IsIndirectFragment(Updateable.Ids[i]))
+                UpdateableMasks[i] = 1 << maskIndex++;
+                if (IsIndirectFragment(UpdateableIds[i]))
                 {
                     ++maskIndex;
-                    Updateable.Masks[i] <<= 1;
+                    UpdateableMasks[i] <<= 1;
                 }
             }
-
-            auto removeAtIndex = []<typename T, size_t N>(std::array<T, N>& arr, uint8 oldSize, std::ptrdiff_t i, std::type_identity_t<T> value)
-            {
-                *std::ranges::move(arr.begin() + i + 1, arr.begin() + oldSize, arr.begin() + i).out = value;
-            };
-
-            uint8 oldSize = UpdateableCount + 1;
-            removeAtIndex(Updateable.Data, oldSize, index, nullptr);
         }
     }
 
     IdsChanged = true;
-}
-
-EntityFragmentInfos const* EntityFragmentInfo;
-
-void EntityFragmentInfos::Register(EntityFragment fragment, EntityFragmentSerializeFn serializeCreate,
-    EntityFragmentSerializeFn serializeUpdate, EntityFragmentIsChangedFn isChanged, EntityFragmentClearChangedFn clearChanged)
-{
-    static EntityFragmentInfos entityFragmentInfo;
-
-    std::size_t index = static_cast<std::size_t>(fragment);
-    entityFragmentInfo.SerializeCreate[index] = serializeCreate;
-    entityFragmentInfo.SerializeUpdate[index] = serializeUpdate;
-    entityFragmentInfo.IsChanged[index] = isChanged;
-    entityFragmentInfo.ClearChanged[index] = clearChanged;
-}
-
-EntityFragmentInfos::EntityFragmentInfos()
-{
-    EntityFragmentInfo = this;
 }
 }

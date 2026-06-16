@@ -30,22 +30,18 @@ namespace Trinity
 {
     inline uint32 GetExpansionForLevel(uint32 level)
     {
-        if (level < 30)
+        if (level < 60)
             return EXPANSION_CLASSIC;
-        else if (level < 35)
-            return EXPANSION_CATACLYSM;
-        else if (level < 40)
-            return EXPANSION_WARLORDS_OF_DRAENOR;
-        else if (level < 45)
-            return EXPANSION_BATTLE_FOR_AZEROTH;
-        else if (level < 50)
-            return EXPANSION_MISTS_OF_PANDARIA;
-        else if (level < 60)
-            return EXPANSION_SHADOWLANDS;
         else if (level < 70)
-            return EXPANSION_DRAGONFLIGHT;
+            return EXPANSION_THE_BURNING_CRUSADE;
         else if (level < 80)
-            return EXPANSION_THE_WAR_WITHIN;
+            return EXPANSION_WRATH_OF_THE_LICH_KING;
+        else if (level < 85)
+            return EXPANSION_CATACLYSM;
+        else if (level < 90)
+            return EXPANSION_MISTS_OF_PANDARIA;
+        else if (level < 100)
+            return EXPANSION_WARLORDS_OF_DRAENOR;
         else
             return CURRENT_EXPANSION;
     }
@@ -69,20 +65,15 @@ namespace Trinity
     {
         inline uint8 GetGrayLevel(uint8 pl_level)
         {
-            uint8 level;
-
-            if (pl_level < 7)
+            uint8 level = 0;
+            if (pl_level <= 5)
                 level = 0;
-            else if (pl_level < 35)
-            {
-                uint8 count = 0;
-                for (int i = 15; i <= pl_level; ++i)
-                    if (i % 5 == 0) ++count;
-
-                level = (pl_level - 7) - (count - 1);
-            }
+            else if (pl_level <= 39)
+                level = pl_level - 5 - pl_level / 10;
+            else if (pl_level <= 59)
+                level = pl_level - 1 - pl_level / 5;
             else
-                level = pl_level - 10;
+                level = pl_level - 9;
 
             sScriptMgr->OnGrayLevelCalculation(level, pl_level);
             return level;
@@ -140,12 +131,26 @@ namespace Trinity
             return diff;
         }
 
-        inline uint32 BaseGain(uint8 pl_level, uint8 mob_level)
+        inline uint32 BaseGain(uint8 pl_level, uint8 mob_level, int32 targetExpansion)
         {
-            uint32 baseGain;
+            uint32 baseGain = 0;
+            uint32 baseExperience = 0;
 
-            GtXpEntry const* xpPlayer = sXpGameTable.GetRow(pl_level);
-            GtXpEntry const* xpMob = sXpGameTable.GetRow(mob_level);
+            switch (targetExpansion)
+            {
+                case EXPANSION_CLASSIC:
+                    baseExperience = 45;
+                    break;
+                case EXPANSION_THE_BURNING_CRUSADE:
+                    baseExperience = 235;
+                    break;
+                case EXPANSION_WRATH_OF_THE_LICH_KING:
+                    baseExperience = 580;
+                    break;
+                default: // -1 = latest expansion and 3 = Cataclysm
+                    baseExperience = 1878;
+                    break;
+                }
 
             if (mob_level >= pl_level)
             {
@@ -153,7 +158,7 @@ namespace Trinity
                 if (nLevelDiff > 4)
                     nLevelDiff = 4;
 
-                baseGain = uint32(round(xpPlayer->PerKill * (1 + 0.05f * nLevelDiff)));
+                baseGain = round((mob_level * 5 + baseExperience) * (1 + 0.05f * nLevelDiff));
             }
             else
             {
@@ -161,7 +166,7 @@ namespace Trinity
                 if (mob_level > gray_level)
                 {
                     uint8 ZD = GetZeroDifference(pl_level);
-                    baseGain = uint32(round(xpMob->PerKill * ((1 - ((pl_level - mob_level) / float(ZD))) * (xpMob->Divisor / xpPlayer->Divisor))));
+                    baseGain = round((mob_level * 5 + baseExperience) * ((1 - ((pl_level - mob_level) / float(ZD)))));
                 }
                 else
                     baseGain = 0;
@@ -170,7 +175,7 @@ namespace Trinity
             if (sWorld->getIntConfig(CONFIG_MIN_CREATURE_SCALED_XP_RATIO) && pl_level != mob_level)
             {
                 // Use mob level instead of player level to avoid overscaling on gain in a min is enforced
-                uint32 baseGainMin = BaseGain(pl_level, pl_level) * sWorld->getIntConfig(CONFIG_MIN_CREATURE_SCALED_XP_RATIO) / 100;
+                uint32 baseGainMin = BaseGain(pl_level, pl_level, targetExpansion) * sWorld->getIntConfig(CONFIG_MIN_CREATURE_SCALED_XP_RATIO) / 100;
                 baseGain = std::max(baseGainMin, baseGain);
             }
 
@@ -187,14 +192,10 @@ namespace Trinity
             {
                 float xpMod = 1.0f;
 
-                gain = BaseGain(player->GetLevel(), u->GetLevelForTarget(player));
+                gain = BaseGain(player->GetLevel(), u->GetLevelForTarget(player), creature ? creature->GetCreatureDifficulty()->GetHealthScalingExpansion() : GetExpansionForLevel(u->GetLevelForTarget(player)));
 
                 if (gain && creature)
                 {
-                    // Players get only 10% xp for killing creatures of lower expansion levels than himself
-                    if ((uint32(creature->GetCreatureDifficulty()->GetHealthScalingExpansion()) < GetExpansionForLevel(player->GetLevel())))
-                        gain = uint32(round(gain / 10.0f));
-
                     if (creature->IsElite())
                     {
                         // Elites in instances have a 2.75x XP bonus instead of the regular 2x world bonus.
